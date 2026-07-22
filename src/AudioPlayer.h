@@ -14,8 +14,8 @@ public:
     void Stop();
 
 private:
-    void PlaybackThreadProc(std::vector<WavTrack> tracks);
+    void PlayTrackThreadProc(WavTrack track, int slotIndex);
 
-    std::thread m_thread;
+    std::vector<std::thread> m_threads;
     std::atomic<bool> m_stopRequested{false};
 };
