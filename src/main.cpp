@@ -1,6 +1,7 @@
 #include <windows.h>
 #include <commdlg.h>
-#include <mmsystem.h>
+
+#include "AudioPlayer.h"
 
 constexpr wchar_t kWindowClassName[] = L"RhythmWindowClass";
 constexpr wchar_t kWindowTitle[] = L"Rhythm";
@@ -12,10 +13,13 @@ enum ControlId : int {
     IDC_EDIT_FILEPATH = 101,
     IDC_BUTTON_BROWSE = 102,
     IDC_BUTTON_PLAY = 103,
+    IDC_EDIT_REPEAT_COUNT = 104,
 };
 
 static HWND g_hEditFilePath = nullptr;
 static HWND g_hButtonPlay = nullptr;
+static HWND g_hEditRepeatCount = nullptr;
+static AudioPlayer g_audioPlayer;
 
 static void BrowseForWavFile(HWND hwnd) {
     wchar_t szFile[MAX_PATH] = L"";
@@ -45,7 +49,15 @@ static void PlaySelectedFile(HWND hwnd) {
         return;
     }
 
-    PlaySoundW(path, nullptr, SND_FILENAME | SND_ASYNC);
+    wchar_t countText[16] = L"";
+    GetWindowTextW(g_hEditRepeatCount, countText, 16);
+    int repeatCount = _wtoi(countText);
+    if (repeatCount < 1) {
+        repeatCount = 1;
+        SetWindowTextW(g_hEditRepeatCount, L"1");
+    }
+
+    g_audioPlayer.Play(path, repeatCount);
 }
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
@@ -81,10 +93,27 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
                 hwnd, (HMENU)IDC_BUTTON_PLAY, nullptr, nullptr
             );
 
+            HWND hLabelRepeat = CreateWindowExW(
+                0, L"STATIC", L"Play count:",
+                WS_CHILD | WS_VISIBLE,
+                kMargin + 120, kMargin + kControlHeight + 22, 70, kControlHeight,
+                hwnd, nullptr, nullptr, nullptr
+            );
+
+            g_hEditRepeatCount = CreateWindowExW(
+                WS_EX_CLIENTEDGE, L"EDIT", L"1",
+                WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL | ES_NUMBER,
+                kMargin + 195, kMargin + kControlHeight + 18, 50, kControlHeight,
+                hwnd, (HMENU)IDC_EDIT_REPEAT_COUNT, nullptr, nullptr
+            );
+            SendMessageW(g_hEditRepeatCount, EM_SETLIMITTEXT, 4, 0);
+
             SendMessageW(hLabel, WM_SETFONT, (WPARAM)hFont, TRUE);
             SendMessageW(g_hEditFilePath, WM_SETFONT, (WPARAM)hFont, TRUE);
             SendMessageW(hButtonBrowse, WM_SETFONT, (WPARAM)hFont, TRUE);
             SendMessageW(g_hButtonPlay, WM_SETFONT, (WPARAM)hFont, TRUE);
+            SendMessageW(hLabelRepeat, WM_SETFONT, (WPARAM)hFont, TRUE);
+            SendMessageW(g_hEditRepeatCount, WM_SETFONT, (WPARAM)hFont, TRUE);
 
             return 0;
         }
@@ -100,7 +129,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
             break;
         }
         case WM_DESTROY:
-            PlaySoundW(nullptr, nullptr, 0);
+            g_audioPlayer.Stop();
             PostQuitMessage(0);
             return 0;
         case WM_PAINT: {
