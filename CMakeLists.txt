@@ -9,6 +9,7 @@ add_executable(Rhythm WIN32
 )
 
 target_compile_definitions(Rhythm PRIVATE UNICODE _UNICODE)
+target_link_libraries(Rhythm PRIVATE winmm comdlg32)
 
 if(MINGW)
     target_link_options(Rhythm PRIVATE -municode)
