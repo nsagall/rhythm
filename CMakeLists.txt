@@ -9,6 +9,7 @@ find_package(Threads REQUIRED)
 add_executable(Rhythm WIN32
     src/main.cpp
     src/AudioPlayer.cpp
+    src/Settings.cpp
 )
 
 target_compile_definitions(Rhythm PRIVATE UNICODE _UNICODE)

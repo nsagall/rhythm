@@ -1,27 +1,35 @@
 #include <windows.h>
 #include <commdlg.h>
 
+#include <array>
+#include <vector>
+
 #include "AudioPlayer.h"
+#include "Settings.h"
+#include "WavTrack.h"
 
 constexpr wchar_t kWindowClassName[] = L"RhythmWindowClass";
 constexpr wchar_t kWindowTitle[] = L"Rhythm";
 
 constexpr int kMargin = 10;
 constexpr int kControlHeight = 24;
+constexpr int kRowHeight = 34;
+constexpr int kGroupBoxTop = 10;
+constexpr int kGroupBoxLeft = 10;
+constexpr int kGroupBoxWidth = 960;
+constexpr int kRowTopInGroupBox = 30;
 
-enum ControlId : int {
-    IDC_EDIT_FILEPATH = 101,
-    IDC_BUTTON_BROWSE = 102,
-    IDC_BUTTON_PLAY = 103,
-    IDC_EDIT_REPEAT_COUNT = 104,
-};
+constexpr int IDC_EDIT_FILEPATH_BASE = 101;
+constexpr int IDC_BUTTON_BROWSE_BASE = 110;
+constexpr int IDC_EDIT_REPEAT_COUNT_BASE = 120;
+constexpr int IDC_BUTTON_PLAY_ALL = 130;
 
-static HWND g_hEditFilePath = nullptr;
-static HWND g_hButtonPlay = nullptr;
-static HWND g_hEditRepeatCount = nullptr;
+static std::array<HWND, kTrackCount> g_hEditFilePath{};
+static std::array<HWND, kTrackCount> g_hEditRepeatCount{};
 static AudioPlayer g_audioPlayer;
+static Settings g_settings;
 
-static void BrowseForWavFile(HWND hwnd) {
+static void BrowseForWavFile(HWND hwnd, int trackIndex) {
     wchar_t szFile[MAX_PATH] = L"";
 
     OPENFILENAMEW ofn = {};
@@ -35,29 +43,61 @@ static void BrowseForWavFile(HWND hwnd) {
     ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_EXPLORER;
 
     if (GetOpenFileNameW(&ofn)) {
-        SetWindowTextW(g_hEditFilePath, szFile);
-        EnableWindow(g_hButtonPlay, TRUE);
+        SetWindowTextW(g_hEditFilePath[trackIndex], szFile);
     }
 }
 
-static void PlaySelectedFile(HWND hwnd) {
-    wchar_t path[MAX_PATH] = L"";
-    GetWindowTextW(g_hEditFilePath, path, MAX_PATH);
+static void PlayAllTracks(HWND hwnd) {
+    std::vector<WavTrack> tracks;
 
-    if (wcslen(path) == 0) {
-        MessageBoxW(hwnd, L"Please select a .wav file first.", kWindowTitle, MB_OK | MB_ICONINFORMATION);
+    for (int i = 0; i < kTrackCount; ++i) {
+        wchar_t path[MAX_PATH] = L"";
+        GetWindowTextW(g_hEditFilePath[i], path, MAX_PATH);
+        if (wcslen(path) == 0) {
+            continue;
+        }
+
+        wchar_t countText[16] = L"";
+        GetWindowTextW(g_hEditRepeatCount[i], countText, 16);
+        int repeatCount = _wtoi(countText);
+        if (repeatCount < 1) {
+            repeatCount = 1;
+            SetWindowTextW(g_hEditRepeatCount[i], L"1");
+        }
+
+        tracks.push_back(WavTrack{path, repeatCount});
+    }
+
+    if (tracks.empty()) {
+        MessageBoxW(hwnd, L"Please select at least one .wav file.", kWindowTitle, MB_OK | MB_ICONINFORMATION);
         return;
     }
 
-    wchar_t countText[16] = L"";
-    GetWindowTextW(g_hEditRepeatCount, countText, 16);
-    int repeatCount = _wtoi(countText);
-    if (repeatCount < 1) {
-        repeatCount = 1;
-        SetWindowTextW(g_hEditRepeatCount, L"1");
-    }
+    g_audioPlayer.PlayAll(std::move(tracks));
+}
 
-    g_audioPlayer.Play(path, repeatCount);
+static void LoadTracksIntoUi() {
+    std::array<WavTrack, kTrackCount> tracks = g_settings.Load();
+    for (int i = 0; i < kTrackCount; ++i) {
+        SetWindowTextW(g_hEditFilePath[i], tracks[i].filePath.c_str());
+        SetWindowTextW(g_hEditRepeatCount[i], std::to_wstring(tracks[i].repeatCount).c_str());
+    }
+}
+
+static void SaveTracksFromUi() {
+    std::array<WavTrack, kTrackCount> tracks;
+    for (int i = 0; i < kTrackCount; ++i) {
+        wchar_t path[MAX_PATH] = L"";
+        GetWindowTextW(g_hEditFilePath[i], path, MAX_PATH);
+
+        wchar_t countText[16] = L"";
+        GetWindowTextW(g_hEditRepeatCount[i], countText, 16);
+        int repeatCount = _wtoi(countText);
+
+        tracks[i].filePath = path;
+        tracks[i].repeatCount = repeatCount < 1 ? 1 : repeatCount;
+    }
+    g_settings.Save(tracks);
 }
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
@@ -65,70 +105,92 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
         case WM_CREATE: {
             HFONT hFont = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
 
-            HWND hLabel = CreateWindowExW(
-                0, L"STATIC", L"WAV File:",
-                WS_CHILD | WS_VISIBLE,
-                kMargin, kMargin + 4, 70, kControlHeight,
+            int groupBoxHeight = kRowTopInGroupBox + kTrackCount * kRowHeight + 10;
+            HWND hGroupBox = CreateWindowExW(
+                0, L"BUTTON", L"Tracks",
+                WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
+                kGroupBoxLeft, kGroupBoxTop, kGroupBoxWidth, groupBoxHeight,
                 hwnd, nullptr, nullptr, nullptr
             );
+            SendMessageW(hGroupBox, WM_SETFONT, (WPARAM)hFont, TRUE);
 
-            g_hEditFilePath = CreateWindowExW(
-                WS_EX_CLIENTEDGE, L"EDIT", L"",
-                WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL | ES_READONLY,
-                kMargin + 75, kMargin, 700, kControlHeight,
-                hwnd, (HMENU)IDC_EDIT_FILEPATH, nullptr, nullptr
-            );
+            for (int i = 0; i < kTrackCount; ++i) {
+                int rowY = kGroupBoxTop + kRowTopInGroupBox + i * kRowHeight;
+                wchar_t trackLabel[16];
+                wsprintfW(trackLabel, L"Track %d:", i + 1);
 
-            HWND hButtonBrowse = CreateWindowExW(
-                0, L"BUTTON", L"Browse...",
+                HWND hLabel = CreateWindowExW(
+                    0, L"STATIC", trackLabel,
+                    WS_CHILD | WS_VISIBLE,
+                    kGroupBoxLeft + 15, rowY + 4, 60, kControlHeight,
+                    hwnd, nullptr, nullptr, nullptr
+                );
+
+                g_hEditFilePath[i] = CreateWindowExW(
+                    WS_EX_CLIENTEDGE, L"EDIT", L"",
+                    WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL | ES_READONLY,
+                    kGroupBoxLeft + 80, rowY, 620, kControlHeight,
+                    hwnd, (HMENU)(INT_PTR)(IDC_EDIT_FILEPATH_BASE + i), nullptr, nullptr
+                );
+
+                HWND hButtonBrowse = CreateWindowExW(
+                    0, L"BUTTON", L"Browse...",
+                    WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+                    kGroupBoxLeft + 710, rowY - 1, 90, kControlHeight + 2,
+                    hwnd, (HMENU)(INT_PTR)(IDC_BUTTON_BROWSE_BASE + i), nullptr, nullptr
+                );
+
+                HWND hLabelRepeat = CreateWindowExW(
+                    0, L"STATIC", L"Play count:",
+                    WS_CHILD | WS_VISIBLE,
+                    kGroupBoxLeft + 810, rowY + 4, 75, kControlHeight,
+                    hwnd, nullptr, nullptr, nullptr
+                );
+
+                g_hEditRepeatCount[i] = CreateWindowExW(
+                    WS_EX_CLIENTEDGE, L"EDIT", L"1",
+                    WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL | ES_NUMBER,
+                    kGroupBoxLeft + 890, rowY, 50, kControlHeight,
+                    hwnd, (HMENU)(INT_PTR)(IDC_EDIT_REPEAT_COUNT_BASE + i), nullptr, nullptr
+                );
+                SendMessageW(g_hEditRepeatCount[i], EM_SETLIMITTEXT, 4, 0);
+
+                SendMessageW(hLabel, WM_SETFONT, (WPARAM)hFont, TRUE);
+                SendMessageW(g_hEditFilePath[i], WM_SETFONT, (WPARAM)hFont, TRUE);
+                SendMessageW(hButtonBrowse, WM_SETFONT, (WPARAM)hFont, TRUE);
+                SendMessageW(hLabelRepeat, WM_SETFONT, (WPARAM)hFont, TRUE);
+                SendMessageW(g_hEditRepeatCount[i], WM_SETFONT, (WPARAM)hFont, TRUE);
+            }
+
+            HWND hButtonPlayAll = CreateWindowExW(
+                0, L"BUTTON", L"Play All",
                 WS_CHILD | WS_VISIBLE | WS_TABSTOP,
-                kMargin + 785, kMargin - 1, 100, kControlHeight + 2,
-                hwnd, (HMENU)IDC_BUTTON_BROWSE, nullptr, nullptr
+                kGroupBoxLeft, kGroupBoxTop + groupBoxHeight + 15, 120, 32,
+                hwnd, (HMENU)IDC_BUTTON_PLAY_ALL, nullptr, nullptr
             );
+            SendMessageW(hButtonPlayAll, WM_SETFONT, (WPARAM)hFont, TRUE);
 
-            g_hButtonPlay = CreateWindowExW(
-                0, L"BUTTON", L"Play",
-                WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_DISABLED,
-                kMargin, kMargin + kControlHeight + 16, 100, 30,
-                hwnd, (HMENU)IDC_BUTTON_PLAY, nullptr, nullptr
-            );
-
-            HWND hLabelRepeat = CreateWindowExW(
-                0, L"STATIC", L"Play count:",
-                WS_CHILD | WS_VISIBLE,
-                kMargin + 120, kMargin + kControlHeight + 22, 70, kControlHeight,
-                hwnd, nullptr, nullptr, nullptr
-            );
-
-            g_hEditRepeatCount = CreateWindowExW(
-                WS_EX_CLIENTEDGE, L"EDIT", L"1",
-                WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL | ES_NUMBER,
-                kMargin + 195, kMargin + kControlHeight + 18, 50, kControlHeight,
-                hwnd, (HMENU)IDC_EDIT_REPEAT_COUNT, nullptr, nullptr
-            );
-            SendMessageW(g_hEditRepeatCount, EM_SETLIMITTEXT, 4, 0);
-
-            SendMessageW(hLabel, WM_SETFONT, (WPARAM)hFont, TRUE);
-            SendMessageW(g_hEditFilePath, WM_SETFONT, (WPARAM)hFont, TRUE);
-            SendMessageW(hButtonBrowse, WM_SETFONT, (WPARAM)hFont, TRUE);
-            SendMessageW(g_hButtonPlay, WM_SETFONT, (WPARAM)hFont, TRUE);
-            SendMessageW(hLabelRepeat, WM_SETFONT, (WPARAM)hFont, TRUE);
-            SendMessageW(g_hEditRepeatCount, WM_SETFONT, (WPARAM)hFont, TRUE);
+            LoadTracksIntoUi();
 
             return 0;
         }
         case WM_COMMAND: {
-            switch (LOWORD(wParam)) {
-                case IDC_BUTTON_BROWSE:
-                    BrowseForWavFile(hwnd);
-                    return 0;
-                case IDC_BUTTON_PLAY:
-                    PlaySelectedFile(hwnd);
-                    return 0;
+            int id = LOWORD(wParam);
+
+            if (id >= IDC_BUTTON_BROWSE_BASE && id < IDC_BUTTON_BROWSE_BASE + kTrackCount) {
+                BrowseForWavFile(hwnd, id - IDC_BUTTON_BROWSE_BASE);
+                return 0;
             }
+
+            if (id == IDC_BUTTON_PLAY_ALL) {
+                PlayAllTracks(hwnd);
+                return 0;
+            }
+
             break;
         }
         case WM_DESTROY:
+            SaveTracksFromUi();
             g_audioPlayer.Stop();
             PostQuitMessage(0);
             return 0;

@@ -1,18 +1,20 @@
 #pragma once
 
 #include <atomic>
-#include <string>
 #include <thread>
+#include <vector>
+
+#include "WavTrack.h"
 
 class AudioPlayer {
 public:
     ~AudioPlayer();
 
-    bool Play(const std::wstring& filePath, int repeatCount = 1);
+    bool PlayAll(std::vector<WavTrack> tracks);
     void Stop();
 
 private:
-    void PlaybackThreadProc(std::wstring filePath, int repeatCount);
+    void PlaybackThreadProc(std::vector<WavTrack> tracks);
 
     std::thread m_thread;
     std::atomic<bool> m_stopRequested{false};
