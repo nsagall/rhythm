@@ -37,7 +37,7 @@ static void BrowseForWavFile(HWND hwnd, int trackIndex) {
     ofn.hwndOwner = hwnd;
     ofn.lpstrFile = szFile;
     ofn.nMaxFile = MAX_PATH;
-    ofn.lpstrFilter = L"WAV Files (*.wav)\0*.wav\0All Files (*.*)\0*.*\0";
+    ofn.lpstrFilter = L"Audio Files (*.wav;*.mp3)\0*.wav;*.mp3\0WAV Files (*.wav)\0*.wav\0MP3 Files (*.mp3)\0*.mp3\0All Files (*.*)\0*.*\0";
     ofn.nFilterIndex = 1;
     ofn.lpstrDefExt = L"wav";
     ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_EXPLORER;
@@ -69,7 +69,7 @@ static void PlayAllTracks(HWND hwnd) {
     }
 
     if (tracks.empty()) {
-        MessageBoxW(hwnd, L"Please select at least one .wav file.", kWindowTitle, MB_OK | MB_ICONINFORMATION);
+        MessageBoxW(hwnd, L"Please select at least one audio file.", kWindowTitle, MB_OK | MB_ICONINFORMATION);
         return;
     }
 
