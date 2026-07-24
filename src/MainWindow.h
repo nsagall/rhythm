@@ -5,9 +5,9 @@
 #include <array>
 
 #include "AudioPlayer.h"
+#include "BeatScroller.h"
 #include "MusicTrack.h"
 #include "Settings.h"
-#include "TrackLights.h"
 
 class MainWindow {
 public:
@@ -37,5 +37,5 @@ private:
 
     AudioPlayer m_audioPlayer;
     Settings m_settings;
-    TrackLights m_trackLights;
+    BeatScroller m_beatScroller;
 };

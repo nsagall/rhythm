@@ -11,7 +11,7 @@ add_executable(Rhythm WIN32
     src/MainWindow.cpp
     src/AudioPlayer.cpp
     src/Settings.cpp
-    src/TrackLights.cpp
+    src/BeatScroller.cpp
 )
 
 target_compile_definitions(Rhythm PRIVATE UNICODE _UNICODE)

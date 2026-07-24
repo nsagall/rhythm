@@ -16,12 +16,14 @@ constexpr int kGroupBoxTop = 10;
 constexpr int kGroupBoxLeft = 10;
 constexpr int kGroupBoxWidth = 960;
 constexpr int kRowTopInGroupBox = 30;
-constexpr int kLightSize = 16;
+constexpr int kLaneTopMargin = 20;
+constexpr int kLaneHeight = 80;
+constexpr int kPlayButtonTopMargin = 20;
 
 constexpr int IDC_EDIT_FILEPATH_BASE = 101;
 constexpr int IDC_BUTTON_BROWSE_BASE = 110;
 constexpr int IDC_EDIT_REPEAT_COUNT_BASE = 120;
-constexpr int IDC_BUTTON_PLAY_ALL = 130;
+constexpr int IDC_BUTTON_PLAY = 130;
 constexpr int IDC_EDIT_BPM_BASE = 140;
 
 constexpr UINT WM_APP_TRACK_STATE = WM_APP + 1;
@@ -98,7 +100,7 @@ LRESULT MainWindow::HandleMessage(HWND hwnd, UINT message, WPARAM wParam, LPARAM
             OnCommand(hwnd, LOWORD(wParam));
             return 0;
         case WM_TIMER:
-            if (m_trackLights.OnTimer(wParam)) {
+            if (m_beatScroller.OnTimer(wParam)) {
                 return 0;
             }
             break;
@@ -117,13 +119,13 @@ LRESULT MainWindow::HandleMessage(HWND hwnd, UINT message, WPARAM wParam, LPARAM
 
 void MainWindow::OnCreate(HWND hwnd) {
     m_hwnd = hwnd;
-    m_trackLights.Attach(hwnd);
+    m_beatScroller.Attach(hwnd);
 
     HFONT hFont = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
 
     int groupBoxHeight = kRowTopInGroupBox + kTrackCount * kRowHeight + 10;
     HWND hGroupBox = CreateWindowExW(
-        0, L"BUTTON", L"Tracks",
+        0, L"BUTTON", L"Track",
         WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
         kGroupBoxLeft, kGroupBoxTop, kGroupBoxWidth, groupBoxHeight,
         hwnd, nullptr, nullptr, nullptr
@@ -132,11 +134,9 @@ void MainWindow::OnCreate(HWND hwnd) {
 
     for (int i = 0; i < kTrackCount; ++i) {
         int rowY = kGroupBoxTop + kRowTopInGroupBox + i * kRowHeight;
-        wchar_t trackLabel[16];
-        wsprintfW(trackLabel, L"Track %d:", i + 1);
 
         HWND hLabel = CreateWindowExW(
-            0, L"STATIC", trackLabel,
+            0, L"STATIC", L"Track:",
             WS_CHILD | WS_VISIBLE,
             kGroupBoxLeft + 15, rowY + 4, 60, kControlHeight,
             hwnd, nullptr, nullptr, nullptr
@@ -186,13 +186,6 @@ void MainWindow::OnCreate(HWND hwnd) {
         );
         SendMessageW(m_hEditBpm[i], EM_SETLIMITTEXT, 3, 0);
 
-        RECT lightRect;
-        lightRect.left = kGroupBoxLeft + 913;
-        lightRect.top = rowY + 4;
-        lightRect.right = lightRect.left + kLightSize;
-        lightRect.bottom = lightRect.top + kLightSize;
-        m_trackLights.SetLightRect(i, lightRect);
-
         SendMessageW(hLabel, WM_SETFONT, (WPARAM)hFont, TRUE);
         SendMessageW(m_hEditFilePath[i], WM_SETFONT, (WPARAM)hFont, TRUE);
         SendMessageW(hButtonBrowse, WM_SETFONT, (WPARAM)hFont, TRUE);
@@ -202,13 +195,20 @@ void MainWindow::OnCreate(HWND hwnd) {
         SendMessageW(m_hEditBpm[i], WM_SETFONT, (WPARAM)hFont, TRUE);
     }
 
-    HWND hButtonPlayAll = CreateWindowExW(
-        0, L"BUTTON", L"Play All",
+    RECT laneRect;
+    laneRect.left = kGroupBoxLeft;
+    laneRect.top = kGroupBoxTop + groupBoxHeight + kLaneTopMargin;
+    laneRect.right = kGroupBoxLeft + kGroupBoxWidth;
+    laneRect.bottom = laneRect.top + kLaneHeight;
+    m_beatScroller.SetLaneRect(laneRect);
+
+    HWND hButtonPlay = CreateWindowExW(
+        0, L"BUTTON", L"Play",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP,
-        kGroupBoxLeft, kGroupBoxTop + groupBoxHeight + 15, 120, 32,
-        hwnd, (HMENU)(INT_PTR)IDC_BUTTON_PLAY_ALL, nullptr, nullptr
+        kGroupBoxLeft, laneRect.bottom + kPlayButtonTopMargin, 120, 32,
+        hwnd, (HMENU)(INT_PTR)IDC_BUTTON_PLAY, nullptr, nullptr
     );
-    SendMessageW(hButtonPlayAll, WM_SETFONT, (WPARAM)hFont, TRUE);
+    SendMessageW(hButtonPlay, WM_SETFONT, (WPARAM)hFont, TRUE);
 
     m_audioPlayer.SetTrackStateCallback([hwnd](int trackIndex, bool isPlaying) {
         PostMessageW(hwnd, WM_APP_TRACK_STATE, static_cast<WPARAM>(trackIndex), static_cast<LPARAM>(isPlaying));
@@ -223,7 +223,7 @@ void MainWindow::OnCommand(HWND hwnd, int controlId) {
         return;
     }
 
-    if (controlId == IDC_BUTTON_PLAY_ALL) {
+    if (controlId == IDC_BUTTON_PLAY) {
         PlayAllTracks(hwnd);
         return;
     }
@@ -232,7 +232,7 @@ void MainWindow::OnCommand(HWND hwnd, int controlId) {
 void MainWindow::OnDestroy() {
     SaveTracksFromUi();
     m_audioPlayer.Stop();
-    m_trackLights.StopAll();
+    m_beatScroller.Stop();
     PostQuitMessage(0);
 }
 
@@ -240,7 +240,7 @@ void MainWindow::OnPaint(HWND hwnd) {
     PAINTSTRUCT ps;
     HDC hdc = BeginPaint(hwnd, &ps);
     FillRect(hdc, &ps.rcPaint, (HBRUSH)(COLOR_WINDOW + 1));
-    m_trackLights.Draw(hdc);
+    m_beatScroller.Draw(hdc);
     EndPaint(hwnd, &ps);
 }
 
@@ -249,9 +249,9 @@ void MainWindow::OnTrackStateChanged(int trackIndex, bool isPlaying) {
         wchar_t bpmText[16] = L"";
         GetWindowTextW(m_hEditBpm[trackIndex], bpmText, 16);
         int bpm = _wtoi(bpmText);
-        m_trackLights.Start(trackIndex, bpm < 1 ? 1 : bpm);
+        m_beatScroller.Start(bpm < 1 ? 1 : bpm);
     } else {
-        m_trackLights.Stop(trackIndex);
+        m_beatScroller.Stop();
     }
 }
 

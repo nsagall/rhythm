@@ -2,7 +2,7 @@
 
 #include <string>
 
-constexpr int kTrackCount = 5;
+constexpr int kTrackCount = 1;
 
 struct MusicTrack {
     std::wstring filePath;
