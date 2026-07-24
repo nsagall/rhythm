@@ -66,6 +66,9 @@ public:
     double NextExpectedOnsetBeat() const;
     const SongClock& Clock() const;
 
+    // Returns the audio engine stem handle for an instrument, for debugging.
+    StemHandle DebugStemHandle(int instrumentIndex) const;
+
     // Returns and clears the most recent judgement (Hit/Miss/None).
     JudgementResult ConsumeLastJudgement();
 
@@ -108,7 +111,7 @@ private:
 
     AudioEngine& m_audioEngine;
     ChartSong m_song;
-    std::vector<int> m_stemHandles; // one full-loop stem per instrument
+    std::vector<StemHandle> m_stemHandles; // one full-loop stem per instrument
 
     struct JudgedOnset
     {

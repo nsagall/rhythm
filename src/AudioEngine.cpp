@@ -154,38 +154,38 @@ void AudioEngine::Shutdown()
 }
 
 // Loads a PCM WAV file and creates a source voice for it. Returns a stem
-// handle, or -1 on failure (missing file or unsupported format).
-int AudioEngine::LoadStem(const std::wstring& wavFilePath)
+// handle, or an invalid one on failure (missing file or unsupported format).
+StemHandle AudioEngine::LoadStem(const std::wstring& wavFilePath)
 {
     if (!m_xaudio2)
     {
-        return -1;
+        return StemHandle{};
     }
 
     Stem stem;
     if (!LoadWavFile(wavFilePath, stem.pcmData, stem.format))
     {
-        return -1;
+        return StemHandle{};
     }
 
     if (FAILED(m_xaudio2->CreateSourceVoice(&stem.voice, &stem.format)) || !stem.voice)
     {
-        return -1;
+        return StemHandle{};
     }
 
     m_stems.push_back(std::move(stem));
-    return static_cast<int>(m_stems.size()) - 1;
+    return StemHandle{static_cast<int>(m_stems.size()) - 1};
 }
 
 // Starts a loaded stem looping seamlessly, seeking to phaseSeconds so it enters in time with the beat grid.
-void AudioEngine::StartLooping(int stemHandle, double phaseSeconds, float volume)
+void AudioEngine::StartLooping(StemHandle stemHandle, double phaseSeconds, float volume)
 {
-    if (stemHandle < 0 || stemHandle >= static_cast<int>(m_stems.size()))
+    if (!stemHandle.IsValid() || stemHandle.value >= static_cast<int>(m_stems.size()))
     {
         return;
     }
 
-    Stem& stem = m_stems[stemHandle];
+    Stem& stem = m_stems[stemHandle.value];
     if (!stem.voice || stem.pcmData.empty() || stem.format.nBlockAlign == 0)
     {
         return;
@@ -236,14 +236,14 @@ void AudioEngine::StartLooping(int stemHandle, double phaseSeconds, float volume
 }
 
 // Changes the volume of an already-playing (or not-yet-playing) stem without otherwise affecting playback.
-void AudioEngine::SetVolume(int stemHandle, float volume)
+void AudioEngine::SetVolume(StemHandle stemHandle, float volume)
 {
-    if (stemHandle < 0 || stemHandle >= static_cast<int>(m_stems.size()))
+    if (!stemHandle.IsValid() || stemHandle.value >= static_cast<int>(m_stems.size()))
     {
         return;
     }
 
-    Stem& stem = m_stems[stemHandle];
+    Stem& stem = m_stems[stemHandle.value];
     if (stem.voice)
     {
         stem.voice->SetVolume(volume);
@@ -251,14 +251,14 @@ void AudioEngine::SetVolume(int stemHandle, float volume)
 }
 
 // Stops a single stem.
-void AudioEngine::Stop(int stemHandle)
+void AudioEngine::Stop(StemHandle stemHandle)
 {
-    if (stemHandle < 0 || stemHandle >= static_cast<int>(m_stems.size()))
+    if (!stemHandle.IsValid() || stemHandle.value >= static_cast<int>(m_stems.size()))
     {
         return;
     }
 
-    Stem& stem = m_stems[stemHandle];
+    Stem& stem = m_stems[stemHandle.value];
     if (stem.voice)
     {
         stem.voice->Stop();
@@ -279,15 +279,34 @@ void AudioEngine::StopAll()
     }
 }
 
-// Returns how many seconds of audio have played for a stem, for clock resync.
-double AudioEngine::GetPositionSeconds(int stemHandle) const
+// Returns a stem's current voice volume (1.0 = unity gain), or -1.0 if the handle is invalid.
+float AudioEngine::GetVolume(StemHandle stemHandle) const
 {
-    if (stemHandle < 0 || stemHandle >= static_cast<int>(m_stems.size()))
+    if (!stemHandle.IsValid() || stemHandle.value >= static_cast<int>(m_stems.size()))
+    {
+        return -1.0f;
+    }
+
+    const Stem& stem = m_stems[stemHandle.value];
+    if (!stem.voice)
+    {
+        return -1.0f;
+    }
+
+    float volume = 0.0f;
+    stem.voice->GetVolume(&volume);
+    return volume;
+}
+
+// Returns how many seconds of audio have played for a stem, for clock resync.
+double AudioEngine::GetPositionSeconds(StemHandle stemHandle) const
+{
+    if (!stemHandle.IsValid() || stemHandle.value >= static_cast<int>(m_stems.size()))
     {
         return 0.0;
     }
 
-    const Stem& stem = m_stems[stemHandle];
+    const Stem& stem = m_stems[stemHandle.value];
     if (!stem.voice || stem.format.nSamplesPerSec == 0)
     {
         return 0.0;
@@ -300,14 +319,14 @@ double AudioEngine::GetPositionSeconds(int stemHandle) const
 }
 
 // Returns a stem's total duration in seconds, measured from its actual loaded audio data.
-double AudioEngine::GetStemDurationSeconds(int stemHandle) const
+double AudioEngine::GetStemDurationSeconds(StemHandle stemHandle) const
 {
-    if (stemHandle < 0 || stemHandle >= static_cast<int>(m_stems.size()))
+    if (!stemHandle.IsValid() || stemHandle.value >= static_cast<int>(m_stems.size()))
     {
         return 0.0;
     }
 
-    const Stem& stem = m_stems[stemHandle];
+    const Stem& stem = m_stems[stemHandle.value];
     if (stem.format.nSamplesPerSec == 0)
     {
         return 0.0;

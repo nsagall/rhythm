@@ -6,6 +6,30 @@
 #include <string>
 #include <vector>
 
+// A distinct type for referring to a loaded stem, so it can't be silently
+// mixed up at compile time with other unrelated integers (e.g. an
+// instrument index into a chart, which is a very easy accidental swap
+// since both are small ints that are often numerically equal).
+struct StemHandle
+{
+    int value = -1;
+
+    bool IsValid() const
+    {
+        return value >= 0;
+    }
+};
+
+inline bool operator==(StemHandle a, StemHandle b)
+{
+    return a.value == b.value;
+}
+
+inline bool operator!=(StemHandle a, StemHandle b)
+{
+    return !(a == b);
+}
+
 // Wraps XAudio2: loads WAV stems (each a full instrument loop) and
 // starts/stops them playing, seeking to the correct phase so a loop
 // entering mid-song stays in sync with the beat grid. All calls are
@@ -23,33 +47,36 @@ public:
     void Shutdown();
 
     // Loads a PCM WAV file and creates a source voice for it. Returns a
-    // stem handle, or -1 on failure (missing file or unsupported format).
-    int LoadStem(const std::wstring& wavFilePath);
+    // stem handle, or an invalid one on failure (missing file or unsupported format).
+    StemHandle LoadStem(const std::wstring& wavFilePath);
 
     // Starts a loaded stem looping seamlessly, at the given volume (1.0 =
     // unity gain). Plays once from phaseSeconds to the end of the buffer,
     // then loops the whole buffer forever after - so a loop starting
     // mid-song enters exactly in time rather than restarting from the
     // beginning out of phase.
-    void StartLooping(int stemHandle, double phaseSeconds = 0.0, float volume = 1.0f);
+    void StartLooping(StemHandle stemHandle, double phaseSeconds = 0.0, float volume = 1.0f);
 
     // Changes the volume of an already-playing (or not-yet-playing) stem
     // without otherwise affecting playback (1.0 = unity gain).
-    void SetVolume(int stemHandle, float volume);
+    void SetVolume(StemHandle stemHandle, float volume);
+
+    // Returns a stem's current voice volume (1.0 = unity gain), or -1.0 if the handle is invalid.
+    float GetVolume(StemHandle stemHandle) const;
 
     // Stops a single stem.
-    void Stop(int stemHandle);
+    void Stop(StemHandle stemHandle);
 
     // Stops every currently loaded stem.
     void StopAll();
 
     // Returns how many seconds of audio have played for a stem, for clock resync.
-    double GetPositionSeconds(int stemHandle) const;
+    double GetPositionSeconds(StemHandle stemHandle) const;
 
     // Returns a stem's total duration in seconds, measured from its actual
     // loaded audio data (not any chart-declared value) - the ground truth
     // for "one complete loop" of that stem.
-    double GetStemDurationSeconds(int stemHandle) const;
+    double GetStemDurationSeconds(StemHandle stemHandle) const;
 
 private:
     struct Stem

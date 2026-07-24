@@ -26,11 +26,11 @@ bool GameSession::LoadChart(const std::wstring& chartFilePath)
 
     m_audioEngine.StopAll();
 
-    std::vector<int> stemHandles;
+    std::vector<StemHandle> stemHandles;
     for (ChartInstrument& instrument : song.instruments)
     {
-        int handle = m_audioEngine.LoadStem(instrument.wavFilePath);
-        if (handle < 0)
+        StemHandle handle = m_audioEngine.LoadStem(instrument.wavFilePath);
+        if (!handle.IsValid())
         {
             return false;
         }
@@ -179,6 +179,16 @@ int GameSession::CurrentInstrumentIndex() const
     return m_currentInstrumentIndex;
 }
 
+// Returns the audio engine stem handle for an instrument, for debugging.
+StemHandle GameSession::DebugStemHandle(int instrumentIndex) const
+{
+    if (instrumentIndex < 0 || instrumentIndex >= static_cast<int>(m_stemHandles.size()))
+    {
+        return StemHandle{};
+    }
+    return m_stemHandles[instrumentIndex];
+}
+
 // Returns the instrument currently being learned, or nullptr if none.
 const ChartInstrument* GameSession::CurrentInstrument() const
 {
@@ -280,7 +290,7 @@ void GameSession::RegisterHit()
     if (!m_loopIsPlaying)
     {
         const ChartInstrument& instrument = m_song.instruments[m_currentInstrumentIndex];
-        int handle = m_stemHandles[m_currentInstrumentIndex];
+        StemHandle handle = m_stemHandles[m_currentInstrumentIndex];
         double stemDuration = m_audioEngine.GetStemDurationSeconds(handle);
         double phaseSeconds = stemDuration > 0.0 ? std::fmod(m_clock.ElapsedSeconds(), stemDuration) : 0.0;
         m_audioEngine.StartLooping(handle, phaseSeconds, static_cast<float>(instrument.initVolume));
