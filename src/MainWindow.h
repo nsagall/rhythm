@@ -2,19 +2,19 @@
 
 #include <windows.h>
 
-#include <array>
-
-#include "AudioPlayer.h"
-#include "BeatScroller.h"
-#include "MusicTrack.h"
+#include "AudioEngine.h"
+#include "GameSession.h"
+#include "NoteLane.h"
 #include "Settings.h"
 
-// Owns the app's single window: creates its controls, wires up playback and
-// persistence, and hosts the beat-scroller animation. No global state -
-// everything lives here as members.
+// Owns the app's single window: creates its controls, loads charts, routes
+// keyboard taps to the GameSession, and hosts the NoteLane animation. No
+// global state - everything lives here as members.
 class MainWindow
 {
 public:
+    MainWindow();
+
     // Registers the window class and creates/shows the window.
     bool Create(HINSTANCE hInstance, int nCmdShow);
 
@@ -29,42 +29,33 @@ private:
     // Dispatches a window message to the matching On* handler.
     LRESULT HandleMessage(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
 
-    // Creates all child controls and the beat-scroller lane, then loads saved settings.
+    // Creates all child controls and the note lane, then loads the last-used chart.
     void OnCreate(HWND hwnd);
 
-    // Routes a WM_COMMAND control ID to the Browse or Play handler.
+    // Routes a WM_COMMAND control ID to the Browse or Start handler.
     void OnCommand(HWND hwnd, int controlId);
 
-    // Saves settings, stops playback/animation, and quits the message loop.
+    // Registers a tap on a non-repeated spacebar key-down.
+    void OnKeyDown(WPARAM key, LPARAM flags);
+
+    // Advances the game session and reflects any judgement in the note lane.
+    void OnTimer(WPARAM timerId);
+
+    // Stops the session/animation/audio engine and quits the message loop.
     void OnDestroy();
 
-    // Repaints the background and the beat-scroller.
+    // Repaints the background and the note lane.
     void OnPaint(HWND hwnd);
 
-    // Starts or stops the beat-scroller animation in response to AudioPlayer's callback.
-    void OnTrackStateChanged(int trackIndex, bool isPlaying);
-
-    // Opens the audio file picker and stores the chosen path in the given row.
-    void BrowseForAudioFile(HWND hwnd, int trackIndex);
-
-    // Reads all tracks from the UI and starts playing the non-empty ones.
-    void PlayAllTracks(HWND hwnd);
-
-    // Loads saved tracks from Settings into the UI controls.
-    void LoadTracksIntoUi();
-
-    // Reads the current UI state and saves it via Settings.
-    void SaveTracksFromUi();
-
-    // Reads one row's controls into a MusicTrack, clamping repeat count and BPM to >= 1.
-    MusicTrack ReadTrackFromUi(int trackIndex) const;
+    // Opens the chart file picker and loads the chosen chart.
+    void BrowseForChart(HWND hwnd);
 
     HWND m_hwnd = nullptr;
-    std::array<HWND, kTrackCount> m_hEditFilePath{};
-    std::array<HWND, kTrackCount> m_hEditRepeatCount{};
-    std::array<HWND, kTrackCount> m_hEditBpm{};
+    HWND m_hEditChartPath = nullptr;
+    HWND m_hButtonStart = nullptr;
 
-    AudioPlayer m_audioPlayer;
+    AudioEngine m_audioEngine;
+    GameSession m_gameSession;
+    NoteLane m_noteLane;
     Settings m_settings;
-    BeatScroller m_beatScroller;
 };

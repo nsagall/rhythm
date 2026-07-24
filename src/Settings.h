@@ -1,16 +1,14 @@
 #pragma once
 
-#include <array>
+#include <string>
 
-#include "MusicTrack.h"
-
-// Persists track settings between runs, backed by an INI file under %APPDATA%\Rhythm.
+// Persists app-level preferences between runs, backed by an INI file under %APPDATA%\Rhythm.
 class Settings
 {
 public:
-    // Reads saved tracks from disk, defaulting any missing values.
-    std::array<MusicTrack, kTrackCount> Load();
+    // Reads the saved last-chart path from disk (empty if none saved yet).
+    std::wstring LoadLastChartPath();
 
-    // Writes the given tracks to disk, overwriting any previous save.
-    void Save(const std::array<MusicTrack, kTrackCount>& tracks);
+    // Saves the given chart path so it's pre-filled next launch.
+    void SaveLastChartPath(const std::wstring& chartPath);
 };
