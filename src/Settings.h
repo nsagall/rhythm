@@ -2,10 +2,10 @@
 
 #include <array>
 
-#include "WavTrack.h"
+#include "MusicTrack.h"
 
 class Settings {
 public:
-    std::array<WavTrack, kTrackCount> Load();
-    void Save(const std::array<WavTrack, kTrackCount>& tracks);
+    std::array<MusicTrack, kTrackCount> Load();
+    void Save(const std::array<MusicTrack, kTrackCount>& tracks);
 };

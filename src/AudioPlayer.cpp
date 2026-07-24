@@ -22,17 +22,24 @@ AudioPlayer::~AudioPlayer() {
     Stop();
 }
 
-bool AudioPlayer::PlayAll(std::vector<WavTrack> tracks) {
+void AudioPlayer::SetTrackStateCallback(TrackStateCallback callback) {
+    m_onTrackStateChanged = std::move(callback);
+}
+
+bool AudioPlayer::PlayAll(std::vector<MusicTrack> tracks) {
     Stop();
 
     m_stopRequested = false;
     for (size_t i = 0; i < tracks.size(); ++i) {
+        if (tracks[i].filePath.empty()) {
+            continue;
+        }
         m_threads.emplace_back(&AudioPlayer::PlayTrackThreadProc, this, tracks[i], static_cast<int>(i));
     }
     return true;
 }
 
-void AudioPlayer::PlayTrackThreadProc(WavTrack track, int slotIndex) {
+void AudioPlayer::PlayTrackThreadProc(MusicTrack track, int slotIndex) {
     std::wstring alias = MakeAlias(slotIndex);
 
     // No explicit "type" here: MCI resolves the device driver from the file's
@@ -40,6 +47,10 @@ void AudioPlayer::PlayTrackThreadProc(WavTrack track, int slotIndex) {
     std::wstring openCmd = L"open \"" + track.filePath + L"\" alias " + alias;
     if (mciSendStringW(openCmd.c_str(), nullptr, 0, nullptr) != 0) {
         return;
+    }
+
+    if (m_onTrackStateChanged) {
+        m_onTrackStateChanged(slotIndex, true);
     }
 
     std::wstring playCmd = L"play " + alias + L" from 0";
@@ -69,6 +80,10 @@ void AudioPlayer::PlayTrackThreadProc(WavTrack track, int slotIndex) {
     mciSendStringW(stopCmd.c_str(), nullptr, 0, nullptr);
     std::wstring closeCmd = L"close " + alias;
     mciSendStringW(closeCmd.c_str(), nullptr, 0, nullptr);
+
+    if (m_onTrackStateChanged) {
+        m_onTrackStateChanged(slotIndex, false);
+    }
 }
 
 void AudioPlayer::Stop() {
