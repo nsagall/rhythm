@@ -6,7 +6,7 @@ namespace {
 
 constexpr UINT_PTR kSpawnTimerId = 300;
 constexpr UINT_PTR kFrameTimerId = 301;
-constexpr UINT kFrameIntervalMs = 33;
+constexpr UINT kFrameIntervalMs = 16;
 constexpr int kDotRadius = 7;
 // The vertical line sits this far into the lane from the left edge, giving
 // dots room to "approach" from the right before they cross it.
