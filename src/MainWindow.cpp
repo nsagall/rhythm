@@ -183,6 +183,8 @@ void MainWindow::OnCreate(HWND hwnd)
     {
         SetWindowTextW(m_hEditChartPath, lastChartPath.c_str());
     }
+
+    SetFocus(hwnd);
 }
 
 // Routes a WM_COMMAND control ID to the Browse or Start handler.
@@ -197,6 +199,9 @@ void MainWindow::OnCommand(HWND hwnd, int controlId)
     if (controlId == IDC_BUTTON_START)
     {
         m_gameSession.Start();
+        // Native buttons treat Space/Enter as "activate me" while focused,
+        // which would otherwise steal every tap keystroke after this click.
+        SetFocus(hwnd);
         return;
     }
 }
@@ -270,6 +275,8 @@ void MainWindow::BrowseForChart(HWND hwnd)
     {
         return;
     }
+
+    SetFocus(hwnd); // the Browse button would otherwise keep keyboard focus and steal tap keystrokes
 
     if (m_gameSession.LoadChart(szFile))
     {
