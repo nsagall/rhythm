@@ -241,11 +241,10 @@ void GameSession::RegisterHit()
 
     if (!m_loopIsPlaying)
     {
-        const ChartInstrument& instrument = m_song.instruments[m_currentInstrumentIndex];
-        double secondsPerBeat = 60.0 / m_song.bpm;
-        double spanSeconds = instrument.spanBeats * secondsPerBeat;
-        double phaseSeconds = spanSeconds > 0.0 ? std::fmod(m_clock.ElapsedSeconds(), spanSeconds) : 0.0;
-        m_audioEngine.StartLooping(m_stemHandles[m_currentInstrumentIndex], phaseSeconds);
+        int handle = m_stemHandles[m_currentInstrumentIndex];
+        double stemDuration = m_audioEngine.GetStemDurationSeconds(handle);
+        double phaseSeconds = stemDuration > 0.0 ? std::fmod(m_clock.ElapsedSeconds(), stemDuration) : 0.0;
+        m_audioEngine.StartLooping(handle, phaseSeconds);
         m_loopIsPlaying = true;
     }
 }
