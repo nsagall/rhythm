@@ -5,7 +5,8 @@
 #include <string>
 #include <vector>
 
-namespace {
+namespace
+{
 
 constexpr wchar_t kWindowClassName[] = L"RhythmWindowClass";
 constexpr wchar_t kWindowTitle[] = L"Rhythm";
@@ -30,7 +31,9 @@ constexpr UINT WM_APP_TRACK_STATE = WM_APP + 1;
 
 } // namespace
 
-bool MainWindow::Create(HINSTANCE hInstance, int nCmdShow) {
+// Registers the window class and creates/shows the window.
+bool MainWindow::Create(HINSTANCE hInstance, int nCmdShow)
+{
     WNDCLASSEXW wc = {};
     wc.cbSize = sizeof(wc);
     wc.style = CS_HREDRAW | CS_VREDRAW;
@@ -42,7 +45,8 @@ bool MainWindow::Create(HINSTANCE hInstance, int nCmdShow) {
     wc.hIcon = LoadIcon(nullptr, IDI_APPLICATION);
     wc.hIconSm = wc.hIcon;
 
-    if (!RegisterClassExW(&wc)) {
+    if (!RegisterClassExW(&wc))
+    {
         return false;
     }
 
@@ -56,7 +60,8 @@ bool MainWindow::Create(HINSTANCE hInstance, int nCmdShow) {
         nullptr, nullptr, hInstance, this
     );
 
-    if (!hwnd) {
+    if (!hwnd)
+    {
         return false;
     }
 
@@ -65,34 +70,46 @@ bool MainWindow::Create(HINSTANCE hInstance, int nCmdShow) {
     return true;
 }
 
-int MainWindow::RunMessageLoop() {
+// Runs the standard Win32 message loop until the window closes.
+int MainWindow::RunMessageLoop()
+{
     MSG msg = {};
-    while (GetMessage(&msg, nullptr, 0, 0)) {
+    while (GetMessage(&msg, nullptr, 0, 0))
+    {
         TranslateMessage(&msg);
         DispatchMessage(&msg);
     }
     return static_cast<int>(msg.wParam);
 }
 
-LRESULT CALLBACK MainWindow::WindowProcStatic(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
+// Win32-mandated free-function thunk: recovers the MainWindow instance via GWLP_USERDATA and forwards to HandleMessage.
+LRESULT CALLBACK MainWindow::WindowProcStatic(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
+{
     MainWindow* self = nullptr;
 
-    if (message == WM_NCCREATE) {
+    if (message == WM_NCCREATE)
+    {
         CREATESTRUCTW* cs = reinterpret_cast<CREATESTRUCTW*>(lParam);
         self = reinterpret_cast<MainWindow*>(cs->lpCreateParams);
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
-    } else {
+    }
+    else
+    {
         self = reinterpret_cast<MainWindow*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
     }
 
-    if (self) {
+    if (self)
+    {
         return self->HandleMessage(hwnd, message, wParam, lParam);
     }
     return DefWindowProcW(hwnd, message, wParam, lParam);
 }
 
-LRESULT MainWindow::HandleMessage(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
-    switch (message) {
+// Dispatches a window message to the matching On* handler.
+LRESULT MainWindow::HandleMessage(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
+{
+    switch (message)
+    {
         case WM_CREATE:
             OnCreate(hwnd);
             return 0;
@@ -100,7 +117,8 @@ LRESULT MainWindow::HandleMessage(HWND hwnd, UINT message, WPARAM wParam, LPARAM
             OnCommand(hwnd, LOWORD(wParam));
             return 0;
         case WM_TIMER:
-            if (m_beatScroller.OnTimer(wParam)) {
+            if (m_beatScroller.OnTimer(wParam))
+            {
                 return 0;
             }
             break;
@@ -117,7 +135,9 @@ LRESULT MainWindow::HandleMessage(HWND hwnd, UINT message, WPARAM wParam, LPARAM
     return DefWindowProcW(hwnd, message, wParam, lParam);
 }
 
-void MainWindow::OnCreate(HWND hwnd) {
+// Creates all child controls and the beat-scroller lane, then loads saved settings.
+void MainWindow::OnCreate(HWND hwnd)
+{
     m_hwnd = hwnd;
     m_beatScroller.Attach(hwnd);
 
@@ -132,7 +152,8 @@ void MainWindow::OnCreate(HWND hwnd) {
     );
     SendMessageW(hGroupBox, WM_SETFONT, (WPARAM)hFont, TRUE);
 
-    for (int i = 0; i < kTrackCount; ++i) {
+    for (int i = 0; i < kTrackCount; ++i)
+    {
         int rowY = kGroupBoxTop + kRowTopInGroupBox + i * kRowHeight;
 
         HWND hLabel = CreateWindowExW(
@@ -210,33 +231,42 @@ void MainWindow::OnCreate(HWND hwnd) {
     );
     SendMessageW(hButtonPlay, WM_SETFONT, (WPARAM)hFont, TRUE);
 
-    m_audioPlayer.SetTrackStateCallback([hwnd](int trackIndex, bool isPlaying) {
+    m_audioPlayer.SetTrackStateCallback([hwnd](int trackIndex, bool isPlaying)
+    {
         PostMessageW(hwnd, WM_APP_TRACK_STATE, static_cast<WPARAM>(trackIndex), static_cast<LPARAM>(isPlaying));
     });
 
     LoadTracksIntoUi();
 }
 
-void MainWindow::OnCommand(HWND hwnd, int controlId) {
-    if (controlId >= IDC_BUTTON_BROWSE_BASE && controlId < IDC_BUTTON_BROWSE_BASE + kTrackCount) {
+// Routes a WM_COMMAND control ID to the Browse or Play handler.
+void MainWindow::OnCommand(HWND hwnd, int controlId)
+{
+    if (controlId >= IDC_BUTTON_BROWSE_BASE && controlId < IDC_BUTTON_BROWSE_BASE + kTrackCount)
+    {
         BrowseForAudioFile(hwnd, controlId - IDC_BUTTON_BROWSE_BASE);
         return;
     }
 
-    if (controlId == IDC_BUTTON_PLAY) {
+    if (controlId == IDC_BUTTON_PLAY)
+    {
         PlayAllTracks(hwnd);
         return;
     }
 }
 
-void MainWindow::OnDestroy() {
+// Saves settings, stops playback/animation, and quits the message loop.
+void MainWindow::OnDestroy()
+{
     SaveTracksFromUi();
     m_audioPlayer.Stop();
     m_beatScroller.Stop();
     PostQuitMessage(0);
 }
 
-void MainWindow::OnPaint(HWND hwnd) {
+// Repaints the background and the beat-scroller.
+void MainWindow::OnPaint(HWND hwnd)
+{
     PAINTSTRUCT ps;
     HDC hdc = BeginPaint(hwnd, &ps);
     FillRect(hdc, &ps.rcPaint, (HBRUSH)(COLOR_WINDOW + 1));
@@ -244,18 +274,25 @@ void MainWindow::OnPaint(HWND hwnd) {
     EndPaint(hwnd, &ps);
 }
 
-void MainWindow::OnTrackStateChanged(int trackIndex, bool isPlaying) {
-    if (isPlaying) {
+// Starts or stops the beat-scroller animation in response to AudioPlayer's callback.
+void MainWindow::OnTrackStateChanged(int trackIndex, bool isPlaying)
+{
+    if (isPlaying)
+    {
         wchar_t bpmText[16] = L"";
         GetWindowTextW(m_hEditBpm[trackIndex], bpmText, 16);
         int bpm = _wtoi(bpmText);
         m_beatScroller.Start(bpm < 1 ? 1 : bpm);
-    } else {
+    }
+    else
+    {
         m_beatScroller.Stop();
     }
 }
 
-void MainWindow::BrowseForAudioFile(HWND hwnd, int trackIndex) {
+// Opens the audio file picker and stores the chosen path in the given row.
+void MainWindow::BrowseForAudioFile(HWND hwnd, int trackIndex)
+{
     wchar_t szFile[MAX_PATH] = L"";
 
     OPENFILENAMEW ofn = {};
@@ -268,25 +305,31 @@ void MainWindow::BrowseForAudioFile(HWND hwnd, int trackIndex) {
     ofn.lpstrDefExt = L"wav";
     ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_EXPLORER;
 
-    if (GetOpenFileNameW(&ofn)) {
+    if (GetOpenFileNameW(&ofn))
+    {
         SetWindowTextW(m_hEditFilePath[trackIndex], szFile);
     }
 }
 
-void MainWindow::PlayAllTracks(HWND hwnd) {
+// Reads all tracks from the UI and starts playing the non-empty ones.
+void MainWindow::PlayAllTracks(HWND hwnd)
+{
     std::vector<MusicTrack> tracks;
     tracks.reserve(kTrackCount);
     bool anySelected = false;
 
-    for (int i = 0; i < kTrackCount; ++i) {
+    for (int i = 0; i < kTrackCount; ++i)
+    {
         MusicTrack track = ReadTrackFromUi(i);
-        if (!track.filePath.empty()) {
+        if (!track.filePath.empty())
+        {
             anySelected = true;
         }
         tracks.push_back(std::move(track));
     }
 
-    if (!anySelected) {
+    if (!anySelected)
+    {
         MessageBoxW(hwnd, L"Please select at least one audio file.", kWindowTitle, MB_OK | MB_ICONINFORMATION);
         return;
     }
@@ -294,24 +337,32 @@ void MainWindow::PlayAllTracks(HWND hwnd) {
     m_audioPlayer.PlayAll(std::move(tracks));
 }
 
-void MainWindow::LoadTracksIntoUi() {
+// Loads saved tracks from Settings into the UI controls.
+void MainWindow::LoadTracksIntoUi()
+{
     std::array<MusicTrack, kTrackCount> tracks = m_settings.Load();
-    for (int i = 0; i < kTrackCount; ++i) {
+    for (int i = 0; i < kTrackCount; ++i)
+    {
         SetWindowTextW(m_hEditFilePath[i], tracks[i].filePath.c_str());
         SetWindowTextW(m_hEditRepeatCount[i], std::to_wstring(tracks[i].repeatCount).c_str());
         SetWindowTextW(m_hEditBpm[i], std::to_wstring(tracks[i].bpm).c_str());
     }
 }
 
-void MainWindow::SaveTracksFromUi() {
+// Reads the current UI state and saves it via Settings.
+void MainWindow::SaveTracksFromUi()
+{
     std::array<MusicTrack, kTrackCount> tracks;
-    for (int i = 0; i < kTrackCount; ++i) {
+    for (int i = 0; i < kTrackCount; ++i)
+    {
         tracks[i] = ReadTrackFromUi(i);
     }
     m_settings.Save(tracks);
 }
 
-MusicTrack MainWindow::ReadTrackFromUi(int trackIndex) const {
+// Reads one row's controls into a MusicTrack, clamping repeat count and BPM to >= 1.
+MusicTrack MainWindow::ReadTrackFromUi(int trackIndex) const
+{
     MusicTrack track;
 
     wchar_t path[MAX_PATH] = L"";

@@ -4,9 +4,12 @@
 
 #include <string>
 
-namespace {
+namespace
+{
 
-std::wstring GetSettingsFilePath() {
+// Returns the path to settings.ini under %APPDATA%\Rhythm, creating the folder if needed.
+std::wstring GetSettingsFilePath()
+{
     wchar_t appDataDir[MAX_PATH] = L"";
     GetEnvironmentVariableW(L"APPDATA", appDataDir, MAX_PATH);
 
@@ -18,11 +21,14 @@ std::wstring GetSettingsFilePath() {
 
 } // namespace
 
-std::array<MusicTrack, kTrackCount> Settings::Load() {
+// Reads saved tracks from disk, defaulting any missing values.
+std::array<MusicTrack, kTrackCount> Settings::Load()
+{
     std::array<MusicTrack, kTrackCount> tracks;
     std::wstring iniPath = GetSettingsFilePath();
 
-    for (int i = 0; i < kTrackCount; ++i) {
+    for (int i = 0; i < kTrackCount; ++i)
+    {
         wchar_t fileKey[16];
         wsprintfW(fileKey, L"File%d", i);
         wchar_t countKey[16];
@@ -44,10 +50,13 @@ std::array<MusicTrack, kTrackCount> Settings::Load() {
     return tracks;
 }
 
-void Settings::Save(const std::array<MusicTrack, kTrackCount>& tracks) {
+// Writes the given tracks to disk, overwriting any previous save.
+void Settings::Save(const std::array<MusicTrack, kTrackCount>& tracks)
+{
     std::wstring iniPath = GetSettingsFilePath();
 
-    for (int i = 0; i < kTrackCount; ++i) {
+    for (int i = 0; i < kTrackCount; ++i)
+    {
         wchar_t fileKey[16];
         wsprintfW(fileKey, L"File%d", i);
         wchar_t countKey[16];

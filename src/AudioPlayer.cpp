@@ -6,11 +6,14 @@
 #include <algorithm>
 #include <string>
 
-namespace {
+namespace
+{
 
 constexpr DWORD kStatusPollIntervalMs = 50;
 
-std::wstring MakeAlias(int slotIndex) {
+// Builds the per-slot MCI alias used to address a track's device.
+std::wstring MakeAlias(int slotIndex)
+{
     wchar_t alias[32];
     wsprintfW(alias, L"rhythmtrack%d", slotIndex);
     return alias;
@@ -18,20 +21,28 @@ std::wstring MakeAlias(int slotIndex) {
 
 } // namespace
 
-AudioPlayer::~AudioPlayer() {
+// Ensures all playback threads are stopped and joined before destruction.
+AudioPlayer::~AudioPlayer()
+{
     Stop();
 }
 
-void AudioPlayer::SetTrackStateCallback(TrackStateCallback callback) {
+// Registers the callback invoked (from a background thread) when a track starts or stops playing.
+void AudioPlayer::SetTrackStateCallback(TrackStateCallback callback)
+{
     m_onTrackStateChanged = std::move(callback);
 }
 
-bool AudioPlayer::PlayAll(std::vector<MusicTrack> tracks) {
+// Stops any current playback, then spawns one thread per non-empty track so they play concurrently.
+bool AudioPlayer::PlayAll(std::vector<MusicTrack> tracks)
+{
     Stop();
 
     m_stopRequested = false;
-    for (size_t i = 0; i < tracks.size(); ++i) {
-        if (tracks[i].filePath.empty()) {
+    for (size_t i = 0; i < tracks.size(); ++i)
+    {
+        if (tracks[i].filePath.empty())
+        {
             continue;
         }
         m_threads.emplace_back(&AudioPlayer::PlayTrackThreadProc, this, tracks[i], static_cast<int>(i));
@@ -39,17 +50,21 @@ bool AudioPlayer::PlayAll(std::vector<MusicTrack> tracks) {
     return true;
 }
 
-void AudioPlayer::PlayTrackThreadProc(MusicTrack track, int slotIndex) {
+// Background-thread body: opens one track's MCI device, plays it repeatCount times, then closes it.
+void AudioPlayer::PlayTrackThreadProc(MusicTrack track, int slotIndex)
+{
     std::wstring alias = MakeAlias(slotIndex);
 
     // No explicit "type" here: MCI resolves the device driver from the file's
     // extension (waveaudio for .wav, mciqtz32/DirectShow for .mp3 and others).
     std::wstring openCmd = L"open \"" + track.filePath + L"\" alias " + alias;
-    if (mciSendStringW(openCmd.c_str(), nullptr, 0, nullptr) != 0) {
+    if (mciSendStringW(openCmd.c_str(), nullptr, 0, nullptr) != 0)
+    {
         return;
     }
 
-    if (m_onTrackStateChanged) {
+    if (m_onTrackStateChanged)
+    {
         m_onTrackStateChanged(slotIndex, true);
     }
 
@@ -61,15 +76,19 @@ void AudioPlayer::PlayTrackThreadProc(MusicTrack track, int slotIndex) {
     // thread, which stalls shutdown for the length of the track. Polling our
     // own stop flag keeps Stop() responsive regardless of the backing driver.
     int repeatCount = std::max(track.repeatCount, 1);
-    for (int i = 0; i < repeatCount && !m_stopRequested; ++i) {
+    for (int i = 0; i < repeatCount && !m_stopRequested; ++i)
+    {
         mciSendStringW(playCmd.c_str(), nullptr, 0, nullptr);
 
         wchar_t statusBuf[64] = L"";
-        while (!m_stopRequested) {
-            if (mciSendStringW(statusCmd.c_str(), statusBuf, 64, nullptr) != 0) {
+        while (!m_stopRequested)
+        {
+            if (mciSendStringW(statusCmd.c_str(), statusBuf, 64, nullptr) != 0)
+            {
                 break;
             }
-            if (wcscmp(statusBuf, L"playing") != 0) {
+            if (wcscmp(statusBuf, L"playing") != 0)
+            {
                 break;
             }
             Sleep(kStatusPollIntervalMs);
@@ -81,16 +100,21 @@ void AudioPlayer::PlayTrackThreadProc(MusicTrack track, int slotIndex) {
     std::wstring closeCmd = L"close " + alias;
     mciSendStringW(closeCmd.c_str(), nullptr, 0, nullptr);
 
-    if (m_onTrackStateChanged) {
+    if (m_onTrackStateChanged)
+    {
         m_onTrackStateChanged(slotIndex, false);
     }
 }
 
-void AudioPlayer::Stop() {
+// Signals all playback threads to stop and blocks until they've exited.
+void AudioPlayer::Stop()
+{
     m_stopRequested = true;
 
-    for (std::thread& t : m_threads) {
-        if (t.joinable()) {
+    for (std::thread& t : m_threads)
+    {
+        if (t.joinable())
+        {
             t.join();
         }
     }

@@ -2,7 +2,8 @@
 
 #include <algorithm>
 
-namespace {
+namespace
+{
 
 constexpr UINT_PTR kSpawnTimerId = 300;
 constexpr UINT_PTR kFrameTimerId = 301;
@@ -14,20 +15,28 @@ constexpr double kLineFraction = 0.25;
 
 } // namespace
 
-void BeatScroller::Attach(HWND hwnd) {
+// Stores the window that owns this scroller's timers and repaints.
+void BeatScroller::Attach(HWND hwnd)
+{
     m_hwnd = hwnd;
 }
 
-void BeatScroller::SetLaneRect(RECT rect) {
+// Sets the screen-space rect the lane is drawn and animated within.
+void BeatScroller::SetLaneRect(RECT rect)
+{
     m_laneRect = rect;
 }
 
-int BeatScroller::GetLineX() const {
+// Returns the x-coordinate of the vertical line within the lane.
+int BeatScroller::GetLineX() const
+{
     int width = m_laneRect.right - m_laneRect.left;
     return m_laneRect.left + static_cast<int>(width * kLineFraction);
 }
 
-void BeatScroller::Start(int bpm) {
+// Begins spawning and animating dots at the given beats-per-minute rate.
+void BeatScroller::Start(int bpm)
+{
     bpm = std::max(bpm, 1);
     double beatPeriodMs = 60000.0 / bpm;
 
@@ -50,7 +59,9 @@ void BeatScroller::Start(int bpm) {
     InvalidateRect(m_hwnd, &m_laneRect, FALSE);
 }
 
-void BeatScroller::Stop() {
+// Stops animating and clears all dots.
+void BeatScroller::Stop()
+{
     KillTimer(m_hwnd, kSpawnTimerId);
     KillTimer(m_hwnd, kFrameTimerId);
     m_isPlaying = false;
@@ -58,22 +69,31 @@ void BeatScroller::Stop() {
     InvalidateRect(m_hwnd, &m_laneRect, FALSE);
 }
 
-void BeatScroller::SpawnDot() {
+// Records a new dot starting its journey from the right edge now.
+void BeatScroller::SpawnDot()
+{
     m_dotSpawnTimes.push_back(GetTickCount());
 }
 
-bool BeatScroller::OnTimer(WPARAM timerId) {
-    if (timerId == kSpawnTimerId) {
+// Handles a WM_TIMER tick; returns true if it belonged to this scroller.
+bool BeatScroller::OnTimer(WPARAM timerId)
+{
+    if (timerId == kSpawnTimerId)
+    {
         SpawnDot();
         return true;
     }
 
-    if (timerId == kFrameTimerId) {
+    if (timerId == kFrameTimerId)
+    {
         DWORD now = GetTickCount();
         DWORD lifetime = m_dotLifetimeMs;
         m_dotSpawnTimes.erase(
             std::remove_if(m_dotSpawnTimes.begin(), m_dotSpawnTimes.end(),
-                            [now, lifetime](DWORD spawnTime) { return now - spawnTime > lifetime; }),
+                            [now, lifetime](DWORD spawnTime)
+                            {
+                                return now - spawnTime > lifetime;
+                            }),
             m_dotSpawnTimes.end());
         InvalidateRect(m_hwnd, &m_laneRect, FALSE);
         return true;
@@ -82,7 +102,9 @@ bool BeatScroller::OnTimer(WPARAM timerId) {
     return false;
 }
 
-void BeatScroller::Draw(HDC hdc) const {
+// Paints the lane, its line, and all currently visible dots.
+void BeatScroller::Draw(HDC hdc) const
+{
     HBRUSH laneBrush = CreateSolidBrush(RGB(245, 245, 245));
     FillRect(hdc, &m_laneRect, laneBrush);
     DeleteObject(laneBrush);
@@ -96,17 +118,20 @@ void BeatScroller::Draw(HDC hdc) const {
     SelectObject(hdc, oldPen);
     DeleteObject(linePen);
 
-    if (m_isPlaying) {
+    if (m_isPlaying)
+    {
         DWORD now = GetTickCount();
         int centerY = (m_laneRect.top + m_laneRect.bottom) / 2;
 
         HBRUSH dotBrush = CreateSolidBrush(RGB(0, 100, 220));
         HBRUSH oldBrush = (HBRUSH)SelectObject(hdc, dotBrush);
 
-        for (DWORD spawnTime : m_dotSpawnTimes) {
+        for (DWORD spawnTime : m_dotSpawnTimes)
+        {
             DWORD elapsed = now - spawnTime;
             int x = m_laneRect.right - static_cast<int>(m_speedPxPerMs * elapsed);
-            if (x < m_laneRect.left - kDotRadius || x > m_laneRect.right + kDotRadius) {
+            if (x < m_laneRect.left - kDotRadius || x > m_laneRect.right + kDotRadius)
+            {
                 continue;
             }
             Ellipse(hdc, x - kDotRadius, centerY - kDotRadius, x + kDotRadius, centerY + kDotRadius);
