@@ -16,6 +16,8 @@ struct ChartInstrument
     double spanBeats = 4.0;
     int hitsRequired = 16;
     double toleranceMs = 120.0;
+    double initVolume = 1.0; // volume while the player is still learning this instrument
+    double volume = 1.0;     // volume once it's locked in and looping automatically
 };
 
 // A full song: tempo/time signature plus an ordered list of instruments,

@@ -124,6 +124,10 @@ void GameSession::Update()
             if (m_clock.ElapsedSeconds() >= m_pendingAdvanceAtSeconds)
             {
                 m_hasPendingAdvance = false;
+
+                const ChartInstrument& finishedInstrument = m_song.instruments[m_currentInstrumentIndex];
+                m_audioEngine.SetVolume(m_stemHandles[m_currentInstrumentIndex], static_cast<float>(finishedInstrument.volume));
+
                 int nextIndex = m_currentInstrumentIndex + 1;
                 if (nextIndex < static_cast<int>(m_song.instruments.size()))
                 {
@@ -241,10 +245,11 @@ void GameSession::RegisterHit()
 
     if (!m_loopIsPlaying)
     {
+        const ChartInstrument& instrument = m_song.instruments[m_currentInstrumentIndex];
         int handle = m_stemHandles[m_currentInstrumentIndex];
         double stemDuration = m_audioEngine.GetStemDurationSeconds(handle);
         double phaseSeconds = stemDuration > 0.0 ? std::fmod(m_clock.ElapsedSeconds(), stemDuration) : 0.0;
-        m_audioEngine.StartLooping(handle, phaseSeconds);
+        m_audioEngine.StartLooping(handle, phaseSeconds, static_cast<float>(instrument.initVolume));
         m_loopIsPlaying = true;
     }
 }

@@ -287,6 +287,14 @@ bool ChartFile::Load(const std::wstring& chartFilePath, ChartSong& outSong)
             {
                 currentInstrument.toleranceMs = std::stod(value);
             }
+            else if (key == L"init_volume")
+            {
+                currentInstrument.initVolume = std::stod(value);
+            }
+            else if (key == L"volume")
+            {
+                currentInstrument.volume = std::stod(value);
+            }
         }
     }
 

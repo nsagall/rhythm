@@ -27,13 +27,15 @@ enum class JudgementResult
 
 // Drives the progressive "learn one instrument at a time" gameplay loop:
 // judges taps against the current instrument's pattern (via SongClock).
-// Each instrument's loop starts playing (phase-aligned to the beat grid)
-// on the player's first correct tap, stops after 3 consecutive misses,
-// and once a streak of accurate taps reaches the chart's threshold, that
-// instrument locks in (its loop just keeps playing). The next instrument
-// isn't introduced immediately - it waits until the locked-in instrument's
-// stem file completes its current playthrough and wraps back to its
-// start, so new instruments only ever join at the beginning of a loop.
+// Each instrument's loop starts playing (phase-aligned to the beat grid,
+// at the chart's init_volume) on the player's first correct tap, stops
+// after 3 consecutive misses, and once a streak of accurate taps reaches
+// the chart's threshold, that instrument locks in (its loop just keeps
+// playing). The next instrument isn't introduced immediately - it waits
+// until the locked-in instrument's stem file completes its current
+// playthrough and wraps back to its start, so new instruments only ever
+// join at the beginning of a loop; at that same moment the instrument
+// that just locked in switches from init_volume to its chart volume.
 // UI-agnostic - knows nothing about HWNDs or input devices.
 class GameSession
 {
@@ -72,7 +74,7 @@ private:
     void BeginLearning(int instrumentIndex);
 
     // Records a hit: advances the streak, resets the miss counter, and
-    // starts this instrument's loop (phase-aligned) if it isn't already playing.
+    // starts this instrument's loop (phase-aligned, at init_volume) if it isn't already playing.
     void RegisterHit();
 
     // Records a miss: resets the streak, and stops this instrument's loop after 3 in a row.
@@ -85,8 +87,9 @@ private:
     double NextOnsetAfter(double afterBeat, const ChartInstrument& instrument) const;
 
     // Called once the current instrument's streak requirement is met: schedules
-    // the advance to the next instrument (or Complete) for the next time the
-    // current instrument's stem wraps back to the start of a playthrough.
+    // the advance to the next instrument (or Complete), and the switch from
+    // init_volume to volume, for the next time the current instrument's stem
+    // wraps back to the start of a playthrough.
     void SchedulePendingAdvance();
 
     AudioEngine& m_audioEngine;

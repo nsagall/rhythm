@@ -1,0 +1,20 @@
+[song]
+title = Volume Test
+bpm = 100
+time_signature = 4/4
+
+[instrument]
+name = Bass Drum
+file = stems\bass_drum.wav
+pattern = quarter
+hits_required = 4
+tolerance_ms = 150
+init_volume = 0.3
+volume = 1.0
+
+[instrument]
+name = Snare
+file = stems\snare.wav
+pattern = quarter every:2 offset:1
+hits_required = 4
+tolerance_ms = 150

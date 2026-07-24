@@ -178,7 +178,7 @@ int AudioEngine::LoadStem(const std::wstring& wavFilePath)
 }
 
 // Starts a loaded stem looping seamlessly, seeking to phaseSeconds so it enters in time with the beat grid.
-void AudioEngine::StartLooping(int stemHandle, double phaseSeconds)
+void AudioEngine::StartLooping(int stemHandle, double phaseSeconds, float volume)
 {
     if (stemHandle < 0 || stemHandle >= static_cast<int>(m_stems.size()))
     {
@@ -224,6 +224,7 @@ void AudioEngine::StartLooping(int stemHandle, double phaseSeconds)
     buffer.LoopLength = 0;
     buffer.LoopCount = XAUDIO2_LOOP_INFINITE;
 
+    stem.voice->SetVolume(volume);
     stem.voice->SubmitSourceBuffer(&buffer);
     stem.voice->Start();
 
@@ -232,6 +233,21 @@ void AudioEngine::StartLooping(int stemHandle, double phaseSeconds)
     XAUDIO2_VOICE_STATE state{};
     stem.voice->GetState(&state);
     stem.loopStartSampleBaseline = state.SamplesPlayed;
+}
+
+// Changes the volume of an already-playing (or not-yet-playing) stem without otherwise affecting playback.
+void AudioEngine::SetVolume(int stemHandle, float volume)
+{
+    if (stemHandle < 0 || stemHandle >= static_cast<int>(m_stems.size()))
+    {
+        return;
+    }
+
+    Stem& stem = m_stems[stemHandle];
+    if (stem.voice)
+    {
+        stem.voice->SetVolume(volume);
+    }
 }
 
 // Stops a single stem.

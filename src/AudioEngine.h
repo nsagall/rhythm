@@ -26,11 +26,16 @@ public:
     // stem handle, or -1 on failure (missing file or unsupported format).
     int LoadStem(const std::wstring& wavFilePath);
 
-    // Starts a loaded stem looping seamlessly. Plays once from
-    // phaseSeconds to the end of the buffer, then loops the whole buffer
-    // forever after - so a loop starting mid-song enters exactly in time
-    // rather than restarting from the beginning out of phase.
-    void StartLooping(int stemHandle, double phaseSeconds = 0.0);
+    // Starts a loaded stem looping seamlessly, at the given volume (1.0 =
+    // unity gain). Plays once from phaseSeconds to the end of the buffer,
+    // then loops the whole buffer forever after - so a loop starting
+    // mid-song enters exactly in time rather than restarting from the
+    // beginning out of phase.
+    void StartLooping(int stemHandle, double phaseSeconds = 0.0, float volume = 1.0f);
+
+    // Changes the volume of an already-playing (or not-yet-playing) stem
+    // without otherwise affecting playback (1.0 = unity gain).
+    void SetVolume(int stemHandle, float volume);
 
     // Stops a single stem.
     void Stop(int stemHandle);
