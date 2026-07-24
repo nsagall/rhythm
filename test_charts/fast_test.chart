@@ -1,0 +1,11 @@
+[song]
+title = Fast Test
+bpm = 125.28
+time_signature = 4/4
+
+[instrument]
+name = FastHat
+file = stems\hihat.wav
+pattern = eighth
+hits_required = 6
+tolerance_ms = 150

@@ -110,7 +110,12 @@ LRESULT CALLBACK MainWindow::TapButtonProcStatic(HWND hwnd, UINT message, WPARAM
 {
     MainWindow* self = reinterpret_cast<MainWindow*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
 
-    if (self && message == WM_LBUTTONDOWN)
+    // The standard BUTTON class has CS_DBLCLKS set, so a second click that
+    // lands within the system's double-click time (rapid taps for a fast
+    // pattern easily do) arrives as WM_LBUTTONDBLCLK instead of a second
+    // WM_LBUTTONDOWN - without handling it too, every other fast tap would
+    // be silently dropped.
+    if (self && (message == WM_LBUTTONDOWN || message == WM_LBUTTONDBLCLK))
     {
         self->RegisterTap();
     }
