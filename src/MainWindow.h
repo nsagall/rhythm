@@ -26,6 +26,13 @@ private:
     // via GWLP_USERDATA and forwards to HandleMessage.
     static LRESULT CALLBACK WindowProcStatic(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
 
+    // Subclass proc for the Tap button: registers the tap on WM_LBUTTONDOWN
+    // (the moment of physical press) instead of the button's default
+    // BN_CLICKED, which only fires on release - for a rhythm input, judging
+    // at release adds the user's full press-to-release dwell time as extra
+    // latency, which is often enough to miss the tolerance window entirely.
+    static LRESULT CALLBACK TapButtonProcStatic(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
+
     // Dispatches a window message to the matching On* handler.
     LRESULT HandleMessage(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
 
@@ -58,6 +65,7 @@ private:
     HWND m_hEditChartPath = nullptr;
     HWND m_hButtonStart = nullptr;
     HWND m_hButtonTap = nullptr;
+    WNDPROC m_originalTapButtonProc = nullptr;
 
     AudioEngine m_audioEngine;
     GameSession m_gameSession;

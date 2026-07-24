@@ -105,6 +105,23 @@ LRESULT CALLBACK MainWindow::WindowProcStatic(HWND hwnd, UINT message, WPARAM wP
     return DefWindowProcW(hwnd, message, wParam, lParam);
 }
 
+// Subclass proc for the Tap button: registers the tap on WM_LBUTTONDOWN (press) instead of waiting for BN_CLICKED (release).
+LRESULT CALLBACK MainWindow::TapButtonProcStatic(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
+{
+    MainWindow* self = reinterpret_cast<MainWindow*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+
+    if (self && message == WM_LBUTTONDOWN)
+    {
+        self->RegisterTap();
+    }
+
+    if (self && self->m_originalTapButtonProc)
+    {
+        return CallWindowProcW(self->m_originalTapButtonProc, hwnd, message, wParam, lParam);
+    }
+    return DefWindowProcW(hwnd, message, wParam, lParam);
+}
+
 // Dispatches a window message to the matching On* handler.
 LRESULT MainWindow::HandleMessage(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
@@ -184,6 +201,9 @@ void MainWindow::OnCreate(HWND hwnd)
         hwnd, (HMENU)(INT_PTR)IDC_BUTTON_TAP, nullptr, nullptr
     );
     SendMessageW(m_hButtonTap, WM_SETFONT, (WPARAM)hFont, TRUE);
+    SetWindowLongPtrW(m_hButtonTap, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
+    m_originalTapButtonProc = reinterpret_cast<WNDPROC>(
+        SetWindowLongPtrW(m_hButtonTap, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(&MainWindow::TapButtonProcStatic)));
 
     if (!m_audioEngine.Initialize())
     {
@@ -219,8 +239,10 @@ void MainWindow::OnCommand(HWND hwnd, int controlId)
 
     if (controlId == IDC_BUTTON_TAP)
     {
-        RegisterTap();
-        SetFocus(hwnd); // same reason as above - keep spacebar taps working after clicking Tap
+        // The tap itself is registered on press, in TapButtonProcStatic (WM_LBUTTONDOWN) -
+        // BN_CLICKED only fires on release, which would add the user's press-to-release
+        // dwell time as extra latency. This just restores focus for subsequent spacebar taps.
+        SetFocus(hwnd);
         return;
     }
 }
