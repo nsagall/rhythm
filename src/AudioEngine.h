@@ -41,6 +41,11 @@ public:
     // Returns how many seconds of audio have played for a stem, for clock resync.
     double GetPositionSeconds(int stemHandle) const;
 
+    // Returns a stem's total duration in seconds, measured from its actual
+    // loaded audio data (not any chart-declared value) - the ground truth
+    // for "one complete loop" of that stem.
+    double GetStemDurationSeconds(int stemHandle) const;
+
 private:
     struct Stem
     {
@@ -49,6 +54,9 @@ private:
         WAVEFORMATEX format{};
         UINT64 loopStartSampleBaseline = 0;
     };
+
+    // Returns a stem's total length in sample frames, derived from its PCM data size.
+    static UINT32 GetTotalFrames(const Stem& stem);
 
     IXAudio2* m_xaudio2 = nullptr;
     IXAudio2MasteringVoice* m_masteringVoice = nullptr;

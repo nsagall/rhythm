@@ -44,6 +44,7 @@ bool GameSession::LoadChart(const std::wstring& chartFilePath)
     m_streak = 0;
     m_consecutiveMisses = 0;
     m_loopIsPlaying = false;
+    m_hasPendingAdvance = false;
     m_lastJudgement = JudgementResult::None;
     return true;
 }
@@ -68,13 +69,14 @@ void GameSession::Stop()
     m_streak = 0;
     m_consecutiveMisses = 0;
     m_loopIsPlaying = false;
+    m_hasPendingAdvance = false;
     m_lastJudgement = JudgementResult::None;
 }
 
-// Registers a tap at the current moment; judges it if an instrument is being learned.
+// Registers a tap at the current moment; judges it if an instrument is still being learned.
 void GameSession::OnTap()
 {
-    if (m_phase != GamePhase::Learning)
+    if (m_phase != GamePhase::Learning || m_hasPendingAdvance)
     {
         return;
     }
@@ -93,15 +95,7 @@ void GameSession::OnTap()
 
         if (m_streak >= instrument.hitsRequired)
         {
-            int nextIndex = m_currentInstrumentIndex + 1;
-            if (nextIndex < static_cast<int>(m_song.instruments.size()))
-            {
-                BeginLearning(nextIndex);
-            }
-            else
-            {
-                m_phase = GamePhase::Complete;
-            }
+            SchedulePendingAdvance();
         }
     }
     else
@@ -125,6 +119,24 @@ void GameSession::Update()
 
     if (m_phase == GamePhase::Learning)
     {
+        if (m_hasPendingAdvance)
+        {
+            if (m_clock.ElapsedSeconds() >= m_pendingAdvanceAtSeconds)
+            {
+                m_hasPendingAdvance = false;
+                int nextIndex = m_currentInstrumentIndex + 1;
+                if (nextIndex < static_cast<int>(m_song.instruments.size()))
+                {
+                    BeginLearning(nextIndex);
+                }
+                else
+                {
+                    m_phase = GamePhase::Complete;
+                }
+            }
+            return;
+        }
+
         const ChartInstrument& instrument = m_song.instruments[m_currentInstrumentIndex];
         double secondsPerBeat = 60.0 / m_song.bpm;
         double onsetSeconds = m_nextExpectedOnsetBeat * secondsPerBeat;
@@ -195,10 +207,30 @@ void GameSession::BeginLearning(int instrumentIndex)
     m_streak = 0;
     m_consecutiveMisses = 0;
     m_loopIsPlaying = false;
+    m_hasPendingAdvance = false;
     m_phase = GamePhase::Learning;
 
     const ChartInstrument& instrument = m_song.instruments[instrumentIndex];
     m_nextExpectedOnsetBeat = NextOnsetAfter(m_clock.BeatPosition() - 1e-6, instrument);
+}
+
+// Called once the current instrument's streak requirement is met: schedules the advance to the
+// next instrument (or Complete) for the next time the current instrument's stem wraps back to
+// the start of a playthrough, using the stem's own measured duration as the loop length.
+void GameSession::SchedulePendingAdvance()
+{
+    double stemDuration = m_audioEngine.GetStemDurationSeconds(m_stemHandles[m_currentInstrumentIndex]);
+    double nowSeconds = m_clock.ElapsedSeconds();
+
+    if (stemDuration <= 0.0)
+    {
+        m_pendingAdvanceAtSeconds = nowSeconds;
+    }
+    else
+    {
+        m_pendingAdvanceAtSeconds = std::ceil(nowSeconds / stemDuration) * stemDuration;
+    }
+    m_hasPendingAdvance = true;
 }
 
 // Records a hit: advances the streak, resets the miss counter, and starts this instrument's loop (phase-aligned) if it isn't already playing.

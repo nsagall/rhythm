@@ -194,7 +194,7 @@ void AudioEngine::StartLooping(int stemHandle, double phaseSeconds)
     stem.voice->Stop();
     stem.voice->FlushSourceBuffers();
 
-    UINT32 totalFrames = static_cast<UINT32>(stem.pcmData.size() / stem.format.nBlockAlign);
+    UINT32 totalFrames = GetTotalFrames(stem);
     UINT32 startFrame = 0;
     if (totalFrames > 0 && stem.format.nSamplesPerSec > 0)
     {
@@ -281,4 +281,31 @@ double AudioEngine::GetPositionSeconds(int stemHandle) const
     stem.voice->GetState(&state);
     UINT64 samplesSinceLoopStart = state.SamplesPlayed - stem.loopStartSampleBaseline;
     return static_cast<double>(samplesSinceLoopStart) / stem.format.nSamplesPerSec;
+}
+
+// Returns a stem's total duration in seconds, measured from its actual loaded audio data.
+double AudioEngine::GetStemDurationSeconds(int stemHandle) const
+{
+    if (stemHandle < 0 || stemHandle >= static_cast<int>(m_stems.size()))
+    {
+        return 0.0;
+    }
+
+    const Stem& stem = m_stems[stemHandle];
+    if (stem.format.nSamplesPerSec == 0)
+    {
+        return 0.0;
+    }
+
+    return static_cast<double>(GetTotalFrames(stem)) / stem.format.nSamplesPerSec;
+}
+
+// Returns a stem's total length in sample frames, derived from its PCM data size.
+UINT32 AudioEngine::GetTotalFrames(const Stem& stem)
+{
+    if (stem.format.nBlockAlign == 0)
+    {
+        return 0;
+    }
+    return static_cast<UINT32>(stem.pcmData.size() / stem.format.nBlockAlign);
 }

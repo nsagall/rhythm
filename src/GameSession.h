@@ -30,9 +30,11 @@ enum class JudgementResult
 // Each instrument's loop starts playing (phase-aligned to the beat grid)
 // on the player's first correct tap, stops after 3 consecutive misses,
 // and once a streak of accurate taps reaches the chart's threshold, that
-// instrument locks in (its loop just keeps playing) and the next
-// instrument is introduced. UI-agnostic - knows nothing about HWNDs or
-// input devices.
+// instrument locks in (its loop just keeps playing). The next instrument
+// isn't introduced immediately - it waits until the locked-in instrument's
+// stem file completes its current playthrough and wraps back to its
+// start, so new instruments only ever join at the beginning of a loop.
+// UI-agnostic - knows nothing about HWNDs or input devices.
 class GameSession
 {
 public:
@@ -82,6 +84,11 @@ private:
     // Returns the smallest pattern onset (in absolute beats) strictly after afterBeat.
     double NextOnsetAfter(double afterBeat, const ChartInstrument& instrument) const;
 
+    // Called once the current instrument's streak requirement is met: schedules
+    // the advance to the next instrument (or Complete) for the next time the
+    // current instrument's stem wraps back to the start of a playthrough.
+    void SchedulePendingAdvance();
+
     AudioEngine& m_audioEngine;
     ChartSong m_song;
     std::vector<int> m_stemHandles; // one full-loop stem per instrument
@@ -94,4 +101,9 @@ private:
     bool m_loopIsPlaying = false;
     double m_nextExpectedOnsetBeat = 0.0;
     JudgementResult m_lastJudgement = JudgementResult::None;
+
+    // Set once the current instrument's hit requirement is met; taps/misses
+    // stop being judged for it and it advances at m_pendingAdvanceAtSeconds.
+    bool m_hasPendingAdvance = false;
+    double m_pendingAdvanceAtSeconds = 0.0;
 };
