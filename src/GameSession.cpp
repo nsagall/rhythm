@@ -27,7 +27,7 @@ bool GameSession::LoadChart(const std::wstring& chartFilePath)
     m_audioEngine.StopAll();
 
     std::vector<int> stemHandles;
-    for (const ChartInstrument& instrument : song.instruments)
+    for (ChartInstrument& instrument : song.instruments)
     {
         int handle = m_audioEngine.LoadStem(instrument.wavFilePath);
         if (handle < 0)
@@ -35,6 +35,9 @@ bool GameSession::LoadChart(const std::wstring& chartFilePath)
             return false;
         }
         stemHandles.push_back(handle);
+
+        double stemDuration = m_audioEngine.GetStemDurationSeconds(handle);
+        ExpandPatternToFillClip(instrument, stemDuration, song.bpm);
     }
 
     m_song = std::move(song);
@@ -87,10 +90,13 @@ void GameSession::OnTap()
     double toleranceSeconds = instrument.toleranceMs / 1000.0;
     double nowSeconds = m_clock.ElapsedSeconds();
 
+    double judgedOnsetBeat = m_nextExpectedOnsetBeat;
+
     if (std::abs(nowSeconds - onsetSeconds) <= toleranceSeconds)
     {
         RegisterHit();
         m_lastJudgement = JudgementResult::Hit;
+        RecordOnsetJudgement(judgedOnsetBeat, JudgementResult::Hit);
         AdvanceExpectedOnset();
 
         if (m_streak >= instrument.hitsRequired)
@@ -102,6 +108,7 @@ void GameSession::OnTap()
     {
         RegisterMiss();
         m_lastJudgement = JudgementResult::Miss;
+        RecordOnsetJudgement(judgedOnsetBeat, JudgementResult::Miss);
     }
 }
 
@@ -150,6 +157,7 @@ void GameSession::Update()
         {
             RegisterMiss();
             m_lastJudgement = JudgementResult::Miss;
+            RecordOnsetJudgement(m_nextExpectedOnsetBeat, JudgementResult::Miss);
             AdvanceExpectedOnset();
         }
         return;
@@ -204,6 +212,31 @@ JudgementResult GameSession::ConsumeLastJudgement()
     return result;
 }
 
+// Returns how a specific pattern onset was judged, or None if untracked.
+JudgementResult GameSession::OnsetJudgement(double onsetBeat) const
+{
+    for (const JudgedOnset& judged : m_judgedOnsets)
+    {
+        if (std::abs(judged.beat - onsetBeat) < 1e-6)
+        {
+            return judged.result;
+        }
+    }
+    return JudgementResult::None;
+}
+
+// Records a judgement for a specific onset, for OnsetJudgement() to look up later. Trims old entries so this can't grow unbounded.
+void GameSession::RecordOnsetJudgement(double onsetBeat, JudgementResult result)
+{
+    m_judgedOnsets.push_back({onsetBeat, result});
+
+    constexpr size_t kMaxTracked = 8;
+    if (m_judgedOnsets.size() > kMaxTracked)
+    {
+        m_judgedOnsets.erase(m_judgedOnsets.begin());
+    }
+}
+
 // Begins (or resumes) learning the instrument at the given index.
 void GameSession::BeginLearning(int instrumentIndex)
 {
@@ -213,6 +246,7 @@ void GameSession::BeginLearning(int instrumentIndex)
     m_loopIsPlaying = false;
     m_hasPendingAdvance = false;
     m_phase = GamePhase::Learning;
+    m_judgedOnsets.clear();
 
     const ChartInstrument& instrument = m_song.instruments[instrumentIndex];
     m_nextExpectedOnsetBeat = NextOnsetAfter(m_clock.BeatPosition() - 1e-6, instrument);
@@ -272,6 +306,46 @@ void GameSession::AdvanceExpectedOnset()
 {
     const ChartInstrument& instrument = m_song.instruments[m_currentInstrumentIndex];
     m_nextExpectedOnsetBeat = NextOnsetAfter(m_nextExpectedOnsetBeat, instrument);
+}
+
+// If the instrument's declared span is shorter than its stem's actual
+// duration, tiles the pattern (repeating it every original span) to fill
+// the whole clip, and widens spanBeats to match - so a short authored
+// phrase repeats to cover a longer clip instead of leaving the back half
+// of every loop silent/ungraded, and the judged pattern's cycle stays in
+// sync with what the audio actually repeats.
+void GameSession::ExpandPatternToFillClip(ChartInstrument& instrument, double stemDurationSeconds, double bpm)
+{
+    if (instrument.patternBeats.empty() || instrument.spanBeats <= 0.0 || stemDurationSeconds <= 0.0)
+    {
+        return;
+    }
+
+    double secondsPerBeat = 60.0 / bpm;
+    double clipBeats = stemDurationSeconds / secondsPerBeat;
+    if (clipBeats <= instrument.spanBeats + 1e-6)
+    {
+        return;
+    }
+
+    std::vector<double> originalPattern = instrument.patternBeats;
+    double originalSpan = instrument.spanBeats;
+
+    std::vector<double> expanded;
+    for (double repeatStart = 0.0; repeatStart < clipBeats - 1e-9; repeatStart += originalSpan)
+    {
+        for (double onset : originalPattern)
+        {
+            double absolute = repeatStart + onset;
+            if (absolute < clipBeats - 1e-9)
+            {
+                expanded.push_back(absolute);
+            }
+        }
+    }
+
+    instrument.patternBeats = std::move(expanded);
+    instrument.spanBeats = clipBeats;
 }
 
 // Returns the smallest pattern onset (in absolute beats) strictly after afterBeat.

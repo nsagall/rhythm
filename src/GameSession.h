@@ -69,6 +69,12 @@ public:
     // Returns and clears the most recent judgement (Hit/Miss/None).
     JudgementResult ConsumeLastJudgement();
 
+    // Returns how a specific pattern onset (in absolute beats) was judged,
+    // for the note lane to color dots once they've passed the line.
+    // Returns None if that onset hasn't been judged yet, or is too old to
+    // still be tracked.
+    JudgementResult OnsetJudgement(double onsetBeat) const;
+
 private:
     // Begins (or resumes) learning the instrument at the given index.
     void BeginLearning(int instrumentIndex);
@@ -86,15 +92,30 @@ private:
     // Returns the smallest pattern onset (in absolute beats) strictly after afterBeat.
     double NextOnsetAfter(double afterBeat, const ChartInstrument& instrument) const;
 
+    // If the instrument's declared span is shorter than its stem's actual duration,
+    // tiles the pattern to fill the whole clip and widens spanBeats to match.
+    static void ExpandPatternToFillClip(ChartInstrument& instrument, double stemDurationSeconds, double bpm);
+
     // Called once the current instrument's streak requirement is met: schedules
     // the advance to the next instrument (or Complete), and the switch from
     // init_volume to volume, for the next time the current instrument's stem
     // wraps back to the start of a playthrough.
     void SchedulePendingAdvance();
 
+    // Records a judgement for a specific onset, for OnsetJudgement() to look
+    // up later. Trims old entries so this can't grow unbounded.
+    void RecordOnsetJudgement(double onsetBeat, JudgementResult result);
+
     AudioEngine& m_audioEngine;
     ChartSong m_song;
     std::vector<int> m_stemHandles; // one full-loop stem per instrument
+
+    struct JudgedOnset
+    {
+        double beat = 0.0;
+        JudgementResult result = JudgementResult::None;
+    };
+    std::vector<JudgedOnset> m_judgedOnsets;
 
     SongClock m_clock;
     GamePhase m_phase = GamePhase::Idle;

@@ -1,0 +1,11 @@
+[song]
+title = Tile Test
+bpm = 125.28
+time_signature = 4/4
+
+[instrument]
+name = Bass
+file = ..\Content\Cool Boy\stems\bass.wav
+pattern = bar span:8 beats:1,1.5,2,2.5,3,3.5,4,4.5,5,5.5,6,6.5,7,7.5,8
+hits_required = 12
+tolerance_ms = 150
