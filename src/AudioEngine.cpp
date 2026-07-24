@@ -1,6 +1,7 @@
 #include "AudioEngine.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <fstream>
 
@@ -176,100 +177,8 @@ int AudioEngine::LoadStem(const std::wstring& wavFilePath)
     return static_cast<int>(m_stems.size()) - 1;
 }
 
-// Synthesizes a new stem by placing copies of a source stem's audio at
-// each onset within a repeating span, silence-padded to fill exactly one
-// span at the given tempo.
-int AudioEngine::BuildPatternLoop(int sourceStemHandle, const std::vector<double>& onsetBeats, double spanBeats, double bpm)
-{
-    if (!m_xaudio2 || sourceStemHandle < 0 || sourceStemHandle >= static_cast<int>(m_stems.size()))
-    {
-        return -1;
-    }
-
-    const Stem& source = m_stems[sourceStemHandle];
-    if (!source.voice || source.pcmData.empty() || source.format.wBitsPerSample != 16)
-    {
-        return -1;
-    }
-
-    double secondsPerBeat = 60.0 / bpm;
-    double spanSeconds = spanBeats * secondsPerBeat;
-    UINT32 bytesPerFrame = (source.format.wBitsPerSample / 8) * source.format.nChannels;
-    UINT32 totalFrames = static_cast<UINT32>(spanSeconds * source.format.nSamplesPerSec);
-    UINT32 totalBytes = totalFrames * bytesPerFrame;
-
-    Stem loopStem;
-    loopStem.format = source.format;
-    loopStem.pcmData.assign(totalBytes, 0);
-
-    for (double onsetBeat : onsetBeats)
-    {
-        double onsetSeconds = onsetBeat * secondsPerBeat;
-        UINT32 startFrame = static_cast<UINT32>(onsetSeconds * source.format.nSamplesPerSec);
-        UINT32 startByte = startFrame * bytesPerFrame;
-        if (startByte >= totalBytes)
-        {
-            continue;
-        }
-
-        UINT32 copyBytes = std::min<UINT32>(static_cast<UINT32>(source.pcmData.size()), totalBytes - startByte);
-        UINT32 sampleCount = copyBytes / sizeof(INT16);
-        const INT16* src = reinterpret_cast<const INT16*>(source.pcmData.data());
-        INT16* dst = reinterpret_cast<INT16*>(loopStem.pcmData.data() + startByte);
-        for (UINT32 i = 0; i < sampleCount; ++i)
-        {
-            int mixed = static_cast<int>(dst[i]) + static_cast<int>(src[i]);
-            dst[i] = static_cast<INT16>(std::clamp(mixed, -32768, 32767));
-        }
-    }
-
-    if (FAILED(m_xaudio2->CreateSourceVoice(&loopStem.voice, &loopStem.format)) || !loopStem.voice)
-    {
-        return -1;
-    }
-
-    m_stems.push_back(std::move(loopStem));
-    return static_cast<int>(m_stems.size()) - 1;
-}
-
-// Submits pcmData as a buffer (optionally looping) and starts playback.
-void AudioEngine::SubmitAndPlay(Stem& stem, bool loop)
-{
-    if (!stem.voice)
-    {
-        return;
-    }
-
-    stem.voice->Stop();
-    stem.voice->FlushSourceBuffers();
-
-    XAUDIO2_BUFFER buffer{};
-    buffer.AudioBytes = static_cast<UINT32>(stem.pcmData.size());
-    buffer.pAudioData = stem.pcmData.data();
-    buffer.Flags = XAUDIO2_END_OF_STREAM;
-    if (loop)
-    {
-        buffer.LoopBegin = 0;
-        buffer.LoopLength = 0;
-        buffer.LoopCount = XAUDIO2_LOOP_INFINITE;
-    }
-
-    stem.voice->SubmitSourceBuffer(&buffer);
-    stem.voice->Start();
-}
-
-// Plays a loaded stem once, from the start, without looping.
-void AudioEngine::PlayOneShot(int stemHandle)
-{
-    if (stemHandle < 0 || stemHandle >= static_cast<int>(m_stems.size()))
-    {
-        return;
-    }
-    SubmitAndPlay(m_stems[stemHandle], /*loop=*/false);
-}
-
-// Starts a loaded stem looping seamlessly, from the start.
-void AudioEngine::StartLooping(int stemHandle)
+// Starts a loaded stem looping seamlessly, seeking to phaseSeconds so it enters in time with the beat grid.
+void AudioEngine::StartLooping(int stemHandle, double phaseSeconds)
 {
     if (stemHandle < 0 || stemHandle >= static_cast<int>(m_stems.size()))
     {
@@ -277,7 +186,46 @@ void AudioEngine::StartLooping(int stemHandle)
     }
 
     Stem& stem = m_stems[stemHandle];
-    SubmitAndPlay(stem, /*loop=*/true);
+    if (!stem.voice || stem.pcmData.empty() || stem.format.nBlockAlign == 0)
+    {
+        return;
+    }
+
+    stem.voice->Stop();
+    stem.voice->FlushSourceBuffers();
+
+    UINT32 totalFrames = static_cast<UINT32>(stem.pcmData.size() / stem.format.nBlockAlign);
+    UINT32 startFrame = 0;
+    if (totalFrames > 0 && stem.format.nSamplesPerSec > 0)
+    {
+        double loopDurationSeconds = static_cast<double>(totalFrames) / stem.format.nSamplesPerSec;
+        double wrappedPhase = std::fmod(phaseSeconds, loopDurationSeconds);
+        if (wrappedPhase < 0.0)
+        {
+            wrappedPhase += loopDurationSeconds;
+        }
+        startFrame = static_cast<UINT32>(wrappedPhase * stem.format.nSamplesPerSec);
+        if (startFrame >= totalFrames)
+        {
+            startFrame = totalFrames - 1;
+        }
+    }
+
+    // Play once from startFrame to the end of the buffer (entering in phase),
+    // then loop the whole buffer forever - so the audio lands exactly in
+    // time with the beat grid rather than restarting from sample 0.
+    XAUDIO2_BUFFER buffer{};
+    buffer.AudioBytes = static_cast<UINT32>(stem.pcmData.size());
+    buffer.pAudioData = stem.pcmData.data();
+    buffer.Flags = XAUDIO2_END_OF_STREAM;
+    buffer.PlayBegin = startFrame;
+    buffer.PlayLength = totalFrames - startFrame;
+    buffer.LoopBegin = 0;
+    buffer.LoopLength = 0;
+    buffer.LoopCount = XAUDIO2_LOOP_INFINITE;
+
+    stem.voice->SubmitSourceBuffer(&buffer);
+    stem.voice->Start();
 
     // SamplesPlayed is a lifetime counter for the voice, not reset by Start/Stop/
     // Flush, so we record a baseline here to measure "seconds since this loop began."

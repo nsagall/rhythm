@@ -13,7 +13,6 @@ enum class GamePhase
     Idle,
     CountIn,
     Learning,
-    Locking,
     Complete,
 };
 
@@ -27,10 +26,13 @@ enum class JudgementResult
 };
 
 // Drives the progressive "learn one instrument at a time" gameplay loop:
-// judges taps against the current instrument's pattern (via SongClock),
-// and once a streak of accurate taps is reached, locks that instrument
-// into a seamless loop (via AudioEngine) and introduces the next one.
-// UI-agnostic - knows nothing about HWNDs or input devices.
+// judges taps against the current instrument's pattern (via SongClock).
+// Each instrument's loop starts playing (phase-aligned to the beat grid)
+// on the player's first correct tap, stops after 3 consecutive misses,
+// and once a streak of accurate taps reaches the chart's threshold, that
+// instrument locks in (its loop just keeps playing) and the next
+// instrument is introduced. UI-agnostic - knows nothing about HWNDs or
+// input devices.
 class GameSession
 {
 public:
@@ -49,7 +51,7 @@ public:
     // Registers a tap at the current moment; judges it if a phase is being learned.
     void OnTap();
 
-    // Advances count-in/miss-detection/lock-in timing; call once per frame.
+    // Advances count-in/miss-detection timing; call once per frame.
     void Update();
 
     GamePhase Phase() const;
@@ -67,8 +69,12 @@ private:
     // Begins (or resumes) learning the instrument at the given index.
     void BeginLearning(int instrumentIndex);
 
-    // Begins the brief transition into the current instrument looping.
-    void BeginLocking();
+    // Records a hit: advances the streak, resets the miss counter, and
+    // starts this instrument's loop (phase-aligned) if it isn't already playing.
+    void RegisterHit();
+
+    // Records a miss: resets the streak, and stops this instrument's loop after 3 in a row.
+    void RegisterMiss();
 
     // Moves m_nextExpectedOnsetBeat forward to the next onset after it.
     void AdvanceExpectedOnset();
@@ -78,14 +84,14 @@ private:
 
     AudioEngine& m_audioEngine;
     ChartSong m_song;
-    std::vector<int> m_hitStemHandles; // one raw hit sample per instrument, for PlayOneShot tap feedback
-    std::vector<int> m_loopStemHandles; // one synthesized whole-pattern loop per instrument, for StartLooping
+    std::vector<int> m_stemHandles; // one full-loop stem per instrument
 
     SongClock m_clock;
     GamePhase m_phase = GamePhase::Idle;
     int m_currentInstrumentIndex = -1;
     int m_streak = 0;
+    int m_consecutiveMisses = 0;
+    bool m_loopIsPlaying = false;
     double m_nextExpectedOnsetBeat = 0.0;
-    double m_lockTransitionEndSeconds = 0.0;
     JudgementResult m_lastJudgement = JudgementResult::None;
 };

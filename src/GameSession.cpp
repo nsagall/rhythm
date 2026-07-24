@@ -6,6 +6,7 @@ namespace
 {
 
 constexpr double kCountInSeconds = 2.0;
+constexpr int kMaxConsecutiveMisses = 3;
 
 } // namespace
 
@@ -25,31 +26,24 @@ bool GameSession::LoadChart(const std::wstring& chartFilePath)
 
     m_audioEngine.StopAll();
 
-    std::vector<int> hitHandles;
-    std::vector<int> loopHandles;
+    std::vector<int> stemHandles;
     for (const ChartInstrument& instrument : song.instruments)
     {
-        int hitHandle = m_audioEngine.LoadStem(instrument.wavFilePath);
-        if (hitHandle < 0)
+        int handle = m_audioEngine.LoadStem(instrument.wavFilePath);
+        if (handle < 0)
         {
             return false;
         }
-        hitHandles.push_back(hitHandle);
-
-        int loopHandle = m_audioEngine.BuildPatternLoop(hitHandle, instrument.patternBeats, instrument.spanBeats, song.bpm);
-        if (loopHandle < 0)
-        {
-            return false;
-        }
-        loopHandles.push_back(loopHandle);
+        stemHandles.push_back(handle);
     }
 
     m_song = std::move(song);
-    m_hitStemHandles = std::move(hitHandles);
-    m_loopStemHandles = std::move(loopHandles);
+    m_stemHandles = std::move(stemHandles);
     m_phase = GamePhase::Idle;
     m_currentInstrumentIndex = -1;
     m_streak = 0;
+    m_consecutiveMisses = 0;
+    m_loopIsPlaying = false;
     m_lastJudgement = JudgementResult::None;
     return true;
 }
@@ -72,6 +66,8 @@ void GameSession::Stop()
     m_phase = GamePhase::Idle;
     m_currentInstrumentIndex = -1;
     m_streak = 0;
+    m_consecutiveMisses = 0;
+    m_loopIsPlaying = false;
     m_lastJudgement = JudgementResult::None;
 }
 
@@ -91,24 +87,31 @@ void GameSession::OnTap()
 
     if (std::abs(nowSeconds - onsetSeconds) <= toleranceSeconds)
     {
-        m_streak++;
+        RegisterHit();
         m_lastJudgement = JudgementResult::Hit;
-        m_audioEngine.PlayOneShot(m_hitStemHandles[m_currentInstrumentIndex]);
         AdvanceExpectedOnset();
 
         if (m_streak >= instrument.hitsRequired)
         {
-            BeginLocking();
+            int nextIndex = m_currentInstrumentIndex + 1;
+            if (nextIndex < static_cast<int>(m_song.instruments.size()))
+            {
+                BeginLearning(nextIndex);
+            }
+            else
+            {
+                m_phase = GamePhase::Complete;
+            }
         }
     }
     else
     {
-        m_streak = 0;
+        RegisterMiss();
         m_lastJudgement = JudgementResult::Miss;
     }
 }
 
-// Advances count-in/miss-detection/lock-in timing; call once per frame.
+// Advances count-in/miss-detection timing; call once per frame.
 void GameSession::Update()
 {
     if (m_phase == GamePhase::CountIn)
@@ -129,28 +132,9 @@ void GameSession::Update()
 
         if (m_clock.ElapsedSeconds() > onsetSeconds + toleranceSeconds)
         {
-            m_streak = 0;
+            RegisterMiss();
             m_lastJudgement = JudgementResult::Miss;
             AdvanceExpectedOnset();
-        }
-        return;
-    }
-
-    if (m_phase == GamePhase::Locking)
-    {
-        if (m_clock.ElapsedSeconds() >= m_lockTransitionEndSeconds)
-        {
-            m_audioEngine.StartLooping(m_loopStemHandles[m_currentInstrumentIndex]);
-
-            int nextIndex = m_currentInstrumentIndex + 1;
-            if (nextIndex < static_cast<int>(m_song.instruments.size()))
-            {
-                BeginLearning(nextIndex);
-            }
-            else
-            {
-                m_phase = GamePhase::Complete;
-            }
         }
         return;
     }
@@ -171,7 +155,7 @@ int GameSession::CurrentInstrumentIndex() const
     return m_currentInstrumentIndex;
 }
 
-// Returns the instrument currently being learned/locked, or nullptr if none.
+// Returns the instrument currently being learned, or nullptr if none.
 const ChartInstrument* GameSession::CurrentInstrument() const
 {
     if (m_currentInstrumentIndex < 0 || m_currentInstrumentIndex >= static_cast<int>(m_song.instruments.size()))
@@ -209,17 +193,42 @@ void GameSession::BeginLearning(int instrumentIndex)
 {
     m_currentInstrumentIndex = instrumentIndex;
     m_streak = 0;
+    m_consecutiveMisses = 0;
+    m_loopIsPlaying = false;
     m_phase = GamePhase::Learning;
 
     const ChartInstrument& instrument = m_song.instruments[instrumentIndex];
     m_nextExpectedOnsetBeat = NextOnsetAfter(m_clock.BeatPosition() - 1e-6, instrument);
 }
 
-// Begins the brief transition into the current instrument looping, quantized to the next bar boundary.
-void GameSession::BeginLocking()
+// Records a hit: advances the streak, resets the miss counter, and starts this instrument's loop (phase-aligned) if it isn't already playing.
+void GameSession::RegisterHit()
 {
-    m_phase = GamePhase::Locking;
-    m_lockTransitionEndSeconds = m_clock.ElapsedSeconds() + m_clock.SecondsToNextBar(m_song.beatsPerBar);
+    m_streak++;
+    m_consecutiveMisses = 0;
+
+    if (!m_loopIsPlaying)
+    {
+        const ChartInstrument& instrument = m_song.instruments[m_currentInstrumentIndex];
+        double secondsPerBeat = 60.0 / m_song.bpm;
+        double spanSeconds = instrument.spanBeats * secondsPerBeat;
+        double phaseSeconds = spanSeconds > 0.0 ? std::fmod(m_clock.ElapsedSeconds(), spanSeconds) : 0.0;
+        m_audioEngine.StartLooping(m_stemHandles[m_currentInstrumentIndex], phaseSeconds);
+        m_loopIsPlaying = true;
+    }
+}
+
+// Records a miss: resets the streak, and stops this instrument's loop after 3 in a row.
+void GameSession::RegisterMiss()
+{
+    m_streak = 0;
+    m_consecutiveMisses++;
+
+    if (m_consecutiveMisses >= kMaxConsecutiveMisses && m_loopIsPlaying)
+    {
+        m_audioEngine.Stop(m_stemHandles[m_currentInstrumentIndex]);
+        m_loopIsPlaying = false;
+    }
 }
 
 // Moves m_nextExpectedOnsetBeat forward to the next onset after it.
