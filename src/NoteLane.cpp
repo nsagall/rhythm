@@ -120,8 +120,6 @@ void NoteLane::Draw(HDC hdc, const GameSession& session) const
         double nowBeat = session.Clock().BeatPosition();
         std::vector<double> onsets = OnsetsInRange(nowBeat - kBeatsBehind, nowBeat + kBeatsAhead, *instrument);
 
-        HBRUSH dotBrush = CreateSolidBrush(RGB(0, 100, 220));
-        HBRUSH oldBrush = (HBRUSH)SelectObject(hdc, dotBrush);
         int centerY = (m_laneRect.top + m_laneRect.bottom) / 2;
 
         for (double onsetBeat : onsets)
@@ -132,11 +130,30 @@ void NoteLane::Draw(HDC hdc, const GameSession& session) const
             {
                 continue;
             }
-            Ellipse(hdc, x - kDotRadius, centerY - kDotRadius, x + kDotRadius, centerY + kDotRadius);
-        }
 
-        SelectObject(hdc, oldBrush);
-        DeleteObject(dotBrush);
+            // Upcoming dots (not yet at the line) stay the default color; once a
+            // dot has passed the line, it takes on the color of how that onset
+            // was judged (green for a hit, red for a miss).
+            COLORREF dotColor = RGB(0, 100, 220);
+            if (beatsFromNow <= 0.0)
+            {
+                JudgementResult result = session.OnsetJudgement(onsetBeat);
+                if (result == JudgementResult::Hit)
+                {
+                    dotColor = RGB(0, 170, 0);
+                }
+                else if (result == JudgementResult::Miss)
+                {
+                    dotColor = RGB(220, 0, 0);
+                }
+            }
+
+            HBRUSH dotBrush = CreateSolidBrush(dotColor);
+            HBRUSH oldBrush = (HBRUSH)SelectObject(hdc, dotBrush);
+            Ellipse(hdc, x - kDotRadius, centerY - kDotRadius, x + kDotRadius, centerY + kDotRadius);
+            SelectObject(hdc, oldBrush);
+            DeleteObject(dotBrush);
+        }
     }
 
     std::wstring status;
