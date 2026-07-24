@@ -15,10 +15,14 @@ constexpr int kLaneTop = 50;
 constexpr int kLaneLeft = 10;
 constexpr int kLaneRight = 1010;
 constexpr int kLaneBottom = 450;
+constexpr int kTapButtonTop = 470;
+constexpr int kTapButtonWidth = 200;
+constexpr int kTapButtonHeight = 60;
 
 constexpr int IDC_EDIT_CHARTPATH = 101;
 constexpr int IDC_BUTTON_BROWSE = 110;
 constexpr int IDC_BUTTON_START = 120;
+constexpr int IDC_BUTTON_TAP = 130;
 
 } // namespace
 
@@ -173,6 +177,14 @@ void MainWindow::OnCreate(HWND hwnd)
     m_noteLane.SetLaneRect(laneRect);
     m_noteLane.StartAnimating();
 
+    m_hButtonTap = CreateWindowExW(
+        0, L"BUTTON", L"Tap",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+        kLaneLeft, kTapButtonTop, kTapButtonWidth, kTapButtonHeight,
+        hwnd, (HMENU)(INT_PTR)IDC_BUTTON_TAP, nullptr, nullptr
+    );
+    SendMessageW(m_hButtonTap, WM_SETFONT, (WPARAM)hFont, TRUE);
+
     if (!m_audioEngine.Initialize())
     {
         MessageBoxW(hwnd, L"Failed to initialize the audio engine.", kWindowTitle, MB_OK | MB_ICONWARNING);
@@ -187,7 +199,7 @@ void MainWindow::OnCreate(HWND hwnd)
     SetFocus(hwnd);
 }
 
-// Routes a WM_COMMAND control ID to the Browse or Start handler.
+// Routes a WM_COMMAND control ID to the Browse/Start/Tap handler.
 void MainWindow::OnCommand(HWND hwnd, int controlId)
 {
     if (controlId == IDC_BUTTON_BROWSE)
@@ -204,6 +216,13 @@ void MainWindow::OnCommand(HWND hwnd, int controlId)
         SetFocus(hwnd);
         return;
     }
+
+    if (controlId == IDC_BUTTON_TAP)
+    {
+        RegisterTap();
+        SetFocus(hwnd); // same reason as above - keep spacebar taps working after clicking Tap
+        return;
+    }
 }
 
 // Registers a tap on a non-repeated spacebar key-down.
@@ -215,6 +234,12 @@ void MainWindow::OnKeyDown(WPARAM key, LPARAM flags)
         return;
     }
 
+    RegisterTap();
+}
+
+// Sends a tap to the game session and reflects any judgement in the note lane.
+void MainWindow::RegisterTap()
+{
     m_gameSession.OnTap();
     JudgementResult result = m_gameSession.ConsumeLastJudgement();
     if (result != JudgementResult::None)

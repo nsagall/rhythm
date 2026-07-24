@@ -32,11 +32,15 @@ private:
     // Creates all child controls and the note lane, then loads the last-used chart.
     void OnCreate(HWND hwnd);
 
-    // Routes a WM_COMMAND control ID to the Browse or Start handler.
+    // Routes a WM_COMMAND control ID to the Browse/Start/Tap handler.
     void OnCommand(HWND hwnd, int controlId);
 
     // Registers a tap on a non-repeated spacebar key-down.
     void OnKeyDown(WPARAM key, LPARAM flags);
+
+    // Sends a tap to the game session and reflects any judgement in the note lane.
+    // Shared by the spacebar and the on-screen Tap button.
+    void RegisterTap();
 
     // Advances the game session and reflects any judgement in the note lane.
     void OnTimer(WPARAM timerId);
@@ -53,6 +57,7 @@ private:
     HWND m_hwnd = nullptr;
     HWND m_hEditChartPath = nullptr;
     HWND m_hButtonStart = nullptr;
+    HWND m_hButtonTap = nullptr;
 
     AudioEngine m_audioEngine;
     GameSession m_gameSession;
