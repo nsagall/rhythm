@@ -35,7 +35,11 @@ struct ChartSong
 class ChartFile
 {
 public:
-    // Parses a .chart text file. Returns false if the file can't be read
-    // or doesn't contain at least one valid instrument.
-    static bool Load(const std::wstring& chartFilePath, ChartSong& outSong);
+    // Parses and validates a .chart text file. Returns false if the file
+    // can't be opened or fails validation - outErrors then holds a
+    // human-readable message for every problem found (unsupported fields,
+    // wrong-typed or out-of-range values, a malformed pattern or time
+    // signature, missing required fields, or a referenced stem file that
+    // doesn't exist). On success outErrors is empty and outSong is filled in.
+    static bool Load(const std::wstring& chartFilePath, ChartSong& outSong, std::vector<std::wstring>& outErrors);
 };

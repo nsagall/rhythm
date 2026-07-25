@@ -216,9 +216,19 @@ void MainWindow::OnCreate(HWND hwnd)
     }
 
     std::wstring lastChartPath = m_settings.LoadLastChartPath();
-    if (!lastChartPath.empty() && m_gameSession.LoadChart(lastChartPath))
+    if (!lastChartPath.empty())
     {
-        SetWindowTextW(m_hEditChartPath, lastChartPath.c_str());
+        std::wstring loadError;
+        if (m_gameSession.LoadChart(lastChartPath, loadError))
+        {
+            SetWindowTextW(m_hEditChartPath, lastChartPath.c_str());
+        }
+        else
+        {
+            std::wstring message = L"The last chart you had open is no longer valid:\r\n\r\n" + loadError +
+                                    L"\r\n\r\nPlease pick a different chart.";
+            MessageBoxW(hwnd, message.c_str(), kWindowTitle, MB_OK | MB_ICONWARNING);
+        }
     }
 
     SetFocus(hwnd);
@@ -330,13 +340,15 @@ void MainWindow::BrowseForChart(HWND hwnd)
 
     SetFocus(hwnd); // the Browse button would otherwise keep keyboard focus and steal tap keystrokes
 
-    if (m_gameSession.LoadChart(szFile))
+    std::wstring loadError;
+    if (m_gameSession.LoadChart(szFile, loadError))
     {
         SetWindowTextW(m_hEditChartPath, szFile);
         m_settings.SaveLastChartPath(szFile);
     }
     else
     {
-        MessageBoxW(hwnd, L"Couldn't load that chart (check the file and its instrument .wav paths).", kWindowTitle, MB_OK | MB_ICONWARNING);
+        std::wstring message = L"That chart couldn't be loaded:\r\n\r\n" + loadError + L"\r\n\r\nPlease pick a different file.";
+        MessageBoxW(hwnd, message.c_str(), kWindowTitle, MB_OK | MB_ICONWARNING);
     }
 }

@@ -45,9 +45,11 @@ class GameSession
 public:
     explicit GameSession(AudioEngine& audioEngine);
 
-    // Parses a chart and loads all its stems into the audio engine. Returns
-    // false if the chart or any of its stems can't be loaded.
-    bool LoadChart(const std::wstring& chartFilePath);
+    // Parses and validates a chart and loads all its stems into the audio
+    // engine. Returns false if the chart fails validation or any of its
+    // stems can't be loaded, with outError describing every problem found
+    // (one per line) so the caller can show it and ask for a different file.
+    bool LoadChart(const std::wstring& chartFilePath, std::wstring& outError);
 
     // Starts gameplay from the beginning of the loaded chart.
     void Start();

@@ -15,12 +15,24 @@ GameSession::GameSession(AudioEngine& audioEngine) : m_audioEngine(audioEngine)
 {
 }
 
-// Parses a chart and loads all its stems into the audio engine. Returns false if the chart or any of its stems can't be loaded.
-bool GameSession::LoadChart(const std::wstring& chartFilePath)
+// Parses and validates a chart and loads all its stems into the audio
+// engine. Returns false if the chart fails validation or any of its stems
+// can't be loaded, with outError describing every problem found.
+bool GameSession::LoadChart(const std::wstring& chartFilePath, std::wstring& outError)
 {
     ChartSong song;
-    if (!ChartFile::Load(chartFilePath, song))
+    std::vector<std::wstring> errors;
+    if (!ChartFile::Load(chartFilePath, song, errors))
     {
+        outError.clear();
+        for (const std::wstring& error : errors)
+        {
+            if (!outError.empty())
+            {
+                outError += L"\r\n";
+            }
+            outError += error;
+        }
         return false;
     }
 
@@ -32,6 +44,8 @@ bool GameSession::LoadChart(const std::wstring& chartFilePath)
         StemHandle handle = m_audioEngine.LoadStem(instrument.wavFilePath);
         if (!handle.IsValid())
         {
+            outError = L"instrument '" + instrument.name + L"': file '" + instrument.wavFilePath +
+                       L"' could not be loaded as audio (unsupported or corrupt WAV format)";
             return false;
         }
         stemHandles.push_back(handle);
