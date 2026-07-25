@@ -90,6 +90,18 @@ public:
     // still playing automatically, before dots/judging begin.
     bool IsInIntro() const;
 
+    // Returns the instrument whose dots should be shown as an early preview
+    // while the player can't act yet - during the count-in (instrument 0),
+    // an instrument's own intro_bars (itself), or the wait before the next
+    // instrument is introduced (the next instrument) - or nullptr if
+    // there's nothing upcoming to preview right now.
+    const ChartInstrument* PreviewInstrument() const;
+
+    // Seconds remaining until PreviewInstrument() actually becomes the
+    // live, judged instrument. Only meaningful when PreviewInstrument()
+    // isn't null.
+    double SecondsUntilPreviewInstrumentActive() const;
+
 private:
     // Begins (or resumes) learning the instrument at the given index.
     void BeginLearning(int instrumentIndex);

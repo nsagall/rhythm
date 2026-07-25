@@ -237,6 +237,48 @@ bool GameSession::IsInIntro() const
     return m_isInIntro;
 }
 
+const ChartInstrument* GameSession::PreviewInstrument() const
+{
+    if (m_phase == GamePhase::CountIn)
+    {
+        return m_song.instruments.empty() ? nullptr : &m_song.instruments[0];
+    }
+    if (m_phase != GamePhase::Learning)
+    {
+        return nullptr;
+    }
+    if (m_isInIntro)
+    {
+        return CurrentInstrument();
+    }
+    if (m_hasPendingAdvance)
+    {
+        int nextIndex = m_currentInstrumentIndex + 1;
+        if (nextIndex < static_cast<int>(m_song.instruments.size()))
+        {
+            return &m_song.instruments[nextIndex];
+        }
+    }
+    return nullptr;
+}
+
+double GameSession::SecondsUntilPreviewInstrumentActive() const
+{
+    if (m_phase == GamePhase::CountIn)
+    {
+        return kCountInSeconds - m_clock.ElapsedSeconds();
+    }
+    if (m_isInIntro)
+    {
+        return m_introEndSeconds - m_clock.ElapsedSeconds();
+    }
+    if (m_hasPendingAdvance)
+    {
+        return m_pendingAdvanceAtSeconds - m_clock.ElapsedSeconds();
+    }
+    return 0.0;
+}
+
 // Returns and clears the most recent judgement (Hit/Miss/None).
 JudgementResult GameSession::ConsumeLastJudgement()
 {

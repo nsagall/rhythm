@@ -114,12 +114,41 @@ void NoteLane::Draw(HDC hdc, const GameSession& session) const
     DeleteObject(linePen);
 
     const ChartInstrument* instrument = session.CurrentInstrument();
-    bool showDots = instrument && session.Phase() == GamePhase::Learning &&
-                     !session.IsAwaitingAdvance() && !session.IsInIntro();
-    if (showDots)
+    bool isLiveJudging = instrument && session.Phase() == GamePhase::Learning &&
+                          !session.IsAwaitingAdvance() && !session.IsInIntro();
+
+    // While the player can't act yet (count-in, an instrument's intro, or
+    // the wait before the next instrument joins), start showing the
+    // upcoming instrument's dots once they'd naturally scroll into view -
+    // so the first dot a track ever shows enters from the right edge with
+    // a full runway, instead of popping in already near the judge line.
+    const ChartInstrument* dotsInstrument = nullptr;
+    double dotsFromBeat = 0.0;
+    double nowBeat = session.Clock().BeatPosition();
+
+    if (isLiveJudging)
     {
-        double nowBeat = session.Clock().BeatPosition();
-        std::vector<double> onsets = OnsetsInRange(nowBeat - kBeatsBehind, nowBeat + kBeatsAhead, *instrument);
+        dotsInstrument = instrument;
+        dotsFromBeat = nowBeat - kBeatsBehind;
+    }
+    else
+    {
+        const ChartInstrument* preview = session.PreviewInstrument();
+        if (preview)
+        {
+            double secondsPerBeat = 60.0 / session.Song().bpm;
+            double previewWindowSeconds = kBeatsAhead * secondsPerBeat;
+            if (session.SecondsUntilPreviewInstrumentActive() <= previewWindowSeconds)
+            {
+                dotsInstrument = preview;
+                dotsFromBeat = nowBeat; // nothing's been judged yet, so no trailing dots behind the line
+            }
+        }
+    }
+
+    if (dotsInstrument)
+    {
+        std::vector<double> onsets = OnsetsInRange(dotsFromBeat, nowBeat + kBeatsAhead, *dotsInstrument);
 
         int centerY = (m_laneRect.top + m_laneRect.bottom) / 2;
 
