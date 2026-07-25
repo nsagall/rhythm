@@ -295,6 +295,14 @@ bool ChartFile::Load(const std::wstring& chartFilePath, ChartSong& outSong)
             {
                 currentInstrument.volume = std::stod(value);
             }
+            else if (key == L"intro_bars")
+            {
+                currentInstrument.introBars = std::stoi(value);
+            }
+            else if (key == L"outro_loops")
+            {
+                currentInstrument.outroLoops = std::stoi(value);
+            }
         }
     }
 

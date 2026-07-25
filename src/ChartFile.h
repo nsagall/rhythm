@@ -18,6 +18,8 @@ struct ChartInstrument
     double toleranceMs = 120.0;
     double initVolume = 1.0; // volume while the player is still learning this instrument
     double volume = 1.0;     // volume once it's locked in and looping automatically
+    int introBars = 0;       // if > 0, this many bars play automatically (no tap needed) before dots/judging start
+    int outroLoops = 0;      // if > 0, this many extra full loops play after locking in before the next instrument joins
 };
 
 // A full song: tempo/time signature plus an ordered list of instruments,

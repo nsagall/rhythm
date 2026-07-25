@@ -114,7 +114,8 @@ void NoteLane::Draw(HDC hdc, const GameSession& session) const
     DeleteObject(linePen);
 
     const ChartInstrument* instrument = session.CurrentInstrument();
-    bool showDots = instrument && session.Phase() == GamePhase::Learning;
+    bool showDots = instrument && session.Phase() == GamePhase::Learning &&
+                     !session.IsAwaitingAdvance() && !session.IsInIntro();
     if (showDots)
     {
         double nowBeat = session.Clock().BeatPosition();
@@ -168,8 +169,15 @@ void NoteLane::Draw(HDC hdc, const GameSession& session) const
         case GamePhase::Learning:
             if (instrument)
             {
-                status = instrument->name + L"   " + std::to_wstring(session.CurrentStreak()) + L"/" +
-                         std::to_wstring(instrument->hitsRequired);
+                if (session.IsInIntro())
+                {
+                    status = instrument->name + L" — Listen...";
+                }
+                else
+                {
+                    status = instrument->name + L"   " + std::to_wstring(session.CurrentStreak()) + L"/" +
+                             std::to_wstring(instrument->hitsRequired);
+                }
             }
             break;
         case GamePhase::Complete:

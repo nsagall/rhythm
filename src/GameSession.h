@@ -33,9 +33,12 @@ enum class JudgementResult
 // the chart's threshold, that instrument locks in (its loop just keeps
 // playing). The next instrument isn't introduced immediately - it waits
 // until the locked-in instrument's stem file completes its current
-// playthrough and wraps back to its start, so new instruments only ever
-// join at the beginning of a loop; at that same moment the instrument
-// that just locked in switches from init_volume to its chart volume.
+// playthrough (plus any chart-declared outro_loops extra repeats) and
+// wraps back to its start, so new instruments only ever join at the
+// beginning of a loop; at that same moment the instrument that just
+// locked in switches from init_volume to its chart volume. An instrument
+// with a chart-declared intro_bars instead starts playing automatically
+// (no tap needed) and holds off judging/dots until that many bars pass.
 // UI-agnostic - knows nothing about HWNDs or input devices.
 class GameSession
 {
@@ -78,6 +81,15 @@ public:
     // still be tracked.
     JudgementResult OnsetJudgement(double onsetBeat) const;
 
+    // True once the current instrument has locked in and is just waiting
+    // for its stem to reach a loop boundary before the next one is
+    // introduced - taps/dots should stop for it during this window.
+    bool IsAwaitingAdvance() const;
+
+    // True while the current instrument's chart-declared intro_bars are
+    // still playing automatically, before dots/judging begin.
+    bool IsInIntro() const;
+
 private:
     // Begins (or resumes) learning the instrument at the given index.
     void BeginLearning(int instrumentIndex);
@@ -85,6 +97,12 @@ private:
     // Records a hit: advances the streak, resets the miss counter, and
     // starts this instrument's loop (phase-aligned, at init_volume) if it isn't already playing.
     void RegisterHit();
+
+    // Starts the current instrument's loop now (phase-aligned to the beat
+    // grid, at init_volume) if it isn't already playing. Shared by
+    // RegisterHit (starts on the first correct tap) and BeginLearning's
+    // intro_bars path (starts automatically, no tap needed).
+    void StartCurrentInstrumentLoop();
 
     // Records a miss: resets the streak, and stops this instrument's loop after 3 in a row.
     void RegisterMiss();
@@ -133,4 +151,10 @@ private:
     // stop being judged for it and it advances at m_pendingAdvanceAtSeconds.
     bool m_hasPendingAdvance = false;
     double m_pendingAdvanceAtSeconds = 0.0;
+
+    // Set while the current instrument's chart-declared intro_bars are
+    // still playing automatically; taps/misses aren't judged until
+    // m_introEndSeconds is reached.
+    bool m_isInIntro = false;
+    double m_introEndSeconds = 0.0;
 };
