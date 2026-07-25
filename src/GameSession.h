@@ -97,14 +97,25 @@ public:
     // there's nothing upcoming to preview right now.
     const ChartInstrument* PreviewInstrument() const;
 
-    // Seconds remaining until PreviewInstrument() actually becomes the
-    // live, judged instrument. Only meaningful when PreviewInstrument()
-    // isn't null.
-    double SecondsUntilPreviewInstrumentActive() const;
+    // Returns the beat position of the first onset PreviewInstrument() will
+    // actually require once it goes live, computed the same way BeginLearning
+    // would at that moment - so the note lane can filter out anything
+    // earlier and let dots scroll in one at a time from the right edge,
+    // instead of revealing a whole batch of partially-scrolled-in onsets
+    // at once when the preview first becomes visible. Returns a negative
+    // value if there's nothing to preview right now.
+    double PreviewFirstOnsetBeat() const;
 
 private:
     // Begins (or resumes) learning the instrument at the given index.
-    void BeginLearning(int instrumentIndex);
+    // scheduledBeat is the ideal beat this transition was scheduled for
+    // (e.g. kCountInSeconds or m_pendingAdvanceAtSeconds converted to
+    // beats) - used instead of the actually-polled clock position to pick
+    // the first onset, so it's deterministic and matches what
+    // PreviewFirstOnsetBeat() already predicted, rather than silently
+    // skipping an onset that happens to fall exactly on the boundary
+    // because Update() only notices the crossing a frame late.
+    void BeginLearning(int instrumentIndex, double scheduledBeat);
 
     // Records a hit: advances the streak, resets the miss counter, and
     // starts this instrument's loop (phase-aligned, at init_volume) if it isn't already playing.
@@ -124,6 +135,10 @@ private:
 
     // Returns the smallest pattern onset (in absolute beats) strictly after afterBeat.
     double NextOnsetAfter(double afterBeat, const ChartInstrument& instrument) const;
+
+    // Returns the wall-clock seconds at which PreviewInstrument() will
+    // actually go live, or a negative value if there's nothing to preview.
+    double PreviewTransitionSeconds() const;
 
     // If the instrument's declared span is shorter than its stem's actual duration,
     // tiles the pattern to fill the whole clip and widens spanBeats to match.

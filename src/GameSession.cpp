@@ -117,11 +117,13 @@ void GameSession::OnTap()
 // Advances count-in/miss-detection timing; call once per frame.
 void GameSession::Update()
 {
+    double secondsPerBeat = 60.0 / m_song.bpm;
+
     if (m_phase == GamePhase::CountIn)
     {
         if (m_clock.ElapsedSeconds() >= kCountInSeconds)
         {
-            BeginLearning(0);
+            BeginLearning(0, kCountInSeconds / secondsPerBeat);
         }
         return;
     }
@@ -134,7 +136,7 @@ void GameSession::Update()
             {
                 m_isInIntro = false;
                 const ChartInstrument& instrument = m_song.instruments[m_currentInstrumentIndex];
-                m_nextExpectedOnsetBeat = NextOnsetAfter(m_clock.BeatPosition() - 1e-6, instrument);
+                m_nextExpectedOnsetBeat = NextOnsetAfter(m_introEndSeconds / secondsPerBeat - 1e-6, instrument);
             }
             return;
         }
@@ -151,7 +153,7 @@ void GameSession::Update()
                 int nextIndex = m_currentInstrumentIndex + 1;
                 if (nextIndex < static_cast<int>(m_song.instruments.size()))
                 {
-                    BeginLearning(nextIndex);
+                    BeginLearning(nextIndex, m_pendingAdvanceAtSeconds / secondsPerBeat);
                 }
                 else
                 {
@@ -162,7 +164,6 @@ void GameSession::Update()
         }
 
         const ChartInstrument& instrument = m_song.instruments[m_currentInstrumentIndex];
-        double secondsPerBeat = 60.0 / m_song.bpm;
         double onsetSeconds = m_nextExpectedOnsetBeat * secondsPerBeat;
         double toleranceSeconds = instrument.toleranceMs / 1000.0;
 
@@ -239,9 +240,17 @@ bool GameSession::IsInIntro() const
 
 const ChartInstrument* GameSession::PreviewInstrument() const
 {
+    // An instrument with its own intro_bars hides dots for a while after it
+    // goes live too, so there's nothing useful to preview until its own
+    // intro tail arrives (handled by the m_isInIntro branch below).
     if (m_phase == GamePhase::CountIn)
     {
-        return m_song.instruments.empty() ? nullptr : &m_song.instruments[0];
+        if (m_song.instruments.empty())
+        {
+            return nullptr;
+        }
+        const ChartInstrument& first = m_song.instruments[0];
+        return first.introBars > 0 ? nullptr : &first;
     }
     if (m_phase != GamePhase::Learning)
     {
@@ -256,27 +265,42 @@ const ChartInstrument* GameSession::PreviewInstrument() const
         int nextIndex = m_currentInstrumentIndex + 1;
         if (nextIndex < static_cast<int>(m_song.instruments.size()))
         {
-            return &m_song.instruments[nextIndex];
+            const ChartInstrument& next = m_song.instruments[nextIndex];
+            return next.introBars > 0 ? nullptr : &next;
         }
     }
     return nullptr;
 }
 
-double GameSession::SecondsUntilPreviewInstrumentActive() const
+double GameSession::PreviewTransitionSeconds() const
 {
     if (m_phase == GamePhase::CountIn)
     {
-        return kCountInSeconds - m_clock.ElapsedSeconds();
+        return kCountInSeconds;
     }
-    if (m_isInIntro)
+    if (m_phase == GamePhase::Learning && m_isInIntro)
     {
-        return m_introEndSeconds - m_clock.ElapsedSeconds();
+        return m_introEndSeconds;
     }
-    if (m_hasPendingAdvance)
+    if (m_phase == GamePhase::Learning && m_hasPendingAdvance)
     {
-        return m_pendingAdvanceAtSeconds - m_clock.ElapsedSeconds();
+        return m_pendingAdvanceAtSeconds;
     }
-    return 0.0;
+    return -1.0;
+}
+
+double GameSession::PreviewFirstOnsetBeat() const
+{
+    const ChartInstrument* preview = PreviewInstrument();
+    if (!preview)
+    {
+        return -1.0;
+    }
+
+    double transitionSeconds = PreviewTransitionSeconds();
+    double secondsPerBeat = 60.0 / m_song.bpm;
+    double transitionBeat = transitionSeconds / secondsPerBeat;
+    return NextOnsetAfter(transitionBeat - 1e-6, *preview);
 }
 
 // Returns and clears the most recent judgement (Hit/Miss/None).
@@ -313,7 +337,7 @@ void GameSession::RecordOnsetJudgement(double onsetBeat, JudgementResult result)
 }
 
 // Begins (or resumes) learning the instrument at the given index.
-void GameSession::BeginLearning(int instrumentIndex)
+void GameSession::BeginLearning(int instrumentIndex, double scheduledBeat)
 {
     m_currentInstrumentIndex = instrumentIndex;
     m_streak = 0;
@@ -335,7 +359,7 @@ void GameSession::BeginLearning(int instrumentIndex)
         return;
     }
 
-    m_nextExpectedOnsetBeat = NextOnsetAfter(m_clock.BeatPosition() - 1e-6, instrument);
+    m_nextExpectedOnsetBeat = NextOnsetAfter(scheduledBeat - 1e-6, instrument);
 }
 
 // Called once the current instrument's streak requirement is met: schedules the advance to the

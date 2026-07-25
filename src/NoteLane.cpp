@@ -119,9 +119,10 @@ void NoteLane::Draw(HDC hdc, const GameSession& session) const
 
     // While the player can't act yet (count-in, an instrument's intro, or
     // the wait before the next instrument joins), start showing the
-    // upcoming instrument's dots once they'd naturally scroll into view -
-    // so the first dot a track ever shows enters from the right edge with
-    // a full runway, instead of popping in already near the judge line.
+    // upcoming instrument's dots from its actual first required onset
+    // onward - so each one scrolls in from the right edge one at a time,
+    // exactly like live play, instead of a whole batch of already-
+    // partially-scrolled-in dots popping in together once revealed.
     const ChartInstrument* dotsInstrument = nullptr;
     double dotsFromBeat = 0.0;
     double nowBeat = session.Clock().BeatPosition();
@@ -134,15 +135,11 @@ void NoteLane::Draw(HDC hdc, const GameSession& session) const
     else
     {
         const ChartInstrument* preview = session.PreviewInstrument();
-        if (preview)
+        double firstOnsetBeat = session.PreviewFirstOnsetBeat();
+        if (preview && firstOnsetBeat >= 0.0)
         {
-            double secondsPerBeat = 60.0 / session.Song().bpm;
-            double previewWindowSeconds = kBeatsAhead * secondsPerBeat;
-            if (session.SecondsUntilPreviewInstrumentActive() <= previewWindowSeconds)
-            {
-                dotsInstrument = preview;
-                dotsFromBeat = nowBeat; // nothing's been judged yet, so no trailing dots behind the line
-            }
+            dotsInstrument = preview;
+            dotsFromBeat = firstOnsetBeat;
         }
     }
 
