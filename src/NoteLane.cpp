@@ -45,6 +45,110 @@ std::vector<double> OnsetsInRange(double fromBeat, double toBeat, const ChartIns
     return onsets;
 }
 
+// The rhythmic note values a glyph can be drawn as.
+enum class NoteDuration
+{
+    Whole,
+    Half,
+    Quarter,
+    Eighth,
+    Sixteenth,
+};
+
+// Buckets a gap-to-next-onset (in beats) into the nearest note value, using
+// geometric midpoints between the standard durations (4, 2, 1, 0.5, 0.25).
+NoteDuration ClassifyDuration(double beats)
+{
+    if (beats >= 2.828) return NoteDuration::Whole;
+    if (beats >= 1.414) return NoteDuration::Half;
+    if (beats >= 0.707) return NoteDuration::Quarter;
+    if (beats >= 0.354) return NoteDuration::Eighth;
+    return NoteDuration::Sixteenth;
+}
+
+// Returns how many beats separate this onset from the next one in the
+// instrument's repeating pattern (wrapping around the span), which is what
+// determines its drawn note value - a pattern's onset spacing stands in for
+// an explicit duration field, which the chart format doesn't have.
+double DurationBeatsForOnset(double onsetBeat, const ChartInstrument& instrument)
+{
+    if (instrument.patternBeats.size() < 2 || instrument.spanBeats <= 0.0)
+    {
+        return instrument.spanBeats > 0.0 ? instrument.spanBeats : 1.0;
+    }
+
+    double phase = std::fmod(onsetBeat, instrument.spanBeats);
+    if (phase < 0.0)
+    {
+        phase += instrument.spanBeats;
+    }
+
+    size_t closestIndex = 0;
+    double closestDiff = std::abs(instrument.patternBeats[0] - phase);
+    for (size_t i = 1; i < instrument.patternBeats.size(); ++i)
+    {
+        double diff = std::abs(instrument.patternBeats[i] - phase);
+        if (diff < closestDiff)
+        {
+            closestDiff = diff;
+            closestIndex = i;
+        }
+    }
+
+    double next = (closestIndex + 1 < instrument.patternBeats.size())
+                      ? instrument.patternBeats[closestIndex + 1]
+                      : instrument.patternBeats[0] + instrument.spanBeats;
+    return next - instrument.patternBeats[closestIndex];
+}
+
+// Draws a music-notation-style note glyph (notehead, stem, and flags for
+// eighth/sixteenth notes) centered at (x, centerY), entirely in color, so it
+// still reads as "hit" green / "miss" red / default blue exactly like the
+// plain dot it replaces.
+void DrawNoteGlyph(HDC hdc, int x, int centerY, NoteDuration duration, COLORREF color)
+{
+    constexpr int kHeadRadiusX = 7;
+    constexpr int kHeadRadiusY = 6;
+    constexpr int kStemHeight = 22;
+    constexpr int kStemThickness = 2;
+
+    HPEN pen = CreatePen(PS_SOLID, kStemThickness, color);
+    HPEN oldPen = (HPEN)SelectObject(hdc, pen);
+    HBRUSH filledBrush = CreateSolidBrush(color);
+    HBRUSH hollowBrush = (HBRUSH)GetStockObject(NULL_BRUSH);
+
+    bool isHollow = (duration == NoteDuration::Whole || duration == NoteDuration::Half);
+    HBRUSH oldBrush = (HBRUSH)SelectObject(hdc, isHollow ? hollowBrush : filledBrush);
+    Ellipse(hdc, x - kHeadRadiusX, centerY - kHeadRadiusY, x + kHeadRadiusX, centerY + kHeadRadiusY);
+    SelectObject(hdc, oldBrush);
+
+    if (duration != NoteDuration::Whole)
+    {
+        int stemX = x + kHeadRadiusX - 1;
+        int stemTopY = centerY - kStemHeight;
+        MoveToEx(hdc, stemX, centerY, nullptr);
+        LineTo(hdc, stemX, stemTopY);
+
+        int flagCount = (duration == NoteDuration::Eighth) ? 1 : (duration == NoteDuration::Sixteenth ? 2 : 0);
+        HBRUSH oldFlagBrush = (HBRUSH)SelectObject(hdc, filledBrush);
+        for (int flag = 0; flag < flagCount; ++flag)
+        {
+            int flagY = stemTopY + flag * 6;
+            POINT flagPoints[3] = {
+                {stemX, flagY},
+                {stemX + 8, flagY + 5},
+                {stemX + 1, flagY + 11},
+            };
+            Polygon(hdc, flagPoints, 3);
+        }
+        SelectObject(hdc, oldFlagBrush);
+    }
+
+    SelectObject(hdc, oldPen);
+    DeleteObject(pen);
+    DeleteObject(filledBrush);
+}
+
 } // namespace
 
 // Stores the window that owns this lane's timer and repaints.
@@ -175,11 +279,8 @@ void NoteLane::Draw(HDC hdc, const GameSession& session) const
                 }
             }
 
-            HBRUSH dotBrush = CreateSolidBrush(dotColor);
-            HBRUSH oldBrush = (HBRUSH)SelectObject(hdc, dotBrush);
-            Ellipse(hdc, x - kDotRadius, centerY - kDotRadius, x + kDotRadius, centerY + kDotRadius);
-            SelectObject(hdc, oldBrush);
-            DeleteObject(dotBrush);
+            NoteDuration duration = ClassifyDuration(DurationBeatsForOnset(onsetBeat, *dotsInstrument));
+            DrawNoteGlyph(hdc, x, centerY, duration, dotColor);
         }
     }
 
