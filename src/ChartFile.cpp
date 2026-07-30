@@ -4,7 +4,6 @@
 #include <cmath>
 #include <cwctype>
 #include <fstream>
-#include <sstream>
 
 namespace
 {
@@ -169,192 +168,23 @@ bool ParseTimeSignature(const std::wstring& value, int& outBeatsPerBar)
     return true;
 }
 
-// Extracts the value of a "key:value" token, or "" if the token isn't for that key.
-std::wstring ExtractTokenValue(const std::wstring& token, const std::wstring& key)
+// Rounds totalBeats up to the next whole multiple of beatsPerBar (at least
+// one full bar), so a repeating MIDI pattern always tiles on a bar
+// boundary. Without this, a DAW export that trims its MIDI region to end
+// right after the last note (rather than at the loop's actual bar
+// boundary) would tile at that arbitrary length and silently drift out of
+// phase with the audio after the first loop - not a crash, just wrong,
+// which is exactly the kind of case that needs handling automatically
+// rather than left for the author to notice by ear.
+double AlignToBarBoundary(double totalBeats, int beatsPerBar)
 {
-    std::wstring prefix = key + L":";
-    if (token.rfind(prefix, 0) == 0)
+    double bars = totalBeats / static_cast<double>(beatsPerBar);
+    double alignedBars = std::ceil(bars - 1e-6);
+    if (alignedBars < 1.0)
     {
-        return token.substr(prefix.size());
+        alignedBars = 1.0;
     }
-    return L"";
-}
-
-// Builds the 0-indexed onset list for one bar of a named subdivision (whole/half/quarter/eighth/sixteenth).
-std::vector<double> BuildSubdivisionOnsets(const std::wstring& subdivision, double barBeats)
-{
-    double step = 1.0;
-    if (subdivision == L"whole")
-    {
-        step = 4.0;
-    }
-    else if (subdivision == L"half")
-    {
-        step = 2.0;
-    }
-    else if (subdivision == L"quarter")
-    {
-        step = 1.0;
-    }
-    else if (subdivision == L"eighth")
-    {
-        step = 0.5;
-    }
-    else if (subdivision == L"sixteenth")
-    {
-        step = 0.25;
-    }
-
-    std::vector<double> onsets;
-    for (double beat = 0.0; beat < barBeats - 1e-9; beat += step)
-    {
-        onsets.push_back(beat);
-    }
-    return onsets;
-}
-
-// Parses a "pattern = ..." value into a 0-indexed onset list and the span (in beats) it repeats over.
-// Three forms: a named subdivision ("quarter", optionally "every:N offset:K"),
-// "bar beats:<1-indexed comma list>" (repeats every bar), or
-// "explicit beats:<1-indexed comma list> span:<beats>" (repeats every span beats).
-// Appends a descriptive entry to errors (prefixed with "Line N: context") for
-// every problem found - an unrecognized pattern kind, an unsupported option,
-// a non-numeric or out-of-range value - and returns false if the pattern
-// couldn't be parsed into any usable onsets.
-bool ParsePattern(const std::wstring& value, int beatsPerBar, std::vector<double>& outBeats, double& outSpanBeats,
-                   const std::wstring& context, int lineNumber, std::vector<std::wstring>& errors)
-{
-    auto addError = [&](const std::wstring& message)
-    {
-        errors.push_back(L"Line " + std::to_wstring(lineNumber) + L": " + context + L" " + message);
-    };
-
-    std::wstringstream ss(value);
-    std::wstring firstToken;
-    ss >> firstToken;
-
-    if (firstToken == L"bar" || firstToken == L"explicit")
-    {
-        std::wstring beatsCsv;
-        double span = beatsPerBar;
-        bool ok = true;
-        std::wstring token;
-        while (ss >> token)
-        {
-            std::wstring beatsVal = ExtractTokenValue(token, L"beats");
-            if (!beatsVal.empty())
-            {
-                beatsCsv = beatsVal;
-                continue;
-            }
-            std::wstring spanVal = ExtractTokenValue(token, L"span");
-            if (!spanVal.empty())
-            {
-                if (!TryParseStrictDouble(spanVal, span) || span <= 0.0)
-                {
-                    addError(L"pattern's span must be a positive number, got '" + spanVal + L"'");
-                    ok = false;
-                }
-                continue;
-            }
-            addError(L"pattern has an unsupported option '" + token + L"'");
-            ok = false;
-        }
-
-        if (beatsCsv.empty())
-        {
-            addError(L"pattern is missing its required 'beats:' list");
-            return false;
-        }
-
-        std::wstringstream beatsStream(beatsCsv);
-        std::wstring beatToken;
-        std::vector<double> oneIndexed;
-        while (std::getline(beatsStream, beatToken, L','))
-        {
-            std::wstring trimmed = Trim(beatToken);
-            double beatValue;
-            if (!TryParseStrictDouble(trimmed, beatValue))
-            {
-                addError(L"pattern has a non-numeric beat value '" + trimmed + L"'");
-                ok = false;
-                continue;
-            }
-            if (beatValue < 1.0)
-            {
-                addError(L"pattern beat values must be >= 1 (they're 1-indexed), got '" + trimmed + L"'");
-                ok = false;
-                continue;
-            }
-            oneIndexed.push_back(beatValue);
-        }
-
-        if (oneIndexed.empty())
-        {
-            return false;
-        }
-
-        outBeats.clear();
-        for (double b : oneIndexed)
-        {
-            outBeats.push_back(b - 1.0); // authored as 1-indexed musical beats
-        }
-        outSpanBeats = span;
-        return ok;
-    }
-
-    if (firstToken == L"whole" || firstToken == L"half" || firstToken == L"quarter" ||
-        firstToken == L"eighth" || firstToken == L"sixteenth")
-    {
-        std::vector<double> baseOnsets = BuildSubdivisionOnsets(firstToken, beatsPerBar);
-
-        int every = 1;
-        int offset = 0;
-        bool ok = true;
-        std::wstring token;
-        while (ss >> token)
-        {
-            std::wstring everyVal = ExtractTokenValue(token, L"every");
-            if (!everyVal.empty())
-            {
-                if (!TryParseStrictInt(everyVal, every) || every <= 0)
-                {
-                    addError(L"pattern's 'every' must be a positive whole number, got '" + everyVal + L"'");
-                    ok = false;
-                    every = 1;
-                }
-                continue;
-            }
-            std::wstring offsetVal = ExtractTokenValue(token, L"offset");
-            if (!offsetVal.empty())
-            {
-                if (!TryParseStrictInt(offsetVal, offset) || offset < 0)
-                {
-                    addError(L"pattern's 'offset' must be a non-negative whole number, got '" + offsetVal + L"'");
-                    ok = false;
-                    offset = 0;
-                }
-                continue;
-            }
-            addError(L"pattern has an unsupported option '" + token + L"'");
-            ok = false;
-        }
-
-        outBeats.clear();
-        for (int i = 0; i < static_cast<int>(baseOnsets.size()); ++i)
-        {
-            if (i >= offset && (i - offset) % every == 0)
-            {
-                outBeats.push_back(baseOnsets[i]);
-            }
-        }
-        outSpanBeats = beatsPerBar;
-        return ok;
-    }
-
-    addError(L"pattern '" + value +
-             L"' isn't a recognized pattern kind (expected 'bar', 'explicit', 'whole', 'half', 'quarter', 'eighth', or 'sixteenth')");
-    return false;
+    return alignedBars * beatsPerBar;
 }
 
 } // namespace
@@ -374,57 +204,193 @@ bool ChartFile::Load(const std::wstring& chartFilePath, ChartSong& outSong, std:
     std::wstring chartDir = GetDirectory(chartFilePath);
 
     ChartSong song;
-    std::wstring currentSection;
-    ChartInstrument currentInstrument;
-    bool haveInstrument = false;
-    bool patternProvided = false;
-    bool sawSongSection = false;
-    int instrumentOrdinal = 0;
+    std::wstring currentBlockKind;
 
-    auto instrumentContext = [&]()
+    ChartClip currentClip;
+    bool haveClip = false;
+    bool startToleranceProvided = false;
+    bool releaseToleranceProvided = false;
+    int clipOrdinal = 0;
+
+    ChartSection currentSectionData;
+    bool haveSection = false;
+    bool clipNameProvided = false;
+    bool playModeProvided = false;
+    std::wstring currentClipNameRaw;
+    int sectionOrdinal = 0;
+
+    bool sawSongSection = false;
+
+    auto clipContext = [&]()
     {
-        std::wstring context = L"instrument #" + std::to_wstring(instrumentOrdinal + 1);
-        if (!currentInstrument.name.empty())
+        std::wstring context = L"clip #" + std::to_wstring(clipOrdinal + 1);
+        if (!currentClip.name.empty())
         {
-            context += L" (" + currentInstrument.name + L")";
+            context += L" (" + currentClip.name + L")";
         }
         return context;
     };
 
-    auto flushInstrument = [&]()
+    auto sectionContext = [&]()
     {
-        if (!haveInstrument)
+        std::wstring context = L"section #" + std::to_wstring(sectionOrdinal + 1);
+        if (clipNameProvided && !currentClipNameRaw.empty())
+        {
+            context += L" (" + currentClipNameRaw + L")";
+        }
+        return context;
+    };
+
+    auto flushClip = [&]()
+    {
+        if (!haveClip)
         {
             return;
         }
-        std::wstring context = instrumentContext();
-        ++instrumentOrdinal;
+        std::wstring context = clipContext();
+        ++clipOrdinal;
 
-        if (currentInstrument.name.empty())
+        if (currentClip.name.empty())
         {
             outErrors.push_back(context + L": missing required field 'name'");
         }
-        if (currentInstrument.wavFilePath.empty())
+        else
         {
-            outErrors.push_back(context + L": missing required field 'file'");
+            for (const ChartClip& existing : song.clips)
+            {
+                if (existing.name == currentClip.name)
+                {
+                    outErrors.push_back(context + L": a clip named '" + currentClip.name + L"' was already declared");
+                    break;
+                }
+            }
+        }
+        if (currentClip.wavFilePath.empty())
+        {
+            // wavFilePath/midiFilePath are both derived from the single
+            // `filename` field together, so an empty wavFilePath means no
+            // filename was given at all - nothing else to check.
+            outErrors.push_back(context + L": missing required field 'filename'");
         }
         else
         {
-            std::ifstream stemTest(currentInstrument.wavFilePath.c_str(), std::ios::binary);
+            std::ifstream stemTest(currentClip.wavFilePath.c_str(), std::ios::binary);
             if (!stemTest)
             {
-                outErrors.push_back(context + L": file '" + currentInstrument.wavFilePath + L"' does not exist");
+                outErrors.push_back(context + L": file '" + currentClip.wavFilePath + L"' does not exist");
+            }
+
+            std::ifstream midiTest(currentClip.midiFilePath.c_str(), std::ios::binary);
+            if (!midiTest)
+            {
+                // No .mid file next to the .wav - fine, this clip just
+                // can't be used in a `learn` section (checked in
+                // flushSection once its sections are known).
+                currentClip.hasMidi = false;
+            }
+            else
+            {
+                MidiLaneData midiData;
+                std::wstring midiError;
+                if (!ChartMidi::LoadLaneNotes(currentClip.midiFilePath, midiData, midiError))
+                {
+                    outErrors.push_back(context + L": " + midiError);
+                }
+                else
+                {
+                    for (int lane = 0; lane < kLaneCount; ++lane)
+                    {
+                        currentClip.laneNotes[lane] = std::move(midiData.lanes[lane]);
+                    }
+                    currentClip.spanBeats = AlignToBarBoundary(midiData.totalBeats, song.beatsPerBar);
+                    currentClip.hasMidi = true;
+                }
             }
         }
-        if (!patternProvided)
+
+        if (!startToleranceProvided)
         {
-            outErrors.push_back(context + L": missing required field 'pattern'");
+            currentClip.startToleranceMs = song.startToleranceMs;
+        }
+        if (!releaseToleranceProvided)
+        {
+            currentClip.releaseToleranceMs = song.releaseToleranceMs;
         }
 
-        song.instruments.push_back(currentInstrument);
-        currentInstrument = ChartInstrument{};
-        haveInstrument = false;
-        patternProvided = false;
+        song.clips.push_back(currentClip);
+        currentClip = ChartClip{};
+        haveClip = false;
+        startToleranceProvided = false;
+        releaseToleranceProvided = false;
+    };
+
+    auto flushSection = [&]()
+    {
+        if (!haveSection)
+        {
+            return;
+        }
+        std::wstring context = sectionContext();
+        ++sectionOrdinal;
+
+        if (!playModeProvided)
+        {
+            outErrors.push_back(context + L": missing required field 'play_mode'");
+        }
+
+        bool clipGiven = clipNameProvided && !currentClipNameRaw.empty();
+
+        if (playModeProvided && currentSectionData.playMode == PlayMode::Learn && !clipGiven)
+        {
+            outErrors.push_back(context + L": play_mode 'learn' requires a non-empty 'clip'");
+        }
+        else if (playModeProvided && currentSectionData.playMode == PlayMode::Background && !clipGiven)
+        {
+            outErrors.push_back(context + L": play_mode 'background' requires a non-empty 'clip'");
+        }
+
+        if (clipGiven)
+        {
+            int foundIndex = -1;
+            for (size_t i = 0; i < song.clips.size(); ++i)
+            {
+                if (song.clips[i].name == currentClipNameRaw)
+                {
+                    foundIndex = static_cast<int>(i);
+                    break;
+                }
+            }
+            if (foundIndex < 0)
+            {
+                outErrors.push_back(context + L": clip '" + currentClipNameRaw + L"' does not match any declared [clip]");
+            }
+            else
+            {
+                currentSectionData.clipIndex = foundIndex;
+                if (playModeProvided && currentSectionData.playMode == PlayMode::Learn && !song.clips[foundIndex].hasMidi)
+                {
+                    outErrors.push_back(context + L": clip '" + currentClipNameRaw +
+                                         L"' has no .mid file and can't be used in a play_mode 'learn' section");
+                }
+            }
+        }
+        else
+        {
+            currentSectionData.clipIndex = -1;
+        }
+
+        song.sections.push_back(currentSectionData);
+        currentSectionData = ChartSection{};
+        haveSection = false;
+        clipNameProvided = false;
+        playModeProvided = false;
+        currentClipNameRaw.clear();
+    };
+
+    auto flushCurrentBlock = [&]()
+    {
+        flushClip();
+        flushSection();
     };
 
     std::wstring line;
@@ -441,13 +407,17 @@ bool ChartFile::Load(const std::wstring& chartFilePath, ChartSong& outSong, std:
         std::wstring section;
         if (ParseSectionHeader(line, section))
         {
-            flushInstrument();
-            currentSection = section;
-            if (currentSection == L"instrument")
+            flushCurrentBlock();
+            currentBlockKind = section;
+            if (currentBlockKind == L"clip")
             {
-                haveInstrument = true;
+                haveClip = true;
             }
-            else if (currentSection == L"song")
+            else if (currentBlockKind == L"section")
+            {
+                haveSection = true;
+            }
+            else if (currentBlockKind == L"song")
             {
                 sawSongSection = true;
             }
@@ -466,7 +436,7 @@ bool ChartFile::Load(const std::wstring& chartFilePath, ChartSong& outSong, std:
             continue;
         }
 
-        if (currentSection == L"song")
+        if (currentBlockKind == L"song")
         {
             if (key == L"title")
             {
@@ -501,14 +471,34 @@ bool ChartFile::Load(const std::wstring& chartFilePath, ChartSong& outSong, std:
                     song.beatsPerBar = beatsPerBar;
                 }
             }
+            else if (key == L"start_tolerance_ms" || key == L"release_tolerance_ms")
+            {
+                double tolerance;
+                if (!TryParseStrictDouble(value, tolerance))
+                {
+                    outErrors.push_back(L"Line " + std::to_wstring(lineNumber) + L": " + key + L" must be a number, got '" + value + L"'");
+                }
+                else if (tolerance <= 0.0)
+                {
+                    outErrors.push_back(L"Line " + std::to_wstring(lineNumber) + L": " + key + L" must be positive, got '" + value + L"'");
+                }
+                else if (key == L"start_tolerance_ms")
+                {
+                    song.startToleranceMs = tolerance;
+                }
+                else
+                {
+                    song.releaseToleranceMs = tolerance;
+                }
+            }
             else
             {
                 outErrors.push_back(L"Line " + std::to_wstring(lineNumber) + L": unsupported field '" + key + L"' in [song] section");
             }
         }
-        else if (currentSection == L"instrument")
+        else if (currentBlockKind == L"clip")
         {
-            std::wstring context = instrumentContext();
+            std::wstring context = clipContext();
             if (key == L"name")
             {
                 if (value.empty())
@@ -517,31 +507,19 @@ bool ChartFile::Load(const std::wstring& chartFilePath, ChartSong& outSong, std:
                 }
                 else
                 {
-                    currentInstrument.name = value;
+                    currentClip.name = value;
                 }
             }
-            else if (key == L"file")
+            else if (key == L"filename")
             {
                 if (value.empty())
                 {
-                    outErrors.push_back(L"Line " + std::to_wstring(lineNumber) + L": " + context + L": file must not be empty");
+                    outErrors.push_back(L"Line " + std::to_wstring(lineNumber) + L": " + context + L": filename must not be empty");
                 }
                 else
                 {
-                    currentInstrument.wavFilePath = chartDir + value;
-                }
-            }
-            else if (key == L"pattern")
-            {
-                std::vector<double> beats;
-                double span = 0.0;
-                bool ok = ParsePattern(value, song.beatsPerBar, beats, span, context, lineNumber, outErrors);
-                patternProvided = true;
-                if (ok)
-                {
-                    currentInstrument.patternBeats = std::move(beats);
-                    std::sort(currentInstrument.patternBeats.begin(), currentInstrument.patternBeats.end());
-                    currentInstrument.spanBeats = span;
+                    currentClip.wavFilePath = chartDir + value + L".wav";
+                    currentClip.midiFilePath = chartDir + value + L".mid";
                 }
             }
             else if (key == L"hits_required")
@@ -557,23 +535,29 @@ bool ChartFile::Load(const std::wstring& chartFilePath, ChartSong& outSong, std:
                 }
                 else
                 {
-                    currentInstrument.hitsRequired = hits;
+                    currentClip.hitsRequired = hits;
                 }
             }
-            else if (key == L"tolerance_ms")
+            else if (key == L"start_tolerance_ms" || key == L"release_tolerance_ms")
             {
                 double tolerance;
                 if (!TryParseStrictDouble(value, tolerance))
                 {
-                    outErrors.push_back(L"Line " + std::to_wstring(lineNumber) + L": " + context + L": tolerance_ms must be a number, got '" + value + L"'");
+                    outErrors.push_back(L"Line " + std::to_wstring(lineNumber) + L": " + context + L": " + key + L" must be a number, got '" + value + L"'");
                 }
                 else if (tolerance <= 0.0)
                 {
-                    outErrors.push_back(L"Line " + std::to_wstring(lineNumber) + L": " + context + L": tolerance_ms must be positive, got '" + value + L"'");
+                    outErrors.push_back(L"Line " + std::to_wstring(lineNumber) + L": " + context + L": " + key + L" must be positive, got '" + value + L"'");
+                }
+                else if (key == L"start_tolerance_ms")
+                {
+                    currentClip.startToleranceMs = tolerance;
+                    startToleranceProvided = true;
                 }
                 else
                 {
-                    currentInstrument.toleranceMs = tolerance;
+                    currentClip.releaseToleranceMs = tolerance;
+                    releaseToleranceProvided = true;
                 }
             }
             else if (key == L"init_volume" || key == L"volume")
@@ -589,11 +573,11 @@ bool ChartFile::Load(const std::wstring& chartFilePath, ChartSong& outSong, std:
                 }
                 else if (key == L"init_volume")
                 {
-                    currentInstrument.initVolume = volume;
+                    currentClip.initVolume = volume;
                 }
                 else
                 {
-                    currentInstrument.volume = volume;
+                    currentClip.volume = volume;
                 }
             }
             else if (key == L"intro_bars" || key == L"outro_loops")
@@ -609,26 +593,78 @@ bool ChartFile::Load(const std::wstring& chartFilePath, ChartSong& outSong, std:
                 }
                 else if (key == L"intro_bars")
                 {
-                    currentInstrument.introBars = count;
+                    currentClip.introBars = count;
                 }
                 else
                 {
-                    currentInstrument.outroLoops = count;
+                    currentClip.outroLoops = count;
                 }
             }
             else
             {
-                outErrors.push_back(L"Line " + std::to_wstring(lineNumber) + L": unsupported field '" + key + L"' in [instrument] section");
+                outErrors.push_back(L"Line " + std::to_wstring(lineNumber) + L": unsupported field '" + key + L"' in [clip] section");
+            }
+        }
+        else if (currentBlockKind == L"section")
+        {
+            std::wstring context = sectionContext();
+            if (key == L"clip")
+            {
+                currentClipNameRaw = value;
+                clipNameProvided = true;
+            }
+            else if (key == L"play_mode")
+            {
+                if (value == L"learn")
+                {
+                    currentSectionData.playMode = PlayMode::Learn;
+                    playModeProvided = true;
+                }
+                else if (value == L"solo")
+                {
+                    currentSectionData.playMode = PlayMode::Solo;
+                    playModeProvided = true;
+                }
+                else if (value == L"background")
+                {
+                    currentSectionData.playMode = PlayMode::Background;
+                    playModeProvided = true;
+                }
+                else
+                {
+                    outErrors.push_back(L"Line " + std::to_wstring(lineNumber) + L": " + context +
+                                         L": play_mode must be one of 'learn', 'solo', 'background', got '" + value + L"'");
+                }
+            }
+            else if (key == L"loop_count")
+            {
+                int count;
+                if (!TryParseStrictInt(value, count))
+                {
+                    outErrors.push_back(L"Line " + std::to_wstring(lineNumber) + L": " + context + L": loop_count must be a whole number, got '" + value + L"'");
+                }
+                else if (count < 1)
+                {
+                    outErrors.push_back(L"Line " + std::to_wstring(lineNumber) + L": " + context + L": loop_count must be at least 1, got '" + value + L"'");
+                }
+                else
+                {
+                    currentSectionData.loopCount = count;
+                }
+            }
+            else
+            {
+                outErrors.push_back(L"Line " + std::to_wstring(lineNumber) + L": unsupported field '" + key + L"' in [section] section");
             }
         }
         else
         {
             outErrors.push_back(L"Line " + std::to_wstring(lineNumber) + L": field '" + key +
-                                 L"' is not inside a recognized [song] or [instrument] section");
+                                 L"' is not inside a recognized [song], [clip], or [section] section");
         }
     }
 
-    flushInstrument();
+    flushCurrentBlock();
 
     if (!sawSongSection)
     {
@@ -638,9 +674,9 @@ bool ChartFile::Load(const std::wstring& chartFilePath, ChartSong& outSong, std:
     {
         outErrors.push_back(L"[song] section is missing its required field 'bpm'");
     }
-    if (song.instruments.empty())
+    if (song.sections.empty())
     {
-        outErrors.push_back(L"Chart must declare at least one [instrument] section");
+        outErrors.push_back(L"Chart must declare at least one [section]");
     }
 
     if (!outErrors.empty())

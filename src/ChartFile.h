@@ -3,33 +3,81 @@
 #include <string>
 #include <vector>
 
-// One instrument layer in a chart: its stem file, its rhythmic pattern, and
-// the thresholds needed to lock it in. patternBeats holds 0-indexed onset
-// positions within one repetition of length spanBeats (e.g. spanBeats=4 for
-// a single 4/4 bar); the pattern repeats indefinitely as
-// n*spanBeats + patternBeats[i] for n = 0, 1, 2, ...
-struct ChartInstrument
+#include "ChartMidi.h"
+#include "LaneConfig.h"
+
+// A reusable audio+MIDI bundle: a stem file, its MIDI-authored note
+// pattern, and the thresholds needed to judge/lock it in when played in a
+// "learn" section. A clip is purely a definition - it does nothing on its
+// own until a [section] references it, and the same clip may be
+// referenced by more than one section (e.g. once as a background layer,
+// later as the thing being learned). laneNotes[i] holds lane i's own
+// independent, 0-indexed-from-repetition-start note list (each lane's
+// notes never overlap themselves, but different lanes' notes are
+// otherwise unrelated); every lane repeats indefinitely over the same
+// shared spanBeats, i.e. a lane's absolute note starts are
+// n*spanBeats + note.startBeat for n = 0, 1, 2, ...
+//
+// wavFilePath/midiFilePath are derived from the chart's declared
+// `filename` field (chart directory + filename + ".wav"/".mid"), not
+// independently authored paths. The .mid file is optional - hasMidi is
+// false (laneNotes/spanBeats left at their defaults) when it doesn't
+// exist on disk, which is only a problem for a clip used in a "learn"
+// section (rejected at load time); solo/background sections never touch
+// MIDI data at all.
+struct ChartClip
 {
     std::wstring name;
     std::wstring wavFilePath;
-    std::vector<double> patternBeats;
+    std::wstring midiFilePath;
+    bool hasMidi = false;
+    std::vector<LaneNote> laneNotes[kLaneCount];
     double spanBeats = 4.0;
     int hitsRequired = 16;
-    double toleranceMs = 120.0;
-    double initVolume = 1.0; // volume while the player is still learning this instrument
-    double volume = 1.0;     // volume once it's locked in and looping automatically
+    // Both resolved at load time: the clip's own start_tolerance_ms/
+    // release_tolerance_ms if it declared one, otherwise the song's
+    // global default (ChartSong::startToleranceMs/releaseToleranceMs) -
+    // downstream code never needs to know which one applied.
+    double startToleranceMs = 120.0;
+    double releaseToleranceMs = 120.0;
+    double initVolume = 1.0; // volume while the player is still learning this clip
+    double volume = 1.0;     // volume once it's locked in and looping automatically, or during solo/background playback
     int introBars = 0;       // if > 0, this many bars play automatically (no tap needed) before dots/judging start
-    int outroLoops = 0;      // if > 0, this many extra full loops play after locking in before the next instrument joins
+    int outroLoops = 0;      // if > 0, this many extra full loops play after locking in before the next section joins
 };
 
-// A full song: tempo/time signature plus an ordered list of instruments,
-// introduced one at a time in the order they appear in the file.
+// How a [section] uses its clip.
+enum class PlayMode
+{
+    Learn,      // judge presses/releases against the clip, exactly like today's single-instrument flow
+    Solo,       // stop everything else playing, play this clip, block until loop_count loops finish
+    Background, // queue this clip to start playing (without stopping anything) when the *next* section begins
+};
+
+// One step of actual gameplay, processed in declared order - clips alone
+// do nothing; only sections drive the song. clipIndex is resolved at
+// parse time to an index into ChartSong::clips, or -1 for a Solo section
+// with a deliberately empty clip reference (the only mode that allows one).
+struct ChartSection
+{
+    int clipIndex = -1;
+    PlayMode playMode = PlayMode::Learn;
+    int loopCount = 1; // minimum number of times the clip must loop; see PlayMode-specific semantics in GameSession
+};
+
+// A full song: tempo/time signature, the pool of reusable clips, and the
+// ordered list of sections that actually drives gameplay.
 struct ChartSong
 {
     std::wstring title;
     double bpm = 120.0;
     int beatsPerBar = 4;
-    std::vector<ChartInstrument> instruments;
+    // Default press/release judging tolerance for any clip that doesn't
+    // declare its own start_tolerance_ms/release_tolerance_ms override.
+    double startToleranceMs = 120.0;
+    double releaseToleranceMs = 120.0;
+    std::vector<ChartClip> clips;
+    std::vector<ChartSection> sections;
 };
 
 class ChartFile
@@ -38,8 +86,11 @@ public:
     // Parses and validates a .chart text file. Returns false if the file
     // can't be opened or fails validation - outErrors then holds a
     // human-readable message for every problem found (unsupported fields,
-    // wrong-typed or out-of-range values, a malformed pattern or time
-    // signature, missing required fields, or a referenced stem file that
-    // doesn't exist). On success outErrors is empty and outSong is filled in.
+    // wrong-typed or out-of-range values, a malformed time signature,
+    // missing required fields, a referenced stem/MIDI file that doesn't
+    // exist or can't be parsed, a duplicate clip name, a section
+    // referencing an unknown clip, an invalid play_mode, or a chart with
+    // no [section] blocks at all). On success outErrors is empty and
+    // outSong is filled in.
     static bool Load(const std::wstring& chartFilePath, ChartSong& outSong, std::vector<std::wstring>& outErrors);
 };
