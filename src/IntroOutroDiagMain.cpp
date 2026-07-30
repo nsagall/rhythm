@@ -294,6 +294,7 @@ int main(int argc, char** argv)
         if (phase == GamePhase::CountIn)
         {
             double nowBeatCountIn = session.Clock().BeatPosition();
+            const ChartClip* previewClip = session.PreviewClip();
             for (int lane = 0; lane < kLaneCount; ++lane)
             {
                 if (countInLaneVisiblePrinted[lane])
@@ -310,10 +311,16 @@ int main(int argc, char** argv)
                     countInLaneVisiblePrinted[lane] = true;
                     double countInEndBeat = 2.0 / secondsPerBeat; // kCountInSeconds, mirrored
                     double leadBeatsBeforeCountInEnds = countInEndBeat - nowBeatCountIn;
+                    // Directly mirror NoteLane's own dotsFromBeat/NotesInRange
+                    // call for the preview path (dotsFromBeat = onset exactly)
+                    // to confirm the note GameSession says is "next" is
+                    // actually findable by the same tiling logic NoteLane uses.
+                    bool actuallyVisible =
+                        previewClip && AnyNoteVisible(*previewClip, lane, onset, nowBeatCountIn + kNoteFallBeats);
                     printf("[t=%.2fs]   CountIn preview: lane %d onset=%.4f becomes visible now - "
-                           "%.4f beats of CountIn remain, note is %.4f beats away\n",
+                           "%.4f beats of CountIn remain, note is %.4f beats away, AnyNoteVisible=%s\n",
                            session.Clock().ElapsedSeconds(), lane, onset, leadBeatsBeforeCountInEnds,
-                           onset - nowBeatCountIn);
+                           onset - nowBeatCountIn, actuallyVisible ? "true" : "** FALSE - BUG **");
                 }
             }
         }
@@ -463,7 +470,9 @@ int main(int argc, char** argv)
 
             // Mirror NoteLane's nextClipShowing computation (NoteLane.cpp) to
             // confirm the explosion equivalent fires at or before the actual
-            // transition - never silently skipped.
+            // transition - never silently skipped - and, now, only once
+            // something is actually about to become visible (or the
+            // transition-beat fallback, when nothing ever would be).
             const ChartClip* mirroredPreview = session.PreviewClip();
             bool mirroredNextClipShowing;
             if (mirroredPreview == nullptr)
@@ -474,7 +483,18 @@ int main(int argc, char** argv)
             {
                 double nowBeat = session.Clock().BeatPosition();
                 double advanceAtBeat = session.PendingAdvanceAtSeconds() / secondsPerBeat;
-                mirroredNextClipShowing = (nowBeat >= advanceAtBeat - kNoteFallBeats);
+                double earliestOnset = -1.0;
+                for (int lane = 0; lane < kLaneCount; ++lane)
+                {
+                    double onset = session.PreviewFirstOnsetBeatForLane(lane);
+                    if (onset >= 0.0 && (earliestOnset < 0.0 || onset < earliestOnset))
+                    {
+                        earliestOnset = onset;
+                    }
+                }
+                double visibleAtBeat = (earliestOnset >= 0.0) ? (earliestOnset - kNoteFallBeats) : (advanceAtBeat - kNoteFallBeats);
+                double triggerBeat = (visibleAtBeat <= advanceAtBeat) ? visibleAtBeat : (advanceAtBeat - kNoteFallBeats);
+                mirroredNextClipShowing = (nowBeat >= triggerBeat);
             }
             if (mirroredNextClipShowing && !lastMirroredNextClipShowing)
             {

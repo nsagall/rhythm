@@ -627,18 +627,23 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
     const ChartClip* clip = session.CurrentClip();
 
     // Once a learn section locks in, its dots don't vanish right away - they
-    // keep coming (and keep being judged) until the *next* clip's dots are
-    // actually due to show at the top of the lane, computed here from the
-    // already-scheduled advance time rather than by waiting on any specific
-    // upcoming note: PreviewFirstOnsetBeatForLane() always returns a beat at
-    // or after the scheduled advance (it searches forward from there), so
-    // waiting on it directly could push past the advance itself before ever
-    // firing - by which point GameSession has already flipped
-    // IsAwaitingAdvance() back off (Update() runs before Draw() each
-    // frame), and this would silently never trigger. Falls back to showing
-    // immediately once locked in (matching the old, simpler behavior) when
+    // keep coming (and keep being judged) until the *next* clip's own dots
+    // actually start scrolling in at the top of the lane - i.e. until the
+    // earliest of its lanes' first notes (PreviewFirstOnsetBeatForLane)
+    // crosses within kBeatsAhead of now, the same visibility threshold any
+    // note uses. That earliest onset is always at or after the scheduled
+    // advance beat (it's found by searching forward from there), so it can
+    // land anywhere from "already at the advance beat" (common - explodes
+    // right as the handoff happens) to several beats past it (a sparser
+    // clip) - waiting on it directly is what makes this "only explode when
+    // something is actually arriving," not a fixed time-based guess. The
+    // one thing that can't be allowed is waiting on it *past* the advance
+    // beat itself: GameSession flips IsAwaitingAdvance() off there (Update()
+    // runs before Draw() each frame), so this would silently never trigger
+    // - falls back to the advance beat itself in that case (and whenever
     // there's nothing to preview at all - end of chart, the next section is
-    // solo, or the next learn section hides its own dots behind an intro.
+    // solo, or the next learn section hides its own dots behind an intro),
+    // matching the old, simpler "explode right at the handoff" behavior.
     bool learnAwaitingAdvance = clip && session.Phase() == GamePhase::Learning &&
                                  session.CurrentPlayMode() == PlayMode::Learn && session.IsAwaitingAdvance();
     bool nextClipShowing = false;
@@ -652,7 +657,20 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
         {
             double secondsPerBeat = 60.0 / session.Song().bpm;
             double advanceAtBeat = session.PendingAdvanceAtSeconds() / secondsPerBeat;
-            nextClipShowing = (nowBeat >= advanceAtBeat - kBeatsAhead);
+
+            double earliestOnset = -1.0;
+            for (int lane = 0; lane < kLaneCount; ++lane)
+            {
+                double onset = session.PreviewFirstOnsetBeatForLane(lane);
+                if (onset >= 0.0 && (earliestOnset < 0.0 || onset < earliestOnset))
+                {
+                    earliestOnset = onset;
+                }
+            }
+
+            double visibleAtBeat = (earliestOnset >= 0.0) ? (earliestOnset - kBeatsAhead) : (advanceAtBeat - kBeatsAhead);
+            double triggerBeat = (visibleAtBeat <= advanceAtBeat) ? visibleAtBeat : (advanceAtBeat - kBeatsAhead);
+            nextClipShowing = (nowBeat >= triggerBeat);
         }
     }
 
