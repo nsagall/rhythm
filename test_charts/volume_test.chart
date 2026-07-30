@@ -2,19 +2,25 @@
 title = Volume Test
 bpm = 100
 time_signature = 4/4
+start_tolerance_ms = 150
+release_tolerance_ms = 150
 
-[instrument]
+[clip]
 name = Bass Drum
-file = stems\bass_drum.wav
-pattern = quarter
+filename = bass_drum
 hits_required = 4
-tolerance_ms = 150
 init_volume = 0.3
 volume = 1.0
 
-[instrument]
+[clip]
 name = Snare
-file = stems\snare.wav
-pattern = quarter every:2 offset:1
+filename = snare
 hits_required = 4
-tolerance_ms = 150
+
+[section]
+clip = Bass Drum
+play_mode = learn
+
+[section]
+clip = Snare
+play_mode = learn

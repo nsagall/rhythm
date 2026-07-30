@@ -1,0 +1,13 @@
+[song]
+title = Learn No Midi Test
+bpm = 120
+time_signature = 4/4
+
+[clip]
+name = SoloOnly
+filename = solo_only
+hits_required = 4
+
+[section]
+clip = SoloOnly
+play_mode = learn

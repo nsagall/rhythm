@@ -1,0 +1,16 @@
+[song]
+title = No Midi Solo Test
+bpm = 120
+time_signature = 4/4
+
+; SoloOnly has a .wav but deliberately no matching .mid file - proves a
+; clip is allowed to have no MIDI at all as long as it's never used in a
+; play_mode 'learn' section.
+[clip]
+name = SoloOnly
+filename = solo_only
+hits_required = 4
+
+[section]
+clip = SoloOnly
+play_mode = solo

@@ -2,10 +2,14 @@
 title = Fast Test
 bpm = 125.28
 time_signature = 4/4
+start_tolerance_ms = 150
+release_tolerance_ms = 150
 
-[instrument]
+[clip]
 name = FastHat
-file = stems\hihat.wav
-pattern = eighth
+filename = fast_test_hat
 hits_required = 6
-tolerance_ms = 150
+
+[section]
+clip = FastHat
+play_mode = learn

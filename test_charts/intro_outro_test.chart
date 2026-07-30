@@ -2,26 +2,39 @@
 title = Intro/Outro Test
 bpm = 100
 time_signature = 4/4
+start_tolerance_ms = 150
+release_tolerance_ms = 150
 
-[instrument]
+[clip]
 name = Bass Drum
-file = stems\bass_drum.wav
-pattern = quarter
+filename = bass_drum
 hits_required = 4
-tolerance_ms = 150
 intro_bars = 2
 
-[instrument]
+[clip]
 name = Snare
-file = stems\snare.wav
-pattern = quarter every:2 offset:1
+filename = snare
 hits_required = 4
-tolerance_ms = 150
 outro_loops = 2
 
-[instrument]
+; Deliberately overrides the song's default tolerance - proves a clip-level
+; start_tolerance_ms/release_tolerance_ms actually takes effect instead of
+; silently falling back to the global value.
+[clip]
 name = Hi-Hat
-file = stems\hihat.wav
-pattern = bar beats:1,1.5,2,2.5,3,3.5,4,4.5
+filename = fast_test_hat
 hits_required = 8
-tolerance_ms = 130
+start_tolerance_ms = 130
+release_tolerance_ms = 130
+
+[section]
+clip = Bass Drum
+play_mode = learn
+
+[section]
+clip = Snare
+play_mode = learn
+
+[section]
+clip = Hi-Hat
+play_mode = learn

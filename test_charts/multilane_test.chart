@@ -1,15 +1,15 @@
 [song]
-title = Tile Test
-bpm = 125.28
+title = Multilane Test
+bpm = 100
 time_signature = 4/4
 start_tolerance_ms = 150
 release_tolerance_ms = 150
 
 [clip]
-name = Bass
-filename = bass_drum
-hits_required = 12
+name = FastAndHeld
+filename = multilane_test
+hits_required = 6
 
 [section]
-clip = Bass
+clip = FastAndHeld
 play_mode = learn

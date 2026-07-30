@@ -1,0 +1,13 @@
+[song]
+title = Solo Ending Test
+bpm = 120
+time_signature = 4/4
+
+; SoloOnly has no .mid file - it's only ever played back whole, never judged.
+[clip]
+name = SoloOnly
+filename = solo_only
+
+[section]
+clip = SoloOnly
+play_mode = solo

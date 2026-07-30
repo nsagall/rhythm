@@ -1,0 +1,13 @@
+[song]
+title = Unknown Clip Test
+bpm = 120
+time_signature = 4/4
+
+[clip]
+name = Hat
+filename = fast_test_hat
+hits_required = 4
+
+[section]
+clip = DoesNotExist
+play_mode = learn
