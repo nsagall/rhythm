@@ -8,6 +8,24 @@ namespace
 constexpr double kCountInSeconds = 2.0;
 constexpr int kMaxConsecutiveMisses = 3;
 
+// How much a MIDI pattern's declared length is allowed to exceed its
+// stem's measured audio length before LoadChart rejects it as not fitting
+// in one loop. A real stem's duration (sample count / sample rate) will
+// essentially never land exactly on a beat-derived value, so this has to
+// be generous enough to absorb ordinary export/rounding slop rather than
+// rejecting legitimately-fitting content over a couple of milliseconds.
+constexpr double kClipLengthToleranceSeconds = 0.1;
+
+// How far the judging clock (a free-running QueryPerformanceCounter timer)
+// is allowed to drift from the actual audio hardware's playback position
+// before Update() pulls it back in line - see the resync block there. Small
+// enough to catch real drift promptly, but larger than the normal
+// quantization noise from GetPositionSeconds() only advancing once per
+// XAudio2 processing pass (~a few ms), so a perfectly healthy clock doesn't
+// get re-anchored (and its otherwise-smooth motion subtly stair-stepped)
+// every single frame over nothing.
+constexpr double kClockResyncThresholdSeconds = 0.008;
+
 } // namespace
 
 // Binds this session to the audio engine it will drive.
@@ -15,9 +33,9 @@ GameSession::GameSession(AudioEngine& audioEngine) : m_audioEngine(audioEngine)
 {
 }
 
-// Parses and validates a chart and loads all its stems into the audio
-// engine. Returns false if the chart fails validation or any of its stems
-// can't be loaded, with outError describing every problem found.
+// Parses and validates a chart and loads all its clips' stems into the
+// audio engine. Returns false if the chart fails validation or any of its
+// stems can't be loaded, with outError describing every problem found.
 bool GameSession::LoadChart(const std::wstring& chartFilePath, std::wstring& outError)
 {
     ChartSong song;
@@ -39,41 +57,97 @@ bool GameSession::LoadChart(const std::wstring& chartFilePath, std::wstring& out
     m_audioEngine.StopAll();
 
     std::vector<StemHandle> stemHandles;
-    for (ChartInstrument& instrument : song.instruments)
+    for (ChartClip& clip : song.clips)
     {
-        StemHandle handle = m_audioEngine.LoadStem(instrument.wavFilePath);
+        StemHandle handle = m_audioEngine.LoadStem(clip.wavFilePath);
         if (!handle.IsValid())
         {
-            outError = L"instrument '" + instrument.name + L"': file '" + instrument.wavFilePath +
+            outError = L"clip '" + clip.name + L"': file '" + clip.wavFilePath +
                        L"' could not be loaded as audio (unsupported or corrupt WAV format)";
             return false;
         }
         stemHandles.push_back(handle);
 
-        double stemDuration = m_audioEngine.GetStemDurationSeconds(handle);
-        ExpandPatternToFillClip(instrument, stemDuration, song.bpm);
+        // A clip with no .mid file (hasMidi == false) has no pattern to
+        // validate against the stem's length or tile to fill it - it's
+        // only ever played back whole (solo/background), never judged.
+        if (clip.hasMidi)
+        {
+            double stemDuration = m_audioEngine.GetStemDurationSeconds(handle);
+            double secondsPerBeat = 60.0 / song.bpm;
+            double clipBeats = stemDuration / secondsPerBeat;
+            double toleranceBeats = kClipLengthToleranceSeconds / secondsPerBeat;
+            if (clipBeats < clip.spanBeats - toleranceBeats)
+            {
+                // The reverse of the "MIDI shorter than the audio" case (which
+                // ExpandLaneNotesToFillClip below handles by tiling): here the
+                // pattern doesn't even fit in a single loop of the stem, so the
+                // audio would already have wrapped back to its start before the
+                // pattern's own last notes are reached - notes get judged
+                // against a moment the audio isn't actually at anymore. Not a
+                // crash, just silently wrong, so it's rejected at load time
+                // instead of shipped.
+                outError = L"clip '" + clip.name + L"': its MIDI pattern (" + std::to_wstring(clip.spanBeats) +
+                           L" beats) is longer than one loop of its audio ('" + clip.wavFilePath + L"', " +
+                           std::to_wstring(clipBeats) + L" beats) - trim the MIDI pattern or use a longer audio stem";
+                return false;
+            }
+            ExpandLaneNotesToFillClip(clip, stemDuration, song.bpm);
+        }
     }
 
     m_song = std::move(song);
     m_stemHandles = std::move(stemHandles);
     m_phase = GamePhase::Idle;
-    m_currentInstrumentIndex = -1;
+    m_currentSectionIndex = -1;
     m_streak = 0;
     m_consecutiveMisses = 0;
-    m_loopIsPlaying = false;
+    m_clipIsPlaying.assign(m_song.clips.size(), false);
+    m_clipLoopStartSeconds.assign(m_song.clips.size(), 0.0);
+    m_queuedBackground = QueuedBackground{};
     m_hasPendingAdvance = false;
     m_isInIntro = false;
+    m_songHasStarted = false;
     m_lastJudgement = JudgementResult::None;
+    m_judgedNotes.clear();
+    for (int lane = 0; lane < kLaneCount; ++lane)
+    {
+        m_laneHolds[lane] = LaneHold{};
+        m_nextExpectedBeat[lane] = 0.0;
+    }
     return true;
 }
 
 // Starts gameplay from the beginning of the loaded chart.
 void GameSession::Start()
 {
-    if (m_song.instruments.empty())
+    if (m_song.sections.empty())
     {
         return;
     }
+
+    // A previous run may have left clips locked in and still looping
+    // (that's by design while a song is in progress/just completed - each
+    // locked-in loop keeps playing to build up the full arrangement), so a
+    // fresh start has to stop them explicitly or they'd keep playing
+    // underneath the new run.
+    m_audioEngine.StopAll();
+    m_currentSectionIndex = -1;
+    m_streak = 0;
+    m_consecutiveMisses = 0;
+    std::fill(m_clipIsPlaying.begin(), m_clipIsPlaying.end(), false);
+    m_queuedBackground = QueuedBackground{};
+    m_hasPendingAdvance = false;
+    m_isInIntro = false;
+    m_songHasStarted = false;
+    m_lastJudgement = JudgementResult::None;
+    m_judgedNotes.clear();
+    for (int lane = 0; lane < kLaneCount; ++lane)
+    {
+        m_laneHolds[lane] = LaneHold{};
+        m_nextExpectedBeat[lane] = 0.0;
+    }
+
     m_clock.Start(m_song.bpm);
     m_phase = GamePhase::CountIn;
 }
@@ -83,39 +157,111 @@ void GameSession::Stop()
 {
     m_audioEngine.StopAll();
     m_phase = GamePhase::Idle;
-    m_currentInstrumentIndex = -1;
+    m_currentSectionIndex = -1;
     m_streak = 0;
     m_consecutiveMisses = 0;
-    m_loopIsPlaying = false;
+    std::fill(m_clipIsPlaying.begin(), m_clipIsPlaying.end(), false);
+    m_queuedBackground = QueuedBackground{};
     m_hasPendingAdvance = false;
     m_isInIntro = false;
     m_lastJudgement = JudgementResult::None;
+    for (int lane = 0; lane < kLaneCount; ++lane)
+    {
+        m_laneHolds[lane] = LaneHold{};
+    }
 }
 
-// Registers a tap at the current moment; judges it if an instrument is still being learned.
-void GameSession::OnTap()
+// True exactly when OnPress(lane) would actually judge a press right now -
+// mirrors every one of OnPress's own early-return guards, just without any
+// of its judging side effects.
+bool GameSession::IsLaneJudgeable(int lane) const
 {
-    if (m_phase != GamePhase::Learning || m_hasPendingAdvance || m_isInIntro)
+    if (m_phase != GamePhase::Learning || m_isInIntro)
+    {
+        return false;
+    }
+    if (lane < 0 || lane >= kLaneCount || m_currentSectionIndex < 0)
+    {
+        return false;
+    }
+    const ChartSection& section = m_song.sections[m_currentSectionIndex];
+    if (section.playMode != PlayMode::Learn)
+    {
+        return false; // solo/background: no judging, ever
+    }
+    const ChartClip& clip = m_song.clips[section.clipIndex];
+    return !clip.laneNotes[lane].empty();
+}
+
+// Registers a key-down for lane; judges it against that lane's next expected note if the current section is learning.
+void GameSession::OnPress(int lane)
+{
+    if (!IsLaneJudgeable(lane))
     {
         return;
     }
 
-    const ChartInstrument& instrument = m_song.instruments[m_currentInstrumentIndex];
+    const ChartSection& section = m_song.sections[m_currentSectionIndex];
+    const ChartClip& clip = m_song.clips[section.clipIndex];
+
     double secondsPerBeat = 60.0 / m_song.bpm;
-    double onsetSeconds = m_nextExpectedOnsetBeat * secondsPerBeat;
-    double toleranceSeconds = instrument.toleranceMs / 1000.0;
+    double startBeat = m_nextExpectedBeat[lane];
+    double startSeconds = startBeat * secondsPerBeat;
+    double toleranceSeconds = clip.startToleranceMs / 1000.0;
     double nowSeconds = m_clock.ElapsedSeconds();
 
-    double judgedOnsetBeat = m_nextExpectedOnsetBeat;
+    if (std::abs(nowSeconds - startSeconds) <= toleranceSeconds)
+    {
+        const LaneNote* note = FindLaneNote(clip, lane, startBeat);
+        double durationBeats = note ? note->durationBeats : 0.0;
 
-    if (std::abs(nowSeconds - onsetSeconds) <= toleranceSeconds)
+        StartClipLoop(section.clipIndex, clip.initVolume);
+        m_laneHolds[lane] = LaneHold{true, startBeat, startBeat + durationBeats};
+        AdvanceExpectedNote(lane);
+        // A correct press doesn't produce a final judgement yet - that only
+        // happens at release - so any stale Hit/Miss left over from an
+        // earlier press/release must be cleared here, or the caller's very
+        // next ConsumeLastJudgement() would misattribute it to this press.
+        m_lastJudgement = JudgementResult::None;
+    }
+    else
+    {
+        // Mistimed: fails immediately, but doesn't advance - this lane keeps
+        // awaiting the same note until it's hit correctly or times out,
+        // exactly like a mistimed tap did in the single-lane model.
+        RegisterMiss();
+        m_lastJudgement = JudgementResult::Miss;
+        RecordOnsetJudgement(startBeat, lane, JudgementResult::Miss);
+    }
+}
+
+// Registers a key-up for lane; judges it against the note that lane was holding, if any.
+void GameSession::OnRelease(int lane)
+{
+    if (lane < 0 || lane >= kLaneCount || !m_laneHolds[lane].active || m_currentSectionIndex < 0)
+    {
+        return;
+    }
+
+    const ChartSection& section = m_song.sections[m_currentSectionIndex];
+    if (section.playMode != PlayMode::Learn)
+    {
+        return; // structurally shouldn't happen (holds only populate in Learn), kept as defense-in-depth
+    }
+
+    const ChartClip& clip = m_song.clips[section.clipIndex];
+    double secondsPerBeat = 60.0 / m_song.bpm;
+    double endSeconds = m_laneHolds[lane].expectedEndBeat * secondsPerBeat;
+    double toleranceSeconds = clip.releaseToleranceMs / 1000.0;
+    double nowSeconds = m_clock.ElapsedSeconds();
+    double startBeat = m_laneHolds[lane].startBeat;
+
+    if (std::abs(nowSeconds - endSeconds) <= toleranceSeconds)
     {
         RegisterHit();
         m_lastJudgement = JudgementResult::Hit;
-        RecordOnsetJudgement(judgedOnsetBeat, JudgementResult::Hit);
-        AdvanceExpectedOnset();
-
-        if (m_streak >= instrument.hitsRequired)
+        RecordOnsetJudgement(startBeat, lane, JudgementResult::Hit);
+        if (m_streak >= clip.hitsRequired && !m_hasPendingAdvance)
         {
             SchedulePendingAdvance();
         }
@@ -124,20 +270,86 @@ void GameSession::OnTap()
     {
         RegisterMiss();
         m_lastJudgement = JudgementResult::Miss;
-        RecordOnsetJudgement(judgedOnsetBeat, JudgementResult::Miss);
+        RecordOnsetJudgement(startBeat, lane, JudgementResult::Miss);
     }
+
+    m_laneHolds[lane].active = false;
 }
 
-// Advances count-in/miss-detection timing; call once per frame.
+// Advances count-in/miss-detection/hold-timeout timing; call once per frame.
 void GameSession::Update()
 {
+    // Keep the judging clock locked to actual audio playback. m_clock is a
+    // free-running CPU timer, while the music is actually driven by
+    // XAudio2's own hardware clock - the two can slowly drift apart over a
+    // long-looping clip (different oscillators, buffer scheduling, etc.),
+    // which would otherwise show up as hit judging (and the falling notes)
+    // slipping out of sync with what's actually audible. Every currently-
+    // playing clip is started phase-aligned to the same shared beat grid
+    // (see StartClipLoop), so the current section's own clip - if it has
+    // one and it's already playing, true for Learn and Solo alike - is an
+    // equally valid drift reference regardless of which section is active.
+    // Also requires AudioEngine::IsPlaying(): a solo section's clip plays a
+    // *finite* loop_count, and once that last pass finishes XAudio2 stops
+    // the voice on its own - m_clipIsPlaying stays true until the section's
+    // own scheduled advance explicitly stops it (below), but
+    // GetPositionSeconds() has already frozen at that point instead of
+    // still advancing. Without this check, resyncing against that frozen
+    // position every tick pins the clock to that one instant forever, so
+    // "now" can never reach the scheduled advance time - the whole game
+    // hangs the moment a solo section's clip finishes playing.
+    if (m_currentSectionIndex >= 0)
+    {
+        int clipIndex = m_song.sections[m_currentSectionIndex].clipIndex;
+        if (clipIndex >= 0 && m_clipIsPlaying[clipIndex] && m_audioEngine.IsPlaying(m_stemHandles[clipIndex]))
+        {
+            double audioElapsed =
+                m_clipLoopStartSeconds[clipIndex] + m_audioEngine.GetPositionSeconds(m_stemHandles[clipIndex]);
+            if (std::abs(audioElapsed - m_clock.ElapsedSeconds()) > kClockResyncThresholdSeconds)
+            {
+                m_clock.Resync(audioElapsed);
+            }
+        }
+    }
+
     double secondsPerBeat = 60.0 / m_song.bpm;
+    double now = m_clock.ElapsedSeconds();
+
+    // Held-past-late-release timeout: deliberately independent of
+    // phase/pending-advance, so a hold already in flight keeps resolving
+    // even if the section has since locked in, instead of being abandoned
+    // mid-air. Lane holds structurally only ever populate during a Learn
+    // section, but the play-mode check is kept anyway as defense-in-depth.
+    if (m_currentSectionIndex >= 0)
+    {
+        const ChartSection& heldSection = m_song.sections[m_currentSectionIndex];
+        if (heldSection.playMode == PlayMode::Learn)
+        {
+            const ChartClip& heldClip = m_song.clips[heldSection.clipIndex];
+            double toleranceSeconds = heldClip.releaseToleranceMs / 1000.0;
+            for (int lane = 0; lane < kLaneCount; ++lane)
+            {
+                if (!m_laneHolds[lane].active)
+                {
+                    continue;
+                }
+                double endSeconds = m_laneHolds[lane].expectedEndBeat * secondsPerBeat;
+                if (now > endSeconds + toleranceSeconds)
+                {
+                    RegisterMiss();
+                    m_lastJudgement = JudgementResult::Miss;
+                    RecordOnsetJudgement(m_laneHolds[lane].startBeat, lane, JudgementResult::Miss);
+                    m_laneHolds[lane].active = false;
+                }
+            }
+        }
+    }
 
     if (m_phase == GamePhase::CountIn)
     {
-        if (m_clock.ElapsedSeconds() >= kCountInSeconds)
+        if (now >= kCountInSeconds)
         {
-            BeginLearning(0, kCountInSeconds / secondsPerBeat);
+            BeginSection(0, kCountInSeconds / secondsPerBeat);
         }
         return;
     }
@@ -146,47 +358,84 @@ void GameSession::Update()
     {
         if (m_isInIntro)
         {
-            if (m_clock.ElapsedSeconds() >= m_introEndSeconds)
+            if (now >= m_introEndSeconds)
             {
                 m_isInIntro = false;
-                const ChartInstrument& instrument = m_song.instruments[m_currentInstrumentIndex];
-                m_nextExpectedOnsetBeat = NextOnsetAfter(m_introEndSeconds / secondsPerBeat - 1e-6, instrument);
+                const ChartClip& clip = m_song.clips[m_song.sections[m_currentSectionIndex].clipIndex];
+                double introEndBeat = m_introEndSeconds / secondsPerBeat - 1e-6;
+                for (int lane = 0; lane < kLaneCount; ++lane)
+                {
+                    m_nextExpectedBeat[lane] = m_songHasStarted ? NextOnsetAfter(introEndBeat, clip, lane)
+                                                                 : FirstReachableOnset(introEndBeat, clip, lane);
+                }
+                m_songHasStarted = true;
             }
             return;
         }
 
-        if (m_hasPendingAdvance)
+        if (m_hasPendingAdvance && now >= m_pendingAdvanceAtSeconds)
         {
-            if (m_clock.ElapsedSeconds() >= m_pendingAdvanceAtSeconds)
+            m_hasPendingAdvance = false;
+
+            const ChartSection& finishedSection = m_song.sections[m_currentSectionIndex];
+            if (finishedSection.playMode == PlayMode::Learn)
             {
-                m_hasPendingAdvance = false;
+                // Only a learn section's clip switches init_volume ->
+                // volume; a solo clip already plays at `volume`
+                // throughout (there's no lock-in event to switch on).
+                m_audioEngine.SetVolume(m_stemHandles[finishedSection.clipIndex],
+                                         static_cast<float>(m_song.clips[finishedSection.clipIndex].volume));
+            }
+            else if (finishedSection.playMode == PlayMode::Solo)
+            {
+                // Unlike a locked-in learn clip (which keeps playing by
+                // design, to build up the arrangement), a solo section
+                // is a one-off scripted interlude - stop it once its own
+                // loop_count wait completes so it doesn't drone on
+                // underneath every subsequent section until the next
+                // solo's StopAll() happens to kill it. Safe no-op for an
+                // empty-clip solo (clipIndex == -1, guarded by
+                // StopClipLoop itself).
+                StopClipLoop(finishedSection.clipIndex);
+            }
 
-                const ChartInstrument& finishedInstrument = m_song.instruments[m_currentInstrumentIndex];
-                m_audioEngine.SetVolume(m_stemHandles[m_currentInstrumentIndex], static_cast<float>(finishedInstrument.volume));
-
-                int nextIndex = m_currentInstrumentIndex + 1;
-                if (nextIndex < static_cast<int>(m_song.instruments.size()))
-                {
-                    BeginLearning(nextIndex, m_pendingAdvanceAtSeconds / secondsPerBeat);
-                }
-                else
-                {
-                    m_phase = GamePhase::Complete;
-                }
+            int nextIndex = m_currentSectionIndex + 1;
+            if (nextIndex < static_cast<int>(m_song.sections.size()))
+            {
+                BeginSection(nextIndex, m_pendingAdvanceAtSeconds / secondsPerBeat);
+            }
+            else
+            {
+                m_phase = GamePhase::Complete;
             }
             return;
         }
 
-        const ChartInstrument& instrument = m_song.instruments[m_currentInstrumentIndex];
-        double onsetSeconds = m_nextExpectedOnsetBeat * secondsPerBeat;
-        double toleranceSeconds = instrument.toleranceMs / 1000.0;
-
-        if (m_clock.ElapsedSeconds() > onsetSeconds + toleranceSeconds)
+        // Press-phase timeout: any lane still awaiting a press whose window
+        // has closed. Learn-only. Runs even while m_hasPendingAdvance is
+        // true (the post-lock-in extension, before the section actually
+        // advances above) - keeps notes timing out/getting judged instead of
+        // freezing the instant the streak requirement is met.
+        const ChartSection& section = m_song.sections[m_currentSectionIndex];
+        if (section.playMode == PlayMode::Learn)
         {
-            RegisterMiss();
-            m_lastJudgement = JudgementResult::Miss;
-            RecordOnsetJudgement(m_nextExpectedOnsetBeat, JudgementResult::Miss);
-            AdvanceExpectedOnset();
+            const ChartClip& clip = m_song.clips[section.clipIndex];
+            double toleranceSeconds = clip.startToleranceMs / 1000.0;
+            for (int lane = 0; lane < kLaneCount; ++lane)
+            {
+                if (clip.laneNotes[lane].empty())
+                {
+                    continue;
+                }
+                double onsetSeconds = m_nextExpectedBeat[lane] * secondsPerBeat;
+                if (now > onsetSeconds + toleranceSeconds)
+                {
+                    RegisterMiss();
+                    m_lastJudgement = JudgementResult::Miss;
+                    RecordOnsetJudgement(m_nextExpectedBeat[lane], lane, JudgementResult::Miss);
+                    AdvanceExpectedNote(lane);
+                }
+            }
         }
         return;
     }
@@ -202,29 +451,44 @@ const ChartSong& GameSession::Song() const
     return m_song;
 }
 
-int GameSession::CurrentInstrumentIndex() const
+int GameSession::CurrentSectionIndex() const
 {
-    return m_currentInstrumentIndex;
+    return m_currentSectionIndex;
 }
 
-// Returns the audio engine stem handle for an instrument, for debugging.
-StemHandle GameSession::DebugStemHandle(int instrumentIndex) const
+// Returns the audio engine stem handle for a clip, for debugging.
+StemHandle GameSession::DebugStemHandle(int clipIndex) const
 {
-    if (instrumentIndex < 0 || instrumentIndex >= static_cast<int>(m_stemHandles.size()))
+    if (clipIndex < 0 || clipIndex >= static_cast<int>(m_stemHandles.size()))
     {
         return StemHandle{};
     }
-    return m_stemHandles[instrumentIndex];
+    return m_stemHandles[clipIndex];
 }
 
-// Returns the instrument currently being learned, or nullptr if none.
-const ChartInstrument* GameSession::CurrentInstrument() const
+// Returns the clip the current section refers to, or nullptr if there's no current section or it's an empty solo.
+const ChartClip* GameSession::CurrentClip() const
 {
-    if (m_currentInstrumentIndex < 0 || m_currentInstrumentIndex >= static_cast<int>(m_song.instruments.size()))
+    if (m_currentSectionIndex < 0 || m_currentSectionIndex >= static_cast<int>(m_song.sections.size()))
     {
         return nullptr;
     }
-    return &m_song.instruments[m_currentInstrumentIndex];
+    int clipIndex = m_song.sections[m_currentSectionIndex].clipIndex;
+    if (clipIndex < 0 || clipIndex >= static_cast<int>(m_song.clips.size()))
+    {
+        return nullptr;
+    }
+    return &m_song.clips[clipIndex];
+}
+
+// Returns the current section's play mode, or Learn as a harmless default if there's no current section.
+PlayMode GameSession::CurrentPlayMode() const
+{
+    if (m_currentSectionIndex < 0 || m_currentSectionIndex >= static_cast<int>(m_song.sections.size()))
+    {
+        return PlayMode::Learn;
+    }
+    return m_song.sections[m_currentSectionIndex].playMode;
 }
 
 int GameSession::CurrentStreak() const
@@ -232,9 +496,14 @@ int GameSession::CurrentStreak() const
     return m_streak;
 }
 
-double GameSession::NextExpectedOnsetBeat() const
+// Returns the beat of the next note this lane is awaiting a press for.
+double GameSession::NextExpectedBeatForLane(int lane) const
 {
-    return m_nextExpectedOnsetBeat;
+    if (lane < 0 || lane >= kLaneCount)
+    {
+        return 0.0;
+    }
+    return m_nextExpectedBeat[lane];
 }
 
 const SongClock& GameSession::Clock() const
@@ -247,41 +516,69 @@ bool GameSession::IsAwaitingAdvance() const
     return m_hasPendingAdvance;
 }
 
+double GameSession::PendingAdvanceAtSeconds() const
+{
+    return m_hasPendingAdvance ? m_pendingAdvanceAtSeconds : -1.0;
+}
+
 bool GameSession::IsInIntro() const
 {
     return m_isInIntro;
 }
 
-const ChartInstrument* GameSession::PreviewInstrument() const
+// Returns the index of the first section at or after startIndex whose play_mode isn't Background, or -1 if none remain.
+int GameSession::NextNonBackgroundSectionAtOrAfter(int startIndex) const
 {
-    // An instrument with its own intro_bars hides dots for a while after it
-    // goes live too, so there's nothing useful to preview until its own
-    // intro tail arrives (handled by the m_isInIntro branch below).
+    for (int i = std::max(startIndex, 0); i < static_cast<int>(m_song.sections.size()); ++i)
+    {
+        if (m_song.sections[i].playMode != PlayMode::Background)
+        {
+            return i;
+        }
+    }
+    return -1;
+}
+
+const ChartClip* GameSession::PreviewClip() const
+{
+    // A clip with its own intro_bars hides dots for a while after it goes
+    // live too, so there's nothing useful to preview until its own intro
+    // tail arrives (handled by the m_isInIntro branch below).
     if (m_phase == GamePhase::CountIn)
     {
-        if (m_song.instruments.empty())
+        int idx = NextNonBackgroundSectionAtOrAfter(0);
+        if (idx < 0 || m_song.sections[idx].playMode != PlayMode::Learn)
         {
             return nullptr;
         }
-        const ChartInstrument& first = m_song.instruments[0];
-        return first.introBars > 0 ? nullptr : &first;
+        const ChartClip& clip = m_song.clips[m_song.sections[idx].clipIndex];
+        return clip.introBars > 0 ? nullptr : &clip;
     }
-    if (m_phase != GamePhase::Learning)
+    if (m_phase != GamePhase::Learning || m_currentSectionIndex < 0)
     {
         return nullptr;
     }
+
+    // Applies uniformly whether the current section is Learn-awaiting-
+    // advance or Solo-awaiting-advance - both set m_hasPendingAdvance the
+    // same way, so a solo section's own hold is the natural place to
+    // preview the *next* learn section's dots, exactly like a learn
+    // section's own hold already was.
     if (m_isInIntro)
     {
-        return CurrentInstrument();
+        // Structurally only ever true while current is Learn (set only in
+        // BeginSection's Learn case), so CurrentClip() here is unaffected.
+        return CurrentClip();
     }
     if (m_hasPendingAdvance)
     {
-        int nextIndex = m_currentInstrumentIndex + 1;
-        if (nextIndex < static_cast<int>(m_song.instruments.size()))
+        int nextIdx = NextNonBackgroundSectionAtOrAfter(m_currentSectionIndex + 1);
+        if (nextIdx < 0 || m_song.sections[nextIdx].playMode != PlayMode::Learn)
         {
-            const ChartInstrument& next = m_song.instruments[nextIndex];
-            return next.introBars > 0 ? nullptr : &next;
+            return nullptr;
         }
+        const ChartClip& next = m_song.clips[m_song.sections[nextIdx].clipIndex];
+        return next.introBars > 0 ? nullptr : &next;
     }
     return nullptr;
 }
@@ -303,10 +600,10 @@ double GameSession::PreviewTransitionSeconds() const
     return -1.0;
 }
 
-double GameSession::PreviewFirstOnsetBeat() const
+double GameSession::PreviewFirstOnsetBeatForLane(int lane) const
 {
-    const ChartInstrument* preview = PreviewInstrument();
-    if (!preview)
+    const ChartClip* preview = PreviewClip();
+    if (!preview || lane < 0 || lane >= kLaneCount)
     {
         return -1.0;
     }
@@ -314,7 +611,17 @@ double GameSession::PreviewFirstOnsetBeat() const
     double transitionSeconds = PreviewTransitionSeconds();
     double secondsPerBeat = 60.0 / m_song.bpm;
     double transitionBeat = transitionSeconds / secondsPerBeat;
-    return NextOnsetAfter(transitionBeat - 1e-6, *preview);
+
+    // During the count-in, m_songHasStarted is always still false - the
+    // preview must show the same first-reachable-cycle notes that
+    // BeginSection is about to anchor judging to, not wherever
+    // NextOnsetAfter's usual per-lane cutoff logic lands relative to the
+    // count-in's fixed duration (see m_songHasStarted's own comment).
+    if (m_phase == GamePhase::CountIn)
+    {
+        return FirstReachableOnset(transitionBeat - 1e-6, *preview, lane);
+    }
+    return NextOnsetAfter(transitionBeat - 1e-6, *preview, lane);
 }
 
 // Returns and clears the most recent judgement (Hit/Miss/None).
@@ -325,12 +632,12 @@ JudgementResult GameSession::ConsumeLastJudgement()
     return result;
 }
 
-// Returns how a specific pattern onset was judged, or None if untracked.
-JudgementResult GameSession::OnsetJudgement(double onsetBeat) const
+// Returns how a specific lane note was judged, or None if untracked.
+JudgementResult GameSession::OnsetJudgement(double startBeat, int lane) const
 {
-    for (const JudgedOnset& judged : m_judgedOnsets)
+    for (const JudgedLaneNote& judged : m_judgedNotes)
     {
-        if (std::abs(judged.beat - onsetBeat) < 1e-6)
+        if (judged.lane == lane && std::abs(judged.beat - startBeat) < 1e-6)
         {
             return judged.result;
         }
@@ -338,52 +645,189 @@ JudgementResult GameSession::OnsetJudgement(double onsetBeat) const
     return JudgementResult::None;
 }
 
-// Records a judgement for a specific onset, for OnsetJudgement() to look up later. Trims old entries so this can't grow unbounded.
-void GameSession::RecordOnsetJudgement(double onsetBeat, JudgementResult result)
+bool GameSession::IsLaneHeld(int lane) const
 {
-    m_judgedOnsets.push_back({onsetBeat, result});
-
-    constexpr size_t kMaxTracked = 8;
-    if (m_judgedOnsets.size() > kMaxTracked)
+    if (lane < 0 || lane >= kLaneCount)
     {
-        m_judgedOnsets.erase(m_judgedOnsets.begin());
+        return false;
+    }
+    return m_laneHolds[lane].active;
+}
+
+double GameSession::LaneHoldStartBeat(int lane) const
+{
+    if (lane < 0 || lane >= kLaneCount)
+    {
+        return -1.0;
+    }
+    return m_laneHolds[lane].startBeat;
+}
+
+// Records a judgement for a specific lane note, for OnsetJudgement() to look up later. Trims old entries so this can't grow unbounded.
+void GameSession::RecordOnsetJudgement(double startBeat, int lane, JudgementResult result)
+{
+    m_judgedNotes.push_back({startBeat, lane, result});
+
+    constexpr size_t kMaxTracked = 32;
+    if (m_judgedNotes.size() > kMaxTracked)
+    {
+        m_judgedNotes.erase(m_judgedNotes.begin());
     }
 }
 
-// Begins (or resumes) learning the instrument at the given index.
-void GameSession::BeginLearning(int instrumentIndex, double scheduledBeat)
+// Begins the section at the given index, kicking off any background clip
+// queued by the previous section first, then dispatching on this section's
+// own play_mode.
+void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
 {
-    m_currentInstrumentIndex = instrumentIndex;
+    m_currentSectionIndex = sectionIndex;
     m_streak = 0;
     m_consecutiveMisses = 0;
-    m_loopIsPlaying = false;
     m_hasPendingAdvance = false;
     m_isInIntro = false;
     m_phase = GamePhase::Learning;
-    m_judgedOnsets.clear();
-
-    const ChartInstrument& instrument = m_song.instruments[instrumentIndex];
-
-    if (instrument.introBars > 0)
+    m_judgedNotes.clear();
+    for (int lane = 0; lane < kLaneCount; ++lane)
     {
-        StartCurrentInstrumentLoop();
-        m_isInIntro = true;
-        double secondsPerBeat = 60.0 / m_song.bpm;
-        m_introEndSeconds = m_clock.ElapsedSeconds() + instrument.introBars * m_song.beatsPerBar * secondsPerBeat;
-        return;
+        m_laneHolds[lane] = LaneHold{};
     }
 
-    m_nextExpectedOnsetBeat = NextOnsetAfter(scheduledBeat - 1e-6, instrument);
+    // "The next section begins" is exactly this call - kick off whatever
+    // the previous section (if it was `background`) queued, before this
+    // section's own logic runs, so the two play out in parallel from here.
+    // Once started, a background clip loops indefinitely - exactly like a
+    // locked-in learn clip - until a later `solo` section's StopAll() (or
+    // Stop()/Start()) silences it; loop_count has no effect on background
+    // sections.
+    if (m_queuedBackground.clipIndex >= 0)
+    {
+        int bgClipIndex = m_queuedBackground.clipIndex;
+        m_queuedBackground = QueuedBackground{};
+        StartClipLoop(bgClipIndex, m_song.clips[bgClipIndex].volume);
+    }
+
+    const ChartSection& section = m_song.sections[sectionIndex];
+
+    switch (section.playMode)
+    {
+        case PlayMode::Background:
+        {
+            // Never blocks, never itself occupies "current" for judging
+            // purposes - queue its clip for the *next* BeginSection and
+            // fall straight through to that next section immediately.
+            m_queuedBackground = QueuedBackground{section.clipIndex, section.loopCount};
+            int nextIndex = sectionIndex + 1;
+            if (nextIndex < static_cast<int>(m_song.sections.size()))
+            {
+                BeginSection(nextIndex, scheduledBeat);
+            }
+            else
+            {
+                // Last section in the chart was `background` - its queued
+                // clip simply never starts; that's acceptable, not an error.
+                m_phase = GamePhase::Complete;
+            }
+            return;
+        }
+
+        case PlayMode::Solo:
+        {
+            m_audioEngine.StopAll();
+            std::fill(m_clipIsPlaying.begin(), m_clipIsPlaying.end(), false);
+            if (section.clipIndex >= 0)
+            {
+                const ChartClip& clip = m_song.clips[section.clipIndex];
+                // A solo's loop_count is already known right now (unlike a
+                // learn clip, whose eventual stop time depends on future
+                // player input), so it's handed straight to StartClipLoop:
+                // the voice stops itself naturally and sample-accurately
+                // once its loops are done, instead of relying solely on
+                // the polled StopClipLoop() call below to catch the exact
+                // instant - which could otherwise let a fraction of a
+                // second of the loop's beginning bleed through first,
+                // especially audible at the very end of a chart where
+                // nothing else is left playing to mask it.
+                StartClipLoop(section.clipIndex, clip.volume, std::max(section.loopCount, 1));
+                double stemDuration = m_audioEngine.GetStemDurationSeconds(m_stemHandles[section.clipIndex]);
+                // Measured from m_clipLoopStartSeconds (exactly what
+                // StartClipLoop just recorded), not a fresh clock read here -
+                // matches how SchedulePendingAdvance already does this for a
+                // learn section's lock-in floor, rather than re-querying the
+                // clock a few instructions after the loop's real start time.
+                m_pendingAdvanceAtSeconds =
+                    ComputeLoopFloorSeconds(m_clipLoopStartSeconds[section.clipIndex], stemDuration, section.loopCount);
+            }
+            else
+            {
+                // Empty-clip solo: silence gate - stop everything, advance
+                // as soon as the kNoteFallBeats floor below allows.
+                m_pendingAdvanceAtSeconds = m_clock.ElapsedSeconds();
+            }
+
+            // Same kNoteFallBeats guarantee SchedulePendingAdvance gives a
+            // locked-in learn section: without it, a short/empty-clip solo
+            // can hand off to the next learn section with its first note's
+            // scheduled beat only an instant away, so the note lane's
+            // preview lands it already at (or past) the judge line instead
+            // of spawning at the top edge with its full travel time.
+            double secondsPerBeat = 60.0 / m_song.bpm;
+            double tFallSeconds = kNoteFallBeats * secondsPerBeat;
+            m_pendingAdvanceAtSeconds =
+                std::max(m_pendingAdvanceAtSeconds, m_clock.ElapsedSeconds() + tFallSeconds);
+
+            m_hasPendingAdvance = true;
+            return;
+        }
+
+        case PlayMode::Learn:
+        {
+            const ChartClip& clip = m_song.clips[section.clipIndex];
+            if (clip.introBars > 0)
+            {
+                StartClipLoop(section.clipIndex, clip.initVolume);
+                m_isInIntro = true;
+                double secondsPerBeat = 60.0 / m_song.bpm;
+                m_introEndSeconds = m_clock.ElapsedSeconds() + clip.introBars * m_song.beatsPerBar * secondsPerBeat;
+                return;
+            }
+            for (int lane = 0; lane < kLaneCount; ++lane)
+            {
+                m_nextExpectedBeat[lane] = m_songHasStarted ? NextOnsetAfter(scheduledBeat - 1e-6, clip, lane)
+                                                             : FirstReachableOnset(scheduledBeat - 1e-6, clip, lane);
+            }
+            m_songHasStarted = true;
+            return;
+        }
+    }
 }
 
-// Called once the current instrument's streak requirement is met: schedules the advance to the
-// next instrument (or Complete) for the next time the current instrument's stem wraps back to
-// the start of a playthrough, using the stem's own measured duration as the loop length.
+// Computes the wall-clock second at which loopCount full loops have
+// completed, counted from loopStartSeconds, given a stem of stemDuration
+// seconds. Shared by a learn section's lock-in floor, a solo section's
+// unconditional wait, and a background layer's self-stop time.
+double GameSession::ComputeLoopFloorSeconds(double loopStartSeconds, double stemDuration, int loopCount)
+{
+    if (stemDuration <= 0.0)
+    {
+        return loopStartSeconds;
+    }
+    int minLoops = std::max(loopCount, 1);
+    return std::ceil(loopStartSeconds / stemDuration) * stemDuration + (minLoops - 1) * stemDuration;
+}
+
+// Called once the shared streak meets the current learn section's clip
+// requirement: schedules the advance to the next section (or Complete) for
+// the next time the clip's stem wraps back to the start of a playthrough,
+// using the stem's own measured duration as the loop length - extended by
+// whole extra loops as needed to satisfy loop_count and/or the
+// kNoteFallBeats preview-time guarantee (see below).
 void GameSession::SchedulePendingAdvance()
 {
-    const ChartInstrument& instrument = m_song.instruments[m_currentInstrumentIndex];
-    double stemDuration = m_audioEngine.GetStemDurationSeconds(m_stemHandles[m_currentInstrumentIndex]);
+    const ChartSection& section = m_song.sections[m_currentSectionIndex];
+    const ChartClip& clip = m_song.clips[section.clipIndex];
+    double stemDuration = m_audioEngine.GetStemDurationSeconds(m_stemHandles[section.clipIndex]);
     double nowSeconds = m_clock.ElapsedSeconds();
+    double secondsPerBeat = 60.0 / m_song.bpm;
 
     if (stemDuration <= 0.0)
     {
@@ -391,114 +835,231 @@ void GameSession::SchedulePendingAdvance()
     }
     else
     {
-        int extraLoops = std::max(instrument.outroLoops, 0);
-        m_pendingAdvanceAtSeconds = std::ceil(nowSeconds / stemDuration) * stemDuration + extraLoops * stemDuration;
+        int extraLoops = std::max(clip.outroLoops, 0);
+        double naturalAdvance = std::ceil(nowSeconds / stemDuration) * stemDuration + extraLoops * stemDuration;
+
+        // loop_count sets a floor measured from when this clip's loop
+        // actually started, independent of how fast the player locked in.
+        // loop_count=1 (the default) always resolves to <= naturalAdvance,
+        // since locking in can't happen before the loop starts - so it
+        // never changes existing behavior.
+        double minimumAdvance =
+            ComputeLoopFloorSeconds(m_clipLoopStartSeconds[section.clipIndex], stemDuration, section.loopCount);
+
+        m_pendingAdvanceAtSeconds = std::max(naturalAdvance, minimumAdvance);
+
+        // Guarantee at least a full kNoteFallBeats (Tfall - the time a note
+        // takes to scroll from the top of the lane to the judge line) of
+        // real time between locking in and the next section actually
+        // starting. Without this, locking in right before a loop boundary
+        // could hand off to the next learn section with its first notes
+        // barely (or not at all) previewed - they'd pop in already partway
+        // down the lane instead of getting their full on-screen travel
+        // time. Extends by whole extra loops rather than an arbitrary
+        // pause, so the current clip's audio never gets cut mid-loop.
+        double tFallSeconds = kNoteFallBeats * secondsPerBeat;
+        while (m_pendingAdvanceAtSeconds - nowSeconds < tFallSeconds)
+        {
+            m_pendingAdvanceAtSeconds += stemDuration;
+        }
     }
     m_hasPendingAdvance = true;
 }
 
-// Records a hit: advances the streak, resets the miss counter, and starts this instrument's loop (phase-aligned) if it isn't already playing.
+// Records a hit: advances the shared streak, resets the shared miss counter, and starts the current section's clip loop (phase-aligned) if it isn't already playing. Once already awaiting advance, the streak/miss counters are left alone (frozen at their lock-in value) since they no longer drive anything.
 void GameSession::RegisterHit()
 {
-    m_streak++;
-    m_consecutiveMisses = 0;
-    StartCurrentInstrumentLoop();
+    if (!m_hasPendingAdvance)
+    {
+        m_streak++;
+        m_consecutiveMisses = 0;
+    }
+    const ChartSection& section = m_song.sections[m_currentSectionIndex];
+    const ChartClip& clip = m_song.clips[section.clipIndex];
+    StartClipLoop(section.clipIndex, clip.initVolume);
 }
 
-// Starts the current instrument's loop now (phase-aligned to the beat grid, at init_volume) if it isn't already playing.
-void GameSession::StartCurrentInstrumentLoop()
+// Starts clipIndex's stem looping now (phase-aligned to the beat grid, at
+// the given volume) if it isn't already playing, and records the start
+// time for loop_count to measure from.
+void GameSession::StartClipLoop(int clipIndex, double volume, int finiteLoopCount)
 {
-    if (m_loopIsPlaying)
+    if (clipIndex < 0 || clipIndex >= static_cast<int>(m_clipIsPlaying.size()) || m_clipIsPlaying[clipIndex])
     {
         return;
     }
 
-    const ChartInstrument& instrument = m_song.instruments[m_currentInstrumentIndex];
-    StemHandle handle = m_stemHandles[m_currentInstrumentIndex];
+    // Read the clock exactly once and reuse it for both the phase seek and
+    // the recorded loop-start time - StartLooping below does real XAudio2
+    // work (stop/flush/submit/start/getstate), so reading the clock again
+    // afterward would record a loop-start time measurably later than the
+    // instant the audio was actually phase-seeked to, biasing every later
+    // GetPositionSeconds()-based calculation (loop_count floors, and
+    // Update()'s drift resync) forward by however long that call took.
+    StemHandle handle = m_stemHandles[clipIndex];
     double stemDuration = m_audioEngine.GetStemDurationSeconds(handle);
-    double phaseSeconds = stemDuration > 0.0 ? std::fmod(m_clock.ElapsedSeconds(), stemDuration) : 0.0;
-    m_audioEngine.StartLooping(handle, phaseSeconds, static_cast<float>(instrument.initVolume));
-    m_loopIsPlaying = true;
+    double nowSeconds = m_clock.ElapsedSeconds();
+    double phaseSeconds = stemDuration > 0.0 ? std::fmod(nowSeconds, stemDuration) : 0.0;
+    m_audioEngine.StartLooping(handle, phaseSeconds, static_cast<float>(volume), finiteLoopCount);
+    m_clipIsPlaying[clipIndex] = true;
+    m_clipLoopStartSeconds[clipIndex] = nowSeconds;
 }
 
-// Records a miss: resets the streak, and stops this instrument's loop after 3 in a row.
+// Stops clipIndex's stem if it's playing.
+void GameSession::StopClipLoop(int clipIndex)
+{
+    if (clipIndex < 0 || clipIndex >= static_cast<int>(m_clipIsPlaying.size()) || !m_clipIsPlaying[clipIndex])
+    {
+        return;
+    }
+    m_audioEngine.Stop(m_stemHandles[clipIndex]);
+    m_clipIsPlaying[clipIndex] = false;
+}
+
+// Records a miss: resets the shared streak, and stops the current section's clip loop after 3 in a row. A no-op once already awaiting advance - the track has already locked in, so further misses shouldn't stop it or unfreeze the streak display.
 void GameSession::RegisterMiss()
 {
+    if (m_hasPendingAdvance)
+    {
+        return;
+    }
+
     m_streak = 0;
     m_consecutiveMisses++;
 
-    if (m_consecutiveMisses >= kMaxConsecutiveMisses && m_loopIsPlaying)
+    if (m_consecutiveMisses >= kMaxConsecutiveMisses)
     {
-        m_audioEngine.Stop(m_stemHandles[m_currentInstrumentIndex]);
-        m_loopIsPlaying = false;
+        int clipIndex = m_song.sections[m_currentSectionIndex].clipIndex;
+        StopClipLoop(clipIndex);
     }
 }
 
-// Moves m_nextExpectedOnsetBeat forward to the next onset after it.
-void GameSession::AdvanceExpectedOnset()
+// Moves this lane's next-expected-note pointer forward to the next note after it.
+void GameSession::AdvanceExpectedNote(int lane)
 {
-    const ChartInstrument& instrument = m_song.instruments[m_currentInstrumentIndex];
-    m_nextExpectedOnsetBeat = NextOnsetAfter(m_nextExpectedOnsetBeat, instrument);
+    const ChartSection& section = m_song.sections[m_currentSectionIndex];
+    const ChartClip& clip = m_song.clips[section.clipIndex];
+    m_nextExpectedBeat[lane] = NextOnsetAfter(m_nextExpectedBeat[lane], clip, lane);
 }
 
-// If the instrument's declared span is shorter than its stem's actual
-// duration, tiles the pattern (repeating it every original span) to fill
-// the whole clip, and widens spanBeats to match - so a short authored
-// phrase repeats to cover a longer clip instead of leaving the back half
-// of every loop silent/ungraded, and the judged pattern's cycle stays in
-// sync with what the audio actually repeats.
-void GameSession::ExpandPatternToFillClip(ChartInstrument& instrument, double stemDurationSeconds, double bpm)
+// If the clip's declared span is shorter than its stem's actual duration,
+// tiles each lane's notes (independently, repeating every original span)
+// to fill the whole clip, and widens spanBeats to match - so a short
+// authored phrase repeats to cover a longer clip instead of leaving the
+// back half of every loop silent/ungraded, and the judged pattern's cycle
+// stays in sync with what the audio actually repeats. A trailing repeat
+// that gets cut off mid-loop only keeps the notes that fully fit (press
+// through release) before the cutoff - a note whose start fits but whose
+// duration would run past it is dropped rather than shipped as a broken,
+// unplayable note.
+void GameSession::ExpandLaneNotesToFillClip(ChartClip& clip, double stemDurationSeconds, double bpm)
 {
-    if (instrument.patternBeats.empty() || instrument.spanBeats <= 0.0 || stemDurationSeconds <= 0.0)
+    if (clip.spanBeats <= 0.0 || stemDurationSeconds <= 0.0)
     {
         return;
     }
 
     double secondsPerBeat = 60.0 / bpm;
     double clipBeats = stemDurationSeconds / secondsPerBeat;
-    if (clipBeats <= instrument.spanBeats + 1e-6)
+    if (clipBeats <= clip.spanBeats + 1e-6)
     {
         return;
     }
 
-    std::vector<double> originalPattern = instrument.patternBeats;
-    double originalSpan = instrument.spanBeats;
-
-    std::vector<double> expanded;
-    for (double repeatStart = 0.0; repeatStart < clipBeats - 1e-9; repeatStart += originalSpan)
+    double originalSpan = clip.spanBeats;
+    for (int lane = 0; lane < kLaneCount; ++lane)
     {
-        for (double onset : originalPattern)
+        if (clip.laneNotes[lane].empty())
         {
-            double absolute = repeatStart + onset;
-            if (absolute < clipBeats - 1e-9)
+            continue;
+        }
+
+        std::vector<LaneNote> original = clip.laneNotes[lane];
+        std::vector<LaneNote> expanded;
+        for (double repeatStart = 0.0; repeatStart < clipBeats - 1e-9; repeatStart += originalSpan)
+        {
+            for (const LaneNote& note : original)
             {
-                expanded.push_back(absolute);
+                double absoluteStart = repeatStart + note.startBeat;
+                // Require the note's *entire* press-to-release span to fit
+                // before the loop wraps, not just its start. A trailing
+                // repeat of the pattern can otherwise have its last note
+                // land just barely before clipBeats (its start passes the
+                // old start-only check) while its real-world stem duration
+                // - which almost never lands on an exact beat boundary -
+                // truncates its actual playable window to a sliver, or
+                // leaves it landing implausibly close to the next loop's
+                // own first note. Either way it's unplayable as authored,
+                // so it's dropped rather than shipped as a note the player
+                // can never legitimately hit.
+                if (absoluteStart + note.durationBeats <= clipBeats + 1e-9)
+                {
+                    expanded.push_back({absoluteStart, note.durationBeats});
+                }
             }
         }
+        clip.laneNotes[lane] = std::move(expanded);
     }
 
-    instrument.patternBeats = std::move(expanded);
-    instrument.spanBeats = clipBeats;
+    clip.spanBeats = clipBeats;
 }
 
-// Returns the smallest pattern onset (in absolute beats) strictly after afterBeat.
-double GameSession::NextOnsetAfter(double afterBeat, const ChartInstrument& instrument) const
+// Returns the smallest note start (in absolute beats) strictly after afterBeat, for this lane.
+double GameSession::NextOnsetAfter(double afterBeat, const ChartClip& clip, int lane) const
 {
-    if (instrument.patternBeats.empty())
+    const std::vector<LaneNote>& notes = clip.laneNotes[lane];
+    if (notes.empty())
     {
-        return afterBeat + instrument.spanBeats;
+        return afterBeat + clip.spanBeats;
     }
 
-    double span = instrument.spanBeats;
+    double span = clip.spanBeats;
     long long barIndex = static_cast<long long>(std::floor(afterBeat / span));
 
-    for (double onset : instrument.patternBeats)
+    for (const LaneNote& note : notes)
     {
-        double candidate = barIndex * span + onset;
+        double candidate = barIndex * span + note.startBeat;
         if (candidate > afterBeat + 1e-9)
         {
             return candidate;
         }
     }
-    return (barIndex + 1) * span + instrument.patternBeats.front();
+    return (barIndex + 1) * span + notes.front().startBeat;
+}
+
+// Returns the absolute beat of this lane's note in the first full pattern
+// cycle that starts at or after afterBeat, preserving every lane's
+// authored relative offset within that shared cycle - see the header
+// comment and m_songHasStarted for why this differs from NextOnsetAfter.
+double GameSession::FirstReachableOnset(double afterBeat, const ChartClip& clip, int lane) const
+{
+    const std::vector<LaneNote>& notes = clip.laneNotes[lane];
+    if (notes.empty())
+    {
+        return NextOnsetAfter(afterBeat, clip, lane);
+    }
+
+    double span = clip.spanBeats;
+    long long barIndex = (span > 0.0) ? static_cast<long long>(std::ceil((afterBeat - 1e-9) / span)) : 0;
+    return barIndex * span + notes.front().startBeat;
+}
+
+// Returns the lane note whose phase-within-span matches absoluteStartBeat's phase, or nullptr if none does.
+const LaneNote* GameSession::FindLaneNote(const ChartClip& clip, int lane, double absoluteStartBeat) const
+{
+    double span = clip.spanBeats;
+    double phase = std::fmod(absoluteStartBeat, span);
+    if (phase < 0.0)
+    {
+        phase += span;
+    }
+
+    for (const LaneNote& note : clip.laneNotes[lane])
+    {
+        if (std::abs(note.startBeat - phase) < 1e-6)
+        {
+            return &note;
+        }
+    }
+    return nullptr;
 }
