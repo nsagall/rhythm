@@ -137,6 +137,12 @@ int main(int argc, char** argv)
     // once-locked-in no-op.
     bool diagMissAfterLockin = std::getenv("DIAG_MISS_AFTER_LOCKIN") != nullptr;
 
+    // DIAG_EASY_MODE=1: load the chart in easy mode (quantized/de-chorded
+    // patterns, release timing ignored, one-note grace per section) instead
+    // of normal mode.
+    bool diagEasyMode = std::getenv("DIAG_EASY_MODE") != nullptr;
+    printf("easyMode=%s\n", diagEasyMode ? "true" : "false");
+
     AudioEngine engine;
     if (!engine.Initialize())
     {
@@ -152,7 +158,7 @@ int main(int argc, char** argv)
         std::wstring badError;
         bool badOk = badSession.LoadChart(
             L"C:\\Users\\nsaga\\AppData\\Local\\Temp\\claude\\C--Users-nsaga-OneDrive-Projects\\2d6d0060-ad5a-4bf4-86f9-077b215135dd\\scratchpad\\too_long_test.chart",
-            badError);
+            diagEasyMode, badError);
         printf("too_long_test.chart LoadChart() returned %s (expected false)%s\n", badOk ? "true" : "false",
                badOk ? " ** MISMATCH **" : "");
         wprintf(L"  %ls\n", badError.c_str());
@@ -160,7 +166,7 @@ int main(int argc, char** argv)
 
     GameSession session(engine);
     std::wstring loadError;
-    if (!session.LoadChart(chartPath, loadError))
+    if (!session.LoadChart(chartPath, diagEasyMode, loadError))
     {
         wprintf(L"LoadChart failed: %ls\n", loadError.c_str());
         return 1;
@@ -238,6 +244,13 @@ int main(int argc, char** argv)
     // something is visible, set to the elapsed-seconds timestamp a blank
     // stretch started.
     double blankStartSeconds = -1.0;
+
+    // Counts real OnRelease() calls - printed at the end when diagEasyMode
+    // is true, where it's expected to stay exactly 0: a correct press
+    // already returns Hit directly (see OnPress), so the auto-player's
+    // "arm a release" branch below never fires in easy mode, proving
+    // Hit-registration has zero dependency on release.
+    int releaseCallCount = 0;
 
     // Per-lane auto-player state: whether we're currently simulating a held
     // key, and when (in seconds) to release it.
@@ -524,6 +537,7 @@ int main(int argc, char** argv)
             if (heldByUs[lane] && session.Clock().ElapsedSeconds() >= releaseAtSeconds[lane])
             {
                 session.OnRelease(lane);
+                ++releaseCallCount;
                 JudgementResult result = session.ConsumeLastJudgement();
                 printf("[t=%.2fs]   lane %d release -> %ls (streak=%d)\n", session.Clock().ElapsedSeconds(), lane,
                        JudgementName(result), session.CurrentStreak());
@@ -583,6 +597,11 @@ int main(int argc, char** argv)
     }
 
     printf("Final phase: %ls\n", PhaseName(session.Phase()));
+    if (diagEasyMode)
+    {
+        printf("easy-mode OnRelease call count: %d (expected 0)%s\n", releaseCallCount,
+               releaseCallCount != 0 ? " ** MISMATCH **" : "");
+    }
 
     session.Stop();
     engine.Shutdown();
