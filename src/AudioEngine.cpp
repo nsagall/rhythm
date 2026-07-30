@@ -178,7 +178,7 @@ StemHandle AudioEngine::LoadStem(const std::wstring& wavFilePath)
 }
 
 // Starts a loaded stem looping seamlessly, seeking to phaseSeconds so it enters in time with the beat grid.
-void AudioEngine::StartLooping(StemHandle stemHandle, double phaseSeconds, float volume)
+void AudioEngine::StartLooping(StemHandle stemHandle, double phaseSeconds, float volume, int loopCount)
 {
     if (!stemHandle.IsValid() || stemHandle.value >= static_cast<int>(m_stems.size()))
     {
@@ -222,7 +222,11 @@ void AudioEngine::StartLooping(StemHandle stemHandle, double phaseSeconds, float
     buffer.PlayLength = totalFrames - startFrame;
     buffer.LoopBegin = 0;
     buffer.LoopLength = 0;
-    buffer.LoopCount = XAUDIO2_LOOP_INFINITE;
+    // A finite loopCount is expressed to XAudio2 as (loopCount - 1): the
+    // initial PlayBegin/PlayLength pass already accounts for one full play
+    // of the region, so LoopCount here only counts the ADDITIONAL repeats
+    // of the [0, end) loop region after that.
+    buffer.LoopCount = loopCount > 0 ? static_cast<UINT32>(loopCount - 1) : XAUDIO2_LOOP_INFINITE;
 
     stem.voice->SetVolume(volume);
     stem.voice->SubmitSourceBuffer(&buffer);
@@ -316,6 +320,25 @@ double AudioEngine::GetPositionSeconds(StemHandle stemHandle) const
     stem.voice->GetState(&state);
     UINT64 samplesSinceLoopStart = state.SamplesPlayed - stem.loopStartSampleBaseline;
     return static_cast<double>(samplesSinceLoopStart) / stem.format.nSamplesPerSec;
+}
+
+// Returns whether a stem's voice is still actively producing audio.
+bool AudioEngine::IsPlaying(StemHandle stemHandle) const
+{
+    if (!stemHandle.IsValid() || stemHandle.value >= static_cast<int>(m_stems.size()))
+    {
+        return false;
+    }
+
+    const Stem& stem = m_stems[stemHandle.value];
+    if (!stem.voice)
+    {
+        return false;
+    }
+
+    XAUDIO2_VOICE_STATE state{};
+    stem.voice->GetState(&state);
+    return state.BuffersQueued > 0;
 }
 
 // Returns a stem's total duration in seconds, measured from its actual loaded audio data.

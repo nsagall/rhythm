@@ -52,10 +52,20 @@ public:
 
     // Starts a loaded stem looping seamlessly, at the given volume (1.0 =
     // unity gain). Plays once from phaseSeconds to the end of the buffer,
-    // then loops the whole buffer forever after - so a loop starting
-    // mid-song enters exactly in time rather than restarting from the
-    // beginning out of phase.
-    void StartLooping(StemHandle stemHandle, double phaseSeconds = 0.0, float volume = 1.0f);
+    // then loops the whole buffer after - so a loop starting mid-song
+    // enters exactly in time rather than restarting from the beginning out
+    // of phase. loopCount == 0 (default) loops forever until Stop() is
+    // called - for a clip whose total duration isn't known when it starts
+    // (a learn or background clip, whose eventual stop time depends on
+    // future player input). loopCount > 0 instead schedules exactly that
+    // many total passes through the loop, after which the voice stops on
+    // its own, sample-accurately, entirely inside XAudio2 - no explicit
+    // Stop() call needed, and no risk of a fragment of the loop's
+    // beginning bleeding through before a polling-driven Stop() call
+    // catches up to the intended stop instant. Use this for a clip whose
+    // total loop count is already known the moment it starts (a solo
+    // clip's loop_count).
+    void StartLooping(StemHandle stemHandle, double phaseSeconds = 0.0, float volume = 1.0f, int loopCount = 0);
 
     // Changes the volume of an already-playing (or not-yet-playing) stem
     // without otherwise affecting playback (1.0 = unity gain).
@@ -72,6 +82,13 @@ public:
 
     // Returns how many seconds of audio have played for a stem, for clock resync.
     double GetPositionSeconds(StemHandle stemHandle) const;
+
+    // Returns whether a stem's voice is still actively producing audio.
+    // False for an invalid handle, or once a finite loop_count's last pass
+    // has finished and the voice has stopped itself - even though nothing
+    // has explicitly called Stop() on it yet, and GetPositionSeconds() has
+    // accordingly frozen rather than kept advancing.
+    bool IsPlaying(StemHandle stemHandle) const;
 
     // Returns a stem's total duration in seconds, measured from its actual
     // loaded audio data (not any chart-declared value) - the ground truth
