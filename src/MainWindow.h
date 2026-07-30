@@ -125,6 +125,12 @@ private:
     // Returns the song list row index under the given client-space point, or -1 if none.
     int HitTestSongList(POINT pt) const;
 
+    // Custom-paints the Easy Mode toggle switch on the song-select header
+    // row - a rounded track (colored by state) with a circular knob, no
+    // native control, matching how the song list itself is hand-drawn
+    // rather than built from stock Win32 controls.
+    void DrawEasyModeToggle(HDC hdc);
+
     HWND m_hwnd = nullptr;
     HWND m_hButtonRefresh = nullptr;
     HBRUSH m_windowBrush = nullptr;
@@ -139,6 +145,13 @@ private:
     std::vector<SongEntry> m_songs;
     int m_selectedSongIndex = -1;
     RECT m_songListRect{};
+
+    // Easy Mode toggle: loaded from Settings on startup, flipped by
+    // clicking m_easyModeToggleRect (SongSelect screen only), saved back to
+    // Settings on every change, and passed to GameSession::LoadChart
+    // whenever a song is chosen.
+    bool m_easyMode = false;
+    RECT m_easyModeToggleRect{};
 
     AudioEngine m_audioEngine;
     GameSession m_gameSession;

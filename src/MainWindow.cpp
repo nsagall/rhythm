@@ -24,6 +24,14 @@ constexpr int kRowLeft = 10;
 constexpr int kRowRightMargin = 15;
 constexpr int kRefreshButtonWidth = 90;
 
+// The Easy Mode toggle sits on the same header row, immediately to the
+// left of the refresh button.
+constexpr int kEasyModeToggleWidth = 130;
+constexpr int kEasyModeToggleGap = 15;
+constexpr int kToggleTrackWidth = 40;
+constexpr int kToggleTrackHeight = 20;
+constexpr int kToggleKnobRadius = 8;
+
 // The lane (while playing) and the song list (while selecting) both sit
 // below this same header row, filling the available space: each grows/
 // shrinks with the window but is clamped to a sane range so it never
@@ -59,6 +67,9 @@ constexpr COLORREF kRefreshButtonColor = RGB(255, 205, 70);
 constexpr COLORREF kSongRowHighlightColor = RGB(56, 219, 255);
 constexpr COLORREF kSongRowHighlightTextColor = RGB(10, 10, 20);
 constexpr COLORREF kHintTextColor = RGB(150, 140, 175);
+constexpr COLORREF kToggleTrackOffColor = kFieldBgColor;
+constexpr COLORREF kToggleTrackOnColor = kSongRowHighlightColor;
+constexpr COLORREF kToggleKnobColor = RGB(245, 242, 250);
 
 // Custom-paints one owner-drawn button: a rounded, bevelled fill in
 // baseColor (darkened while pressed for tactile feedback) with bold dark
@@ -244,6 +255,7 @@ LRESULT MainWindow::HandleMessage(HWND hwnd, UINT message, WPARAM wParam, LPARAM
 void MainWindow::OnCreate(HWND hwnd)
 {
     m_hwnd = hwnd;
+    m_easyMode = m_settings.LoadEasyMode();
 
     m_hButtonRefresh = CreateWindowExW(
         0, L"BUTTON", L"Refresh",
@@ -284,6 +296,10 @@ void MainWindow::Layout()
 
     int refreshLeft = width - kRowRightMargin - kRefreshButtonWidth;
     MoveWindow(m_hButtonRefresh, refreshLeft, kRowTop - 1, kRefreshButtonWidth, kControlHeight + 2, TRUE);
+
+    int toggleRight = refreshLeft - kEasyModeToggleGap;
+    int toggleLeft = toggleRight - kEasyModeToggleWidth;
+    m_easyModeToggleRect = RECT{toggleLeft, kRowTop - 1, toggleRight, kRowTop - 1 + kControlHeight + 2};
 
     int listWidth = std::min(std::max(width - 2 * kLaneMargin, kLaneMinWidth), kSongListMaxWidth);
     int listLeft = (width - listWidth) / 2;
@@ -403,7 +419,8 @@ void MainWindow::OnKeyUp(WPARAM key, LPARAM /*flags*/)
     }
 }
 
-// On the song list, clicking a row chooses that song immediately.
+// On the song list, clicking the Easy Mode toggle flips it; clicking a row
+// chooses that song immediately.
 void MainWindow::OnLButtonDown(LPARAM lParam)
 {
     if (m_screen != UiScreen::SongSelect)
@@ -412,6 +429,15 @@ void MainWindow::OnLButtonDown(LPARAM lParam)
     }
 
     POINT pt{static_cast<short>(LOWORD(lParam)), static_cast<short>(HIWORD(lParam))};
+
+    if (PtInRect(&m_easyModeToggleRect, pt))
+    {
+        m_easyMode = !m_easyMode;
+        m_settings.SaveEasyMode(m_easyMode);
+        InvalidateRect(m_hwnd, &m_easyModeToggleRect, FALSE);
+        return;
+    }
+
     int index = HitTestSongList(pt);
     if (index >= 0)
     {
@@ -533,6 +559,7 @@ void MainWindow::OnPaint(HWND hwnd)
         if (m_screen == UiScreen::SongSelect)
         {
             DrawSongList(m_backBufferDC);
+            DrawEasyModeToggle(m_backBufferDC);
         }
         else
         {
@@ -603,7 +630,7 @@ void MainWindow::ChooseSong(int index)
     }
 
     std::wstring loadError;
-    if (!m_gameSession.LoadChart(m_songs[index].chartPath, loadError))
+    if (!m_gameSession.LoadChart(m_songs[index].chartPath, m_easyMode, loadError))
     {
         std::wstring message = L"That chart couldn't be loaded:\r\n\r\n" + loadError;
         MessageBoxW(m_hwnd, message.c_str(), kWindowTitle, MB_OK | MB_ICONWARNING);
@@ -697,6 +724,52 @@ void MainWindow::DrawSongList(HDC hdc)
     DrawTextW(hdc, L"Click a song, or use \x2191/\x2193 and any other key to start it.", -1, &hintRect,
               DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
 
+    SelectObject(hdc, oldFont);
+}
+
+// Custom-paints the Easy Mode toggle: a label plus a rounded track with a
+// circular knob, positioned left (off) or right (on) - no native control,
+// matching the song list's own hand-drawn/hand-hit-tested style.
+void MainWindow::DrawEasyModeToggle(HDC hdc)
+{
+    RECT rect = m_easyModeToggleRect;
+    if (rect.right <= rect.left || rect.bottom <= rect.top)
+    {
+        return;
+    }
+
+    static HFONT labelFont =
+        CreateFontW(-15, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+                    CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
+
+    int centerY = (rect.top + rect.bottom) / 2;
+    RECT trackRect{rect.right - kToggleTrackWidth, centerY - kToggleTrackHeight / 2, rect.right,
+                    centerY + kToggleTrackHeight / 2};
+
+    HPEN oldPen = (HPEN)SelectObject(hdc, GetStockObject(NULL_PEN));
+
+    HBRUSH trackBrush = CreateSolidBrush(m_easyMode ? kToggleTrackOnColor : kToggleTrackOffColor);
+    HBRUSH oldBrush = (HBRUSH)SelectObject(hdc, trackBrush);
+    RoundRect(hdc, trackRect.left, trackRect.top, trackRect.right, trackRect.bottom, kToggleTrackHeight,
+              kToggleTrackHeight);
+    SelectObject(hdc, oldBrush);
+    DeleteObject(trackBrush);
+
+    int knobCenterX = m_easyMode ? trackRect.right - kToggleTrackHeight / 2 : trackRect.left + kToggleTrackHeight / 2;
+    HBRUSH knobBrush = CreateSolidBrush(kToggleKnobColor);
+    SelectObject(hdc, knobBrush);
+    Ellipse(hdc, knobCenterX - kToggleKnobRadius, centerY - kToggleKnobRadius, knobCenterX + kToggleKnobRadius,
+            centerY + kToggleKnobRadius);
+    SelectObject(hdc, oldBrush);
+    DeleteObject(knobBrush);
+
+    SelectObject(hdc, oldPen);
+
+    RECT labelRect{rect.left, rect.top, trackRect.left - 8, rect.bottom};
+    HFONT oldFont = (HFONT)SelectObject(hdc, labelFont);
+    SetBkMode(hdc, TRANSPARENT);
+    SetTextColor(hdc, kLabelTextColor);
+    DrawTextW(hdc, L"Easy Mode", -1, &labelRect, DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
     SelectObject(hdc, oldFont);
 }
 
