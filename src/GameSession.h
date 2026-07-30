@@ -240,6 +240,16 @@ private:
     // Moves this lane's next-expected-note pointer forward to the next note after it.
     void AdvanceExpectedNote(int lane);
 
+    // Returns the start-tolerance window (seconds) to judge a press
+    // against clip with, given clipIndex's current playback state. In
+    // normal mode this is just the chart-declared value; in easy mode it's
+    // widened by kEasyModeToleranceMultiplier unconditionally, and by a
+    // further kEasyModeStoppedToleranceMultiplier on top of that while the
+    // clip isn't currently playing - either because it hasn't started yet
+    // or because RegisterMiss stopped it after too many misses - to help
+    // the player get back on track.
+    double EffectiveStartToleranceSeconds(const ChartClip& clip, int clipIndex) const;
+
     // Returns the smallest note start (in absolute beats) strictly after afterBeat, for this lane.
     double NextOnsetAfter(double afterBeat, const ChartClip& clip, int lane) const;
 
@@ -306,7 +316,10 @@ private:
     // originals began), multiple originals landing on the same beat within
     // a lane collapse into one, and a beat claimed by more than one lane
     // survives only in the lowest-indexed lane that claims it (no
-    // simultaneous notes). No-op unless clip.hasMidi. Must run before
+    // simultaneous notes). Every surviving note is shortened to
+    // kEasyModeNoteDurationBeats (half the quarter-note grid it's spaced
+    // on), so consecutive notes always leave a visible gap instead of
+    // running into each other. No-op unless clip.hasMidi. Must run before
     // ExpandLaneNotesToFillClip, while spanBeats still means "one
     // repetition's length" - tiling afterward just repeats whatever this
     // produces, so it never needs to know easy mode exists.

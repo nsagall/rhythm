@@ -10,6 +10,19 @@ namespace
 constexpr double kCountInSeconds = 2.0;
 constexpr int kMaxConsecutiveMisses = 3;
 
+// Easy mode's start-tolerance widening - see EffectiveStartToleranceSeconds.
+// The chart's own declared tolerance is widened by this much unconditionally...
+constexpr double kEasyModeToleranceMultiplier = 1.5;
+// ...and, on top of that, by this much more while the clip isn't currently
+// playing (never started, or stopped after too many misses), to help the
+// player get back on track.
+constexpr double kEasyModeStoppedToleranceMultiplier = 2.0;
+
+// How long an easy-mode note lasts, in beats - half the quarter-note grid
+// it's quantized to, so consecutive notes always leave a visible gap
+// instead of running into each other.
+constexpr double kEasyModeNoteDurationBeats = 0.5;
+
 // How much a MIDI pattern's declared length is allowed to exceed its
 // stem's measured audio length before LoadChart rejects it as not fitting
 // in one loop. A real stem's duration (sample count / sample rate) will
@@ -217,7 +230,7 @@ void GameSession::OnPress(int lane)
     double secondsPerBeat = 60.0 / m_song.bpm;
     double startBeat = m_nextExpectedBeat[lane];
     double startSeconds = startBeat * secondsPerBeat;
-    double toleranceSeconds = clip.startToleranceMs / 1000.0;
+    double toleranceSeconds = EffectiveStartToleranceSeconds(clip, section.clipIndex);
     double nowSeconds = m_clock.ElapsedSeconds();
 
     if (std::abs(nowSeconds - startSeconds) <= toleranceSeconds)
@@ -469,7 +482,7 @@ void GameSession::Update()
         if (section.playMode == PlayMode::Learn)
         {
             const ChartClip& clip = m_song.clips[section.clipIndex];
-            double toleranceSeconds = clip.startToleranceMs / 1000.0;
+            double toleranceSeconds = EffectiveStartToleranceSeconds(clip, section.clipIndex);
             for (int lane = 0; lane < kLaneCount; ++lane)
             {
                 if (clip.laneNotes[lane].empty())
@@ -1006,6 +1019,24 @@ void GameSession::AdvanceExpectedNote(int lane)
     m_nextExpectedBeat[lane] = NextOnsetAfter(m_nextExpectedBeat[lane], clip, lane);
 }
 
+// Returns the start-tolerance window (seconds) to judge a press with -
+// see the header comment for the easy-mode widening this applies.
+double GameSession::EffectiveStartToleranceSeconds(const ChartClip& clip, int clipIndex) const
+{
+    double toleranceMs = clip.startToleranceMs;
+    if (m_easyMode)
+    {
+        toleranceMs *= kEasyModeToleranceMultiplier;
+        bool clipPlaying =
+            clipIndex >= 0 && clipIndex < static_cast<int>(m_clipIsPlaying.size()) && m_clipIsPlaying[clipIndex];
+        if (!clipPlaying)
+        {
+            toleranceMs *= kEasyModeStoppedToleranceMultiplier;
+        }
+    }
+    return toleranceMs / 1000.0;
+}
+
 // If the clip's declared span is shorter than its stem's actual duration,
 // tiles each lane's notes (independently, repeating every original span)
 // to fill the whole clip, and widens spanBeats to match - so a short
@@ -1128,7 +1159,7 @@ void GameSession::ApplyEasyModeTransform(ChartClip& clip)
         quantized.reserve(laneBeats[lane].size());
         for (long long beat : laneBeats[lane]) // std::set iterates sorted ascending
         {
-            quantized.push_back(LaneNote{static_cast<double>(beat), 1.0});
+            quantized.push_back(LaneNote{static_cast<double>(beat), kEasyModeNoteDurationBeats});
         }
         clip.laneNotes[lane] = std::move(quantized);
     }
