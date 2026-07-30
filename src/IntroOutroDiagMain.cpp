@@ -1,0 +1,590 @@
+#include <windows.h>
+
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+
+#include "AudioEngine.h"
+#include "GameSession.h"
+
+// Standalone diagnostic (not part of the normal build): drives GameSession
+// headlessly against a chart, auto-pressing/releasing every lane's notes at
+// the right moment for learn sections, and prints phase/section/play-mode
+// transitions so intro_bars/outro_loops/loop_count/per-lane hold judging
+// and the learn/solo/background section flow can be verified without UI
+// automation - including (1) that a solo section's clip actually stops
+// once its own wait completes rather than droning into subsequent
+// sections, and (2) that PreviewClip() doesn't skip over an intervening
+// solo section's own preview window, nor skip past one to a further
+// section.
+
+namespace
+{
+
+const wchar_t* PhaseName(GamePhase phase)
+{
+    switch (phase)
+    {
+        case GamePhase::Idle: return L"Idle";
+        case GamePhase::CountIn: return L"CountIn";
+        case GamePhase::Learning: return L"Learning";
+        case GamePhase::Complete: return L"Complete";
+    }
+    return L"?";
+}
+
+const wchar_t* JudgementName(JudgementResult result)
+{
+    switch (result)
+    {
+        case JudgementResult::Hit: return L"Hit";
+        case JudgementResult::Miss: return L"Miss";
+        case JudgementResult::None: return L"None";
+    }
+    return L"?";
+}
+
+const wchar_t* PlayModeName(PlayMode mode)
+{
+    switch (mode)
+    {
+        case PlayMode::Learn: return L"learn";
+        case PlayMode::Solo: return L"solo";
+        case PlayMode::Background: return L"background";
+    }
+    return L"?";
+}
+
+// Mirrors GameSession's private FindLaneNote: looks up the note whose
+// phase-within-span matches absoluteStartBeat, so this diagnostic can plan
+// a release without access to GameSession's internals.
+double DurationForLaneNote(const ChartClip& clip, int lane, double absoluteStartBeat)
+{
+    double span = clip.spanBeats;
+    double phase = std::fmod(absoluteStartBeat, span);
+    if (phase < 0.0)
+    {
+        phase += span;
+    }
+    for (const LaneNote& note : clip.laneNotes[lane])
+    {
+        if (std::abs(note.startBeat - phase) < 1e-6)
+        {
+            return note.durationBeats;
+        }
+    }
+    return 0.0;
+}
+
+// Mirrors NoteLane.cpp's anonymous-namespace NotesInRange (not exported, so
+// reimplemented here): true if any note on this lane, tiled across its
+// clip's repeating pattern, overlaps [fromBeat, toBeat] at all.
+bool AnyNoteVisible(const ChartClip& clip, int lane, double fromBeat, double toBeat)
+{
+    double spanBeats = clip.spanBeats;
+    const std::vector<LaneNote>& notes = clip.laneNotes[lane];
+    if (notes.empty() || spanBeats <= 0.0)
+    {
+        return false;
+    }
+    long long firstBar = static_cast<long long>(std::floor(fromBeat / spanBeats)) - 1;
+    long long lastBar = static_cast<long long>(std::floor(toBeat / spanBeats)) + 1;
+    for (long long bar = firstBar; bar <= lastBar; ++bar)
+    {
+        for (const LaneNote& note : notes)
+        {
+            double absoluteStart = bar * spanBeats + note.startBeat;
+            double absoluteEnd = absoluteStart + note.durationBeats;
+            if (absoluteEnd >= fromBeat && absoluteStart <= toBeat)
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+// NoteLane.cpp's private kBeatsBehind (how far a note stays visible past the
+// judge line before scrolling off) - mirrored here since it's not exported.
+constexpr double kDiagBeatsBehind = 1.0;
+
+} // namespace
+
+int main(int argc, char** argv)
+{
+    std::wstring chartPath = L"Content/Cool Boy/Cool Boy.chart";
+    if (argc > 1)
+    {
+        std::string arg = argv[1];
+        chartPath.assign(arg.begin(), arg.end());
+    }
+
+    // Temporary realistic-timing test knobs: simulate a human's non-zero
+    // press/release reaction offset (in milliseconds, via env vars) instead
+    // of this auto-player's normal zero-latency behavior, to check whether
+    // late-but-still-in-tolerance timing causes spurious misses that a
+    // perfectly-on-time auto-player would never expose.
+    const char* pressOffsetEnv = std::getenv("DIAG_PRESS_OFFSET_MS");
+    const char* releaseOffsetEnv = std::getenv("DIAG_RELEASE_OFFSET_MS");
+    double kTestPressOffsetSeconds = pressOffsetEnv ? std::atof(pressOffsetEnv) / 1000.0 : 0.0;
+    double kTestReleaseOffsetSeconds = releaseOffsetEnv ? std::atof(releaseOffsetEnv) / 1000.0 : 0.0;
+
+    // DIAG_MISS_AFTER_LOCKIN=1: once a learn section locks in (awaitingAdvance
+    // first observed true), stop auto-pressing for the rest of that section's
+    // wait, so Update()'s press-phase timeout generates real post-lock-in
+    // misses instead of this perfect auto-player only ever producing more
+    // hits - the only way to actually exercise RegisterMiss()'s new
+    // once-locked-in no-op.
+    bool diagMissAfterLockin = std::getenv("DIAG_MISS_AFTER_LOCKIN") != nullptr;
+
+    AudioEngine engine;
+    if (!engine.Initialize())
+    {
+        printf("AudioEngine::Initialize failed\n");
+        return 1;
+    }
+
+    // Regression check: a MIDI pattern longer than one loop of its stem's
+    // audio must be rejected at load time (the notes would otherwise be
+    // judged against a moment the audio has already looped past).
+    {
+        GameSession badSession(engine);
+        std::wstring badError;
+        bool badOk = badSession.LoadChart(
+            L"C:\\Users\\nsaga\\AppData\\Local\\Temp\\claude\\C--Users-nsaga-OneDrive-Projects\\2d6d0060-ad5a-4bf4-86f9-077b215135dd\\scratchpad\\too_long_test.chart",
+            badError);
+        printf("too_long_test.chart LoadChart() returned %s (expected false)%s\n", badOk ? "true" : "false",
+               badOk ? " ** MISMATCH **" : "");
+        wprintf(L"  %ls\n", badError.c_str());
+    }
+
+    GameSession session(engine);
+    std::wstring loadError;
+    if (!session.LoadChart(chartPath, loadError))
+    {
+        wprintf(L"LoadChart failed: %ls\n", loadError.c_str());
+        return 1;
+    }
+
+    // Opt-in (DIAG_DUMP_NOTES=1): dump every clip's post-tiling spanBeats
+    // and per-lane note list right after load - useful for spot-checking
+    // that tiling produced the expected pattern, without cluttering every
+    // normal diagnostic run.
+    if (std::getenv("DIAG_DUMP_NOTES"))
+    {
+        for (size_t ci = 0; ci < session.Song().clips.size(); ++ci)
+        {
+            const ChartClip& c = session.Song().clips[ci];
+            wprintf(L"clip %zu (%ls): spanBeats=%.6f hasMidi=%d\n", ci, c.name.c_str(), c.spanBeats,
+                    c.hasMidi ? 1 : 0);
+            for (int lane = 0; lane < kLaneCount; ++lane)
+            {
+                for (const LaneNote& note : c.laneNotes[lane])
+                {
+                    wprintf(L"  lane %d: startBeat=%.6f durationBeats=%.6f endBeat=%.6f\n", lane, note.startBeat,
+                            note.durationBeats, note.startBeat + note.durationBeats);
+                }
+            }
+        }
+    }
+
+
+    session.Start();
+
+    GamePhase lastPhase = GamePhase::Idle;
+    int lastSection = -2;
+    PlayMode lastPlayMode = PlayMode::Learn;
+    bool lastInIntro = false;
+    bool lastAwaitingAdvance = false;
+    const ChartClip* lastPreview = nullptr;
+    DWORD startTick = GetTickCount();
+
+    // Bug-1 regression tracking: once we transition away from a Solo
+    // section, remember its clip's stem handle and poll
+    // GetPositionSeconds() on every subsequent section transition until
+    // it's observed to stop advancing - a solo clip must stop once its own
+    // wait completes, not drone on indefinitely into later sections.
+    StemHandle watchedSoloStem;
+    double watchedSoloLastPosition = -1.0;
+    bool watchedSoloConfirmedStopped = true;
+
+    // Tolerance-bug tracking: CurrentStreak() is polled every iteration
+    // (not just after our own explicit press/release calls), so a drop
+    // that ISN'T immediately preceded by a printed "-> Miss" from this
+    // auto-player must have come from inside GameSession::Update() itself
+    // (the held-past-tolerance timeout or the press-phase timeout) -
+    // exactly the kind of "missed a note that looked hittable" a player
+    // would notice but a press/release-only trace would hide.
+    int lastStreak = 0;
+
+    // Post-lock-in extension tracking: once a learn section's awaitingAdvance
+    // first flips true, stop pressing for the rest of it (if
+    // DIAG_MISS_AFTER_LOCKIN), confirm PendingAdvanceAtSeconds() never
+    // changes value for the rest of the wait (proves progression timing is
+    // unaffected by post-lock-in hits/misses), and confirm the locked-in
+    // clip's stem position keeps advancing rather than stopping.
+    bool stopPressingThisSection = false;
+    double lockinPendingAdvanceAtSeconds = -1.0;
+    StemHandle watchedLockinStem;
+    double watchedLockinLastPosition = -1.0;
+    double watchedLockinLastCheckSeconds = -1.0;
+
+    // Mirrors NoteLane's own nextClipShowing computation (see NoteLane.cpp)
+    // to confirm the lock-in explosion equivalent always fires at or before
+    // the actual section transition - never silently skipped.
+    bool lastMirroredNextClipShowing = false;
+
+    // General blank-lane-row tracking (see the check below): negative while
+    // something is visible, set to the elapsed-seconds timestamp a blank
+    // stretch started.
+    double blankStartSeconds = -1.0;
+
+    // Per-lane auto-player state: whether we're currently simulating a held
+    // key, and when (in seconds) to release it.
+    bool heldByUs[kLaneCount] = {};
+    double releaseAtSeconds[kLaneCount] = {};
+    double lastPressedBeat[kLaneCount];
+    for (int lane = 0; lane < kLaneCount; ++lane)
+    {
+        lastPressedBeat[lane] = -1.0;
+    }
+
+    while (session.Phase() != GamePhase::Complete)
+    {
+        session.Update();
+
+        GamePhase phase = session.Phase();
+        int sectionIndex = session.CurrentSectionIndex();
+        PlayMode playMode = session.CurrentPlayMode();
+        bool inIntro = session.IsInIntro();
+        bool awaitingAdvance = session.IsAwaitingAdvance();
+        double secondsPerBeat = 60.0 / session.Song().bpm;
+
+        // A streak drop that coincides with a section change is just
+        // BeginSection's normal per-section reset, not a miss - only flag
+        // one that happens with no section/phase change this tick, which
+        // can only mean a Miss was registered somewhere (RegisterMiss()
+        // resets the streak unconditionally, whether called from a real
+        // press/release or from one of Update()'s own timeout checks).
+        int streak = session.CurrentStreak();
+        bool sectionChangedThisTick = (phase != lastPhase || sectionIndex != lastSection);
+        if (streak < lastStreak && !sectionChangedThisTick)
+        {
+            printf("[t=%.2fs]   SILENT streak drop %d -> %d (Update()-internal timeout, not an explicit press/release)\n",
+                   session.Clock().ElapsedSeconds(), lastStreak, streak);
+            for (int lane = 0; lane < kLaneCount; ++lane)
+            {
+                printf("[t=%.2fs]     lane %d: held=%s holdStartBeat=%.4f nextExpectedBeat=%.4f heldByUs=%s releaseAtSeconds=%.4f\n",
+                       session.Clock().ElapsedSeconds(), lane, session.IsLaneHeld(lane) ? "true" : "false",
+                       session.LaneHoldStartBeat(lane), session.NextExpectedBeatForLane(lane),
+                       heldByUs[lane] ? "true" : "false", releaseAtSeconds[lane]);
+            }
+        }
+        lastStreak = streak;
+
+        if (phase != lastPhase || sectionIndex != lastSection)
+        {
+            // We're leaving lastSection right now - if it was a Solo
+            // section, start watching its clip's stem position.
+            if (lastPlayMode == PlayMode::Solo && lastSection >= 0)
+            {
+                int soloClipIndex = session.Song().sections[lastSection].clipIndex;
+                if (soloClipIndex >= 0)
+                {
+                    watchedSoloStem = session.DebugStemHandle(soloClipIndex);
+                    watchedSoloLastPosition = -1.0;
+                    watchedSoloConfirmedStopped = false;
+                }
+            }
+
+            stopPressingThisSection = false;
+            lockinPendingAdvanceAtSeconds = -1.0;
+            watchedLockinLastPosition = -1.0;
+            watchedLockinLastCheckSeconds = -1.0;
+            lastMirroredNextClipShowing = false;
+
+            const ChartClip* clip = session.CurrentClip();
+            printf("[t=%.2fs] phase=%ls section=%d play_mode=%ls clip=(%ls)\n", session.Clock().ElapsedSeconds(),
+                   PhaseName(phase), sectionIndex, PlayModeName(playMode), clip ? clip->name.c_str() : L"-");
+            lastPhase = phase;
+            lastSection = sectionIndex;
+            lastPlayMode = playMode;
+
+            if (!watchedSoloConfirmedStopped && watchedSoloStem.IsValid())
+            {
+                double pos = engine.GetPositionSeconds(watchedSoloStem);
+                printf("[t=%.2fs]   watched solo clip stem position -> %.3fs\n", session.Clock().ElapsedSeconds(),
+                       pos);
+                if (watchedSoloLastPosition >= 0.0 && std::abs(pos - watchedSoloLastPosition) < 1e-6)
+                {
+                    watchedSoloConfirmedStopped = true;
+                    printf("[t=%.2fs]   watched solo clip stem position CONFIRMED STOPPED\n",
+                           session.Clock().ElapsedSeconds());
+                }
+                watchedSoloLastPosition = pos;
+            }
+        }
+        else if (playMode != lastPlayMode)
+        {
+            printf("[t=%.2fs]   play_mode -> %ls\n", session.Clock().ElapsedSeconds(), PlayModeName(playMode));
+            lastPlayMode = playMode;
+        }
+        if (inIntro != lastInIntro)
+        {
+            printf("[t=%.2fs]   IsInIntro -> %s\n", session.Clock().ElapsedSeconds(), inIntro ? "true" : "false");
+            lastInIntro = inIntro;
+        }
+        if (awaitingAdvance != lastAwaitingAdvance)
+        {
+            printf("[t=%.2fs]   IsAwaitingAdvance -> %s\n", session.Clock().ElapsedSeconds(),
+                   awaitingAdvance ? "true" : "false");
+            lastAwaitingAdvance = awaitingAdvance;
+
+            if (awaitingAdvance && playMode == PlayMode::Learn)
+            {
+                lockinPendingAdvanceAtSeconds = session.PendingAdvanceAtSeconds();
+                printf("[t=%.2fs]   locked in - PendingAdvanceAtSeconds=%.4f\n", session.Clock().ElapsedSeconds(),
+                       lockinPendingAdvanceAtSeconds);
+
+                if (diagMissAfterLockin)
+                {
+                    stopPressingThisSection = true;
+                    printf("[t=%.2fs]   DIAG_MISS_AFTER_LOCKIN: no longer pressing this section\n",
+                           session.Clock().ElapsedSeconds());
+                }
+
+                int clipIndex = session.Song().sections[sectionIndex].clipIndex;
+                watchedLockinStem = session.DebugStemHandle(clipIndex);
+                watchedLockinLastPosition = engine.GetPositionSeconds(watchedLockinStem);
+                watchedLockinLastCheckSeconds = session.Clock().ElapsedSeconds();
+            }
+        }
+
+        // While locked in on a learn section: confirm the scheduled advance
+        // time never moves (progression timing unaffected by post-lock-in
+        // hits/misses - the OnRelease/RegisterMiss guards from GameSession
+        // are what this is actually testing), and confirm the clip's stem
+        // position keeps advancing rather than stopping (RegisterMiss's
+        // once-locked-in no-op).
+        if (awaitingAdvance && playMode == PlayMode::Learn && lockinPendingAdvanceAtSeconds >= 0.0)
+        {
+            double current = session.PendingAdvanceAtSeconds();
+            if (std::abs(current - lockinPendingAdvanceAtSeconds) > 1e-6)
+            {
+                printf("[t=%.2fs]   ** MISMATCH ** PendingAdvanceAtSeconds moved %.4f -> %.4f after lock-in\n",
+                       session.Clock().ElapsedSeconds(), lockinPendingAdvanceAtSeconds, current);
+                lockinPendingAdvanceAtSeconds = current;
+            }
+
+            if (watchedLockinStem.IsValid() && session.Clock().ElapsedSeconds() - watchedLockinLastCheckSeconds >= 0.5)
+            {
+                double pos = engine.GetPositionSeconds(watchedLockinStem);
+                if (std::abs(pos - watchedLockinLastPosition) < 1e-6)
+                {
+                    printf("[t=%.2fs]   ** MISMATCH ** locked-in clip stem position stalled at %.3fs\n",
+                           session.Clock().ElapsedSeconds(), pos);
+                }
+                watchedLockinLastPosition = pos;
+                watchedLockinLastCheckSeconds = session.Clock().ElapsedSeconds();
+            }
+
+            // Mirror NoteLane's nextClipShowing computation (NoteLane.cpp) to
+            // confirm the explosion equivalent fires at or before the actual
+            // transition - never silently skipped.
+            const ChartClip* mirroredPreview = session.PreviewClip();
+            bool mirroredNextClipShowing;
+            if (mirroredPreview == nullptr)
+            {
+                mirroredNextClipShowing = true;
+            }
+            else
+            {
+                double nowBeat = session.Clock().BeatPosition();
+                double advanceAtBeat = session.PendingAdvanceAtSeconds() / secondsPerBeat;
+                mirroredNextClipShowing = (nowBeat >= advanceAtBeat - kNoteFallBeats);
+            }
+            if (mirroredNextClipShowing && !lastMirroredNextClipShowing)
+            {
+                printf("[t=%.2fs]   mirrored explosion trigger fires (preview=%ls)\n",
+                       session.Clock().ElapsedSeconds(), mirroredPreview ? mirroredPreview->name.c_str() : L"(none)");
+                if (mirroredPreview)
+                {
+                    double nowBeatNow = session.Clock().BeatPosition();
+                    double minGapBeats = 1e9;
+                    for (int lane = 0; lane < kLaneCount; ++lane)
+                    {
+                        double onset = session.PreviewFirstOnsetBeatForLane(lane);
+                        if (onset < 0.0)
+                        {
+                            continue;
+                        }
+                        double gapBeats = (onset - nowBeatNow) - kNoteFallBeats; // <=0 means already visible
+                        if (gapBeats < minGapBeats)
+                        {
+                            minGapBeats = gapBeats;
+                        }
+                        printf("[t=%.2fs]     lane %d preview onset beat=%.4f (%.4f beats until visible)\n",
+                               session.Clock().ElapsedSeconds(), lane, onset, gapBeats);
+                    }
+                    if (minGapBeats > 1e-6)
+                    {
+                        printf("[t=%.2fs]   ** GAP ** no preview lane visible yet - %.4f beats of blank screen\n",
+                               session.Clock().ElapsedSeconds(), minGapBeats);
+                    }
+                }
+            }
+            lastMirroredNextClipShowing = mirroredNextClipShowing;
+        }
+
+        // Mirror NoteLane's own gating logic here to verify the preview window.
+        const ChartClip* preview = session.PreviewClip();
+        if (preview != lastPreview)
+        {
+            printf("[t=%.2fs]   PreviewClip -> %ls\n", session.Clock().ElapsedSeconds(),
+                   preview ? preview->name.c_str() : L"(none)");
+            lastPreview = preview;
+        }
+
+        // General "is the lane row ever fully blank" check - mirrors
+        // NoteLane::Draw's own dotsClip/dotsFromBeat selection exactly
+        // (isLiveJudging vs preview) and checks every lane for any visible
+        // note, independent of the specific explosion-timing mechanism
+        // above. Only flagged while something could plausibly be on screen
+        // (CurrentPlayMode()==Learn, or there's a preview to show) - a
+        // genuine solo/background stretch with nothing queued is
+        // legitimately blank and not interesting here.
+        {
+            bool couldShowSomething =
+                phase == GamePhase::Learning && !inIntro && (playMode == PlayMode::Learn || preview != nullptr);
+            bool anyVisible = false;
+            if (couldShowSomething)
+            {
+                double nowBeatCheck = session.Clock().BeatPosition();
+                bool learnAwaitingAdvanceCheck = playMode == PlayMode::Learn && awaitingAdvance;
+                bool nextClipShowingCheck = false;
+                if (learnAwaitingAdvanceCheck)
+                {
+                    if (preview == nullptr)
+                    {
+                        nextClipShowingCheck = true;
+                    }
+                    else
+                    {
+                        double advanceAtBeat = session.PendingAdvanceAtSeconds() / secondsPerBeat;
+                        nextClipShowingCheck = (nowBeatCheck >= advanceAtBeat - kNoteFallBeats);
+                    }
+                }
+                bool isLiveJudgingCheck = playMode == PlayMode::Learn && !nextClipShowingCheck;
+                const ChartClip* liveClip = session.CurrentClip();
+                for (int lane = 0; lane < kLaneCount && !anyVisible; ++lane)
+                {
+                    if (isLiveJudgingCheck && liveClip)
+                    {
+                        if (AnyNoteVisible(*liveClip, lane, nowBeatCheck - kDiagBeatsBehind, nowBeatCheck + kNoteFallBeats))
+                        {
+                            anyVisible = true;
+                        }
+                    }
+                    else if (preview)
+                    {
+                        double dotsFromBeat = session.PreviewFirstOnsetBeatForLane(lane);
+                        if (dotsFromBeat >= 0.0 &&
+                            AnyNoteVisible(*preview, lane, dotsFromBeat, nowBeatCheck + kNoteFallBeats))
+                        {
+                            anyVisible = true;
+                        }
+                    }
+                }
+            }
+
+            if (couldShowSomething && !anyVisible)
+            {
+                if (blankStartSeconds < 0.0)
+                {
+                    blankStartSeconds = session.Clock().ElapsedSeconds();
+                }
+            }
+            else if (blankStartSeconds >= 0.0)
+            {
+                double duration = session.Clock().ElapsedSeconds() - blankStartSeconds;
+                if (duration > 0.25)
+                {
+                    printf("[t=%.2fs]   ** BLANK ** lane row empty for %.2fs (from t=%.2fs) while play_mode=%ls\n",
+                           session.Clock().ElapsedSeconds(), duration, blankStartSeconds, PlayModeName(playMode));
+                }
+                blankStartSeconds = -1.0;
+            }
+        }
+
+        // Release any lane whose planned hold has reached its end, whether
+        // or not judging is currently live - mirrors GameSession's own
+        // "a hold resolves on its own merits" behavior.
+        for (int lane = 0; lane < kLaneCount; ++lane)
+        {
+            if (heldByUs[lane] && session.Clock().ElapsedSeconds() >= releaseAtSeconds[lane])
+            {
+                session.OnRelease(lane);
+                JudgementResult result = session.ConsumeLastJudgement();
+                printf("[t=%.2fs]   lane %d release -> %ls (streak=%d)\n", session.Clock().ElapsedSeconds(), lane,
+                       JudgementName(result), session.CurrentStreak());
+                heldByUs[lane] = false;
+            }
+        }
+
+        // Auto-press each lane at the right moment whenever real judging is
+        // active - only ever true for a `learn` section; `solo`/`background`
+        // sections never judge, so OnPress/OnRelease are simply never called
+        // for them here, same as NoteLane never draws receptors for them.
+        // Deliberately keeps pressing through awaitingAdvance now (the
+        // post-lock-in extension), unless DIAG_MISS_AFTER_LOCKIN asked us to
+        // stop once locked in for this section.
+        if (phase == GamePhase::Learning && playMode == PlayMode::Learn && !inIntro && !stopPressingThisSection)
+        {
+            const ChartClip& clip = session.Song().clips[session.Song().sections[sectionIndex].clipIndex];
+            for (int lane = 0; lane < kLaneCount; ++lane)
+            {
+                if (clip.laneNotes[lane].empty() || heldByUs[lane])
+                {
+                    continue;
+                }
+                double nextBeat = session.NextExpectedBeatForLane(lane);
+                if (std::abs(nextBeat - lastPressedBeat[lane]) <= 1e-6)
+                {
+                    continue;
+                }
+                double onsetSeconds = nextBeat * secondsPerBeat;
+                if (session.Clock().ElapsedSeconds() >= onsetSeconds + kTestPressOffsetSeconds)
+                {
+                    session.OnPress(lane);
+                    JudgementResult result = session.ConsumeLastJudgement();
+                    printf("[t=%.2fs]   lane %d press beat=%.2f -> %ls\n", session.Clock().ElapsedSeconds(), lane,
+                           nextBeat, JudgementName(result));
+                    lastPressedBeat[lane] = nextBeat;
+
+                    if (result == JudgementResult::None)
+                    {
+                        // Press was judged correct (no immediate Miss) - a
+                        // hold started, so schedule the matching release.
+                        double durationBeats = DurationForLaneNote(clip, lane, nextBeat);
+                        releaseAtSeconds[lane] = (nextBeat + durationBeats) * secondsPerBeat + kTestReleaseOffsetSeconds;
+                        heldByUs[lane] = true;
+                    }
+                }
+            }
+        }
+
+        if (GetTickCount() - startTick > 180000)
+        {
+            printf("TIMEOUT after 60s, aborting\n");
+            break;
+        }
+
+        Sleep(5);
+    }
+
+    printf("Final phase: %ls\n", PhaseName(session.Phase()));
+
+    session.Stop();
+    engine.Shutdown();
+    return 0;
+}
