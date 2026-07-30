@@ -1,0 +1,78 @@
+[song]
+title = Melodius Dub
+bpm = 85
+time_signature = 4/4
+start_tolerance_ms = 100
+release_tolerance_ms = 400
+
+[clip]
+name = Drums
+filename = drums
+hits_required = 17
+
+[clip]
+name = Organ
+filename = organ
+hits_required = 12
+
+[clip]
+name = Bass
+filename = Bass
+hits_required = 17
+
+[clip]
+name = Piano
+filename = Piano
+hits_required = 16
+
+[clip]
+name = bridge
+filename = bridge
+hits_required = 16
+
+[clip]
+name = bridge_bass
+filename = bridge_bass
+hits_required = 16
+
+[clip]
+name = Melodica
+filename = melodica
+hits_required = 24
+
+[section]
+clip = Organ
+play_mode = learn
+loop_count = 2
+
+[section]
+clip = Bass
+play_mode = learn
+loop_count = 1
+
+[section]
+clip = Drums
+play_mode = learn
+loop_count = 1
+
+[section]
+clip = Piano
+play_mode = learn
+loop_count = 1
+
+[section]
+clip = 
+play_mode = solo
+
+[section]
+clip = bridge
+play_mode = background
+
+[section]
+clip = bridge_bass
+play_mode = learn
+
+[section]
+clip = Melodica
+play_mode = learn
+loop_count = 2

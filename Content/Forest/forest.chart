@@ -1,0 +1,100 @@
+[song]
+title = Through the Forest
+bpm = 77
+time_signature = 4/4
+start_tolerance_ms = 100
+release_tolerance_ms = 400
+
+[clip]
+name = drum_intro
+filename = drum_intro
+hits_required = 16
+
+[clip]
+name = drums_1
+filename = drums_1
+
+[clip]
+name = Bass
+filename = Bass
+hits_required = 24
+
+[clip]
+name = piano
+filename = piano
+hits_required = 16
+
+[clip]
+name = melody
+filename = melody
+hits_required = 16
+
+[clip]
+name = drums_2
+filename = drums_2
+hits_required = 24
+
+[clip]
+name = melody_2
+filename = melody_2
+hits_required = 16
+
+[section]
+clip = drum_intro
+play_mode = learn
+
+[section]
+play_mode = solo
+
+[section]
+clip = drums_1
+play_mode = background
+
+[section]
+clip = Bass
+play_mode = learn
+loop_count = 1
+
+[section]
+clip = piano
+play_mode = learn
+loop_count = 1
+
+[section]
+clip = melody
+play_mode = learn
+loop_count = 1
+
+[section]
+play_mode = solo
+clip = piano
+
+[section]
+clip = piano
+play_mode = background
+
+[section]
+clip = drums_2
+play_mode = learn
+
+[section]
+clip = Bass
+play_mode = learn
+loop_count = 1
+
+[section]
+clip = melody_2
+play_mode = learn
+loop_count = 1
+
+[section]
+play_mode = solo
+clip = piano
+
+[section]
+play_mode = background
+clip = piano
+
+[section]
+clip=drum_intro
+play_mode = learn

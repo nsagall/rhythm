@@ -1,0 +1,105 @@
+[song]
+title = Cool Boy
+bpm = 125.28
+time_signature = 4/4
+start_tolerance_ms = 100
+release_tolerance_ms = 300
+
+[clip]
+name = Kick Snare
+filename = Kick Snare
+hits_required = 6
+
+[clip]
+name = HH
+filename = HH
+hits_required = 8
+
+[clip]
+name = Bass
+filename = Bass
+hits_required = 15
+
+[clip]
+name = Phee
+filename = Phee
+hits_required = 12
+
+[clip]
+name = kick_snare_hh
+filename = kick_snare_hh
+hits_required = 10
+
+[clip]
+name = Phee_2
+filename = Phee_2
+hits_required = 15
+
+[clip]
+name = bass_2
+filename = bass_2
+hits_required = 15
+
+[clip]
+name = Break
+filename = Break
+
+[section]
+clip = Kick Snare
+play_mode = learn
+
+[section]
+clip = HH
+play_mode = learn
+loop_count = 2
+
+[section]
+clip = Bass
+play_mode = learn
+loop_count = 2
+
+[section]
+clip = Phee
+play_mode = learn
+loop_count = 2
+
+[section]
+clip = Break
+play_mode = solo
+loop_count = 1
+
+[section]
+clip = HH
+play_mode = learn
+loop_count = 2
+
+[section]
+clip = bass_2
+play_mode = learn
+loop_count = 2
+
+[section]
+clip = Kick Snare
+play_mode = learn
+
+[section]
+clip = Phee_2
+play_mode = learn
+loop_count = 2
+
+[section]
+clip = Break
+play_mode = solo
+
+[section]
+clip = HH
+play_mode = learn
+
+[section]
+clip = Bass
+play_mode = learn
+
+[section]
+clip = Break
+play_mode = solo
+
