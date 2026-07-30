@@ -799,35 +799,6 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
         {
             m_audioEngine.StopAll();
             std::fill(m_clipIsPlaying.begin(), m_clipIsPlaying.end(), false);
-            if (section.clipIndex >= 0)
-            {
-                const ChartClip& clip = m_song.clips[section.clipIndex];
-                // A solo's loop_count is already known right now (unlike a
-                // learn clip, whose eventual stop time depends on future
-                // player input), so it's handed straight to StartClipLoop:
-                // the voice stops itself naturally and sample-accurately
-                // once its loops are done, instead of relying solely on
-                // the polled StopClipLoop() call below to catch the exact
-                // instant - which could otherwise let a fraction of a
-                // second of the loop's beginning bleed through first,
-                // especially audible at the very end of a chart where
-                // nothing else is left playing to mask it.
-                StartClipLoop(section.clipIndex, clip.volume, std::max(section.loopCount, 1));
-                double stemDuration = m_audioEngine.GetStemDurationSeconds(m_stemHandles[section.clipIndex]);
-                // Measured from m_clipLoopStartSeconds (exactly what
-                // StartClipLoop just recorded), not a fresh clock read here -
-                // matches how SchedulePendingAdvance already does this for a
-                // learn section's lock-in floor, rather than re-querying the
-                // clock a few instructions after the loop's real start time.
-                m_pendingAdvanceAtSeconds =
-                    ComputeLoopFloorSeconds(m_clipLoopStartSeconds[section.clipIndex], stemDuration, section.loopCount);
-            }
-            else
-            {
-                // Empty-clip solo: silence gate - stop everything, advance
-                // as soon as the kNoteFallBeats floor below allows.
-                m_pendingAdvanceAtSeconds = m_clock.ElapsedSeconds();
-            }
 
             // Same kNoteFallBeats guarantee SchedulePendingAdvance gives a
             // locked-in learn section: without it, a short/empty-clip solo
@@ -837,8 +808,52 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
             // of spawning at the top edge with its full travel time.
             double secondsPerBeat = 60.0 / m_song.bpm;
             double tFallSeconds = kNoteFallBeats * secondsPerBeat;
-            m_pendingAdvanceAtSeconds =
-                std::max(m_pendingAdvanceAtSeconds, m_clock.ElapsedSeconds() + tFallSeconds);
+
+            if (section.clipIndex >= 0)
+            {
+                const ChartClip& clip = m_song.clips[section.clipIndex];
+                double stemDuration = m_audioEngine.GetStemDurationSeconds(m_stemHandles[section.clipIndex]);
+                double nowSeconds = m_clock.ElapsedSeconds();
+
+                // A solo's loop_count is already known right now (unlike a
+                // learn clip, whose eventual stop time depends on future
+                // player input), so it's handed straight to StartClipLoop:
+                // the voice stops itself naturally and sample-accurately
+                // once its loops are done, instead of relying solely on
+                // the polled StopClipLoop() call below to catch the exact
+                // instant - which could otherwise let a fraction of a
+                // second of the loop's beginning bleed through first,
+                // especially audible at the very end of a chart where
+                // nothing else is left playing to mask it. But that voice
+                // only plays a *finite* number of passes and then genuinely
+                // stops - unlike a locked-in learn clip, which loops
+                // forever - so loop_count alone isn't necessarily enough to
+                // cover the kNoteFallBeats wait below: extend the loop
+                // count itself (not just the wait) until it is, or the
+                // voice would self-stop early and leave real silence for
+                // whatever's left of the wait instead of playing audio the
+                // whole time.
+                int loopCount = std::max(section.loopCount, 1);
+                while (stemDuration > 0.0 &&
+                       ComputeLoopFloorSeconds(nowSeconds, stemDuration, loopCount) - nowSeconds < tFallSeconds)
+                {
+                    ++loopCount;
+                }
+
+                StartClipLoop(section.clipIndex, clip.volume, loopCount);
+                // Measured from nowSeconds (captured just above, the same
+                // instant StartClipLoop records into
+                // m_clipLoopStartSeconds), not a later clock read - matches
+                // how SchedulePendingAdvance already does this for a learn
+                // section's lock-in floor.
+                m_pendingAdvanceAtSeconds = ComputeLoopFloorSeconds(nowSeconds, stemDuration, loopCount);
+            }
+            else
+            {
+                // Empty-clip solo: silence gate - stop everything, advance
+                // once the kNoteFallBeats floor below allows.
+                m_pendingAdvanceAtSeconds = m_clock.ElapsedSeconds() + tFallSeconds;
+            }
 
             m_hasPendingAdvance = true;
             return;
