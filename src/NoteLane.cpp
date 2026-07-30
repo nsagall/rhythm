@@ -678,13 +678,19 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
         DrawReceptor(hdc, x, lineY, kLaneColors[lane], held, flashing, flashColor, flashProgress);
     }
 
-    // The instant a track locks in (learnAwaitingAdvance flips false->true,
-    // computed above) - not later, when its dots eventually give way to the
-    // next clip's preview - burst a confetti celebration across the full
-    // width of the lane. Positions/velocities/colors are all generated here
+    // Burst a confetti celebration across the full width of the lane at two
+    // separate moments: the instant a track locks in (learnAwaitingAdvance
+    // flips false->true), and again when its dots actually give way to the
+    // next clip's preview (nextClipShowing flips false->true) - the second
+    // burst is what keeps whatever notes are still on screen at that exact
+    // instant (there's very likely at least one, since dots keep coming
+    // right up until this moment) from just vanishing with no visual
+    // treatment at all. Positions/velocities/colors are all generated here
     // from PseudoRandom() (same stable-scatter trick the background
     // sparkles use) and simulated purely from elapsed time in DrawConfetti.
-    if (learnAwaitingAdvance && !m_prevLockedIn)
+    bool justLockedIn = learnAwaitingAdvance && !m_prevLockedIn;
+    bool justHandedOff = nextClipShowing && !m_prevNotesHandoff;
+    if (justLockedIn || justHandedOff)
     {
         m_confetti.clear();
         m_confetti.reserve(kConfettiPieceCount);
@@ -702,6 +708,7 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
         m_confettiStartMs = GetTickCount();
     }
     m_prevLockedIn = learnAwaitingAdvance;
+    m_prevNotesHandoff = nextClipShowing;
 
     // While the player can't act yet (count-in, a clip's intro, a
     // solo/background section, or the wait before the next clip joins),

@@ -48,7 +48,10 @@ struct JudgementRipple
 // are computed live from the session's SongClock each frame rather than
 // tracked as spawned objects. When a track locks in, its notes turn green
 // (a duller green if judged a miss) instead of their usual lane color, and
-// a confetti burst plays once across the lane.
+// keep coming (and being judged) until the next clip's own dots are due;
+// a confetti burst plays across the lane at both of those moments - lock-in
+// itself, and again when the handoff to the next clip's preview actually
+// happens.
 class NoteLane
 {
 public:
@@ -88,11 +91,19 @@ private:
 
     // Tracks the current Learn section's GameSession::IsAwaitingAdvance()
     // from the previous frame, so the moment it flips false->true (the
-    // instant a track locks in) can be caught exactly once, to trigger the
-    // confetti burst right then - not later, when the track's dots
-    // eventually give way to the next clip's preview (nextClipShowing in
-    // Draw()), which is a separate, unrelated transition.
+    // instant a track locks in) can be caught exactly once, to trigger a
+    // confetti burst right then.
     bool m_prevLockedIn = false;
+
+    // Tracks Draw()'s locally-computed nextClipShowing (the moment a
+    // locked-in track's dots actually give way to the next clip's preview)
+    // from the previous frame, so that transition also gets a confetti
+    // burst - without this, whatever notes are still on screen at that
+    // exact instant (very likely some, since dots keep coming right up
+    // until this moment) just vanish with no visual treatment at all,
+    // reading as a bug ("the notes disappeared") rather than an intentional
+    // handoff to the next instrument.
+    bool m_prevNotesHandoff = false;
     DWORD m_confettiStartMs = 0;
     std::vector<ConfettiPiece> m_confetti;
 
