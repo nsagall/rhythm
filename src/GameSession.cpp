@@ -1,6 +1,7 @@
 #include "GameSession.h"
 
 #include <cmath>
+#include <set>
 
 namespace
 {
@@ -36,7 +37,7 @@ GameSession::GameSession(AudioEngine& audioEngine) : m_audioEngine(audioEngine)
 // Parses and validates a chart and loads all its clips' stems into the
 // audio engine. Returns false if the chart fails validation or any of its
 // stems can't be loaded, with outError describing every problem found.
-bool GameSession::LoadChart(const std::wstring& chartFilePath, std::wstring& outError)
+bool GameSession::LoadChart(const std::wstring& chartFilePath, bool easyMode, std::wstring& outError)
 {
     ChartSong song;
     std::vector<std::wstring> errors;
@@ -73,6 +74,11 @@ bool GameSession::LoadChart(const std::wstring& chartFilePath, std::wstring& out
         // only ever played back whole (solo/background), never judged.
         if (clip.hasMidi)
         {
+            if (easyMode)
+            {
+                ApplyEasyModeTransform(clip);
+            }
+
             double stemDuration = m_audioEngine.GetStemDurationSeconds(handle);
             double secondsPerBeat = 60.0 / song.bpm;
             double clipBeats = stemDuration / secondsPerBeat;
@@ -102,6 +108,8 @@ bool GameSession::LoadChart(const std::wstring& chartFilePath, std::wstring& out
     m_currentSectionIndex = -1;
     m_streak = 0;
     m_consecutiveMisses = 0;
+    m_easyMode = easyMode;
+    m_easyGraceAvailable = false;
     m_clipIsPlaying.assign(m_song.clips.size(), false);
     m_clipLoopStartSeconds.assign(m_song.clips.size(), 0.0);
     m_queuedBackground = QueuedBackground{};
@@ -135,6 +143,7 @@ void GameSession::Start()
     m_currentSectionIndex = -1;
     m_streak = 0;
     m_consecutiveMisses = 0;
+    m_easyGraceAvailable = false;
     std::fill(m_clipIsPlaying.begin(), m_clipIsPlaying.end(), false);
     m_queuedBackground = QueuedBackground{};
     m_hasPendingAdvance = false;
@@ -218,11 +227,30 @@ void GameSession::OnPress(int lane)
         StartClipLoop(section.clipIndex, clip.initVolume);
         m_laneHolds[lane] = LaneHold{true, startBeat, startBeat + durationBeats};
         AdvanceExpectedNote(lane);
-        // A correct press doesn't produce a final judgement yet - that only
-        // happens at release - so any stale Hit/Miss left over from an
-        // earlier press/release must be cleared here, or the caller's very
-        // next ConsumeLastJudgement() would misattribute it to this press.
-        m_lastJudgement = JudgementResult::None;
+
+        if (m_easyMode)
+        {
+            // Release timing is ignored entirely in easy mode, so the press
+            // itself is the final judgement - mirrors OnRelease's
+            // in-tolerance branch below, the only other place a Hit gets
+            // registered.
+            RegisterHit();
+            m_lastJudgement = JudgementResult::Hit;
+            RecordOnsetJudgement(startBeat, lane, JudgementResult::Hit);
+            if (m_streak >= clip.hitsRequired && !m_hasPendingAdvance)
+            {
+                SchedulePendingAdvance();
+            }
+        }
+        else
+        {
+            // A correct press doesn't produce a final judgement yet - that
+            // only happens at release - so any stale Hit/Miss left over
+            // from an earlier press/release must be cleared here, or the
+            // caller's very next ConsumeLastJudgement() would misattribute
+            // it to this press.
+            m_lastJudgement = JudgementResult::None;
+        }
     }
     else
     {
@@ -247,6 +275,16 @@ void GameSession::OnRelease(int lane)
     if (section.playMode != PlayMode::Learn)
     {
         return; // structurally shouldn't happen (holds only populate in Learn), kept as defense-in-depth
+    }
+
+    if (m_easyMode)
+    {
+        // Already judged Hit at press time - release timing is ignored
+        // entirely, so releasing (whenever it happens) just lets go of the
+        // hold and produces no judgement of its own.
+        m_laneHolds[lane].active = false;
+        m_lastJudgement = JudgementResult::None;
+        return;
     }
 
     const ChartClip& clip = m_song.clips[section.clipIndex];
@@ -320,7 +358,11 @@ void GameSession::Update()
     // even if the section has since locked in, instead of being abandoned
     // mid-air. Lane holds structurally only ever populate during a Learn
     // section, but the play-mode check is kept anyway as defense-in-depth.
-    if (m_currentSectionIndex >= 0)
+    // Skipped entirely in easy mode: a hold there is already judged Hit at
+    // press time (see OnPress), so there's nothing left to time out - it
+    // just sits active until the real key-up, which OnRelease resolves as
+    // a no-op.
+    if (m_currentSectionIndex >= 0 && !m_easyMode)
     {
         const ChartSection& heldSection = m_song.sections[m_currentSectionIndex];
         if (heldSection.playMode == PlayMode::Learn)
@@ -683,6 +725,7 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
     m_currentSectionIndex = sectionIndex;
     m_streak = 0;
     m_consecutiveMisses = 0;
+    m_easyGraceAvailable = true;
     m_hasPendingAdvance = false;
     m_isInIntro = false;
     m_phase = GamePhase::Learning;
@@ -916,11 +959,17 @@ void GameSession::StopClipLoop(int clipIndex)
     m_clipIsPlaying[clipIndex] = false;
 }
 
-// Records a miss: resets the shared streak, and stops the current section's clip loop after 3 in a row. A no-op once already awaiting advance - the track has already locked in, so further misses shouldn't stop it or unfreeze the streak display.
+// Records a miss: resets the shared streak, and stops the current section's clip loop after 3 in a row. A no-op once already awaiting advance - the track has already locked in, so further misses shouldn't stop it or unfreeze the streak display. In easy mode, the first miss each section is instead fully forgiven (see m_easyGraceAvailable) - streak and consecutive-miss count both left untouched, as if it never happened.
 void GameSession::RegisterMiss()
 {
     if (m_hasPendingAdvance)
     {
+        return;
+    }
+
+    if (m_easyMode && m_easyGraceAvailable)
+    {
+        m_easyGraceAvailable = false;
         return;
     }
 
@@ -1002,6 +1051,72 @@ void GameSession::ExpandLaneNotesToFillClip(ChartClip& clip, double stemDuration
     }
 
     clip.spanBeats = clipBeats;
+}
+
+// Simplifies clip's MIDI-derived pattern for easy mode - see the header's
+// doc comment for the full contract. Runs on one repetition's worth of
+// notes (before ExpandLaneNotesToFillClip tiles it), so spanBeats here
+// still means "one repetition's length."
+void GameSession::ApplyEasyModeTransform(ChartClip& clip)
+{
+    if (!clip.hasMidi || clip.spanBeats <= 0.0)
+    {
+        return;
+    }
+
+    // spanBeats is always an exact whole number of beats - ChartFile's
+    // AlignToBarBoundary (called while parsing every clip's MIDI file) only
+    // ever produces a whole multiple of the song's integer beatsPerBar - so
+    // the integer beat arithmetic below is exact, with no epsilon-
+    // comparison hazard.
+    long long spanBeatsInt = static_cast<long long>(std::llround(clip.spanBeats));
+
+    // Per lane: round every original note UP to the next quarter-note beat
+    // (never down/nearest - a combined note starts at or after where the
+    // original notes began, never earlier). A std::set collapses multiple
+    // originals landing on the same beat into one automatically. Wrapping a
+    // note quantized off the loop's end back to beat 0 is correct, not a
+    // bug: once tiled/looped, beat spanBeatsInt IS beat 0 of the next
+    // repetition - the same absolute instant.
+    std::set<long long> laneBeats[kLaneCount];
+    for (int lane = 0; lane < kLaneCount; ++lane)
+    {
+        for (const LaneNote& note : clip.laneNotes[lane])
+        {
+            long long target = static_cast<long long>(std::ceil(note.startBeat - 1e-6));
+            target %= spanBeatsInt;
+            laneBeats[lane].insert(target);
+        }
+    }
+
+    // No simultaneous notes: a beat claimed by more than one lane survives
+    // only in the lowest-indexed lane that claims it.
+    for (long long beat = 0; beat < spanBeatsInt; ++beat)
+    {
+        bool claimed = false;
+        for (int lane = 0; lane < kLaneCount; ++lane)
+        {
+            if (laneBeats[lane].count(beat))
+            {
+                if (claimed)
+                {
+                    laneBeats[lane].erase(beat);
+                }
+                claimed = true;
+            }
+        }
+    }
+
+    for (int lane = 0; lane < kLaneCount; ++lane)
+    {
+        std::vector<LaneNote> quantized;
+        quantized.reserve(laneBeats[lane].size());
+        for (long long beat : laneBeats[lane]) // std::set iterates sorted ascending
+        {
+            quantized.push_back(LaneNote{static_cast<double>(beat), 1.0});
+        }
+        clip.laneNotes[lane] = std::move(quantized);
+    }
 }
 
 // Returns the smallest note start (in absolute beats) strictly after afterBeat, for this lane.

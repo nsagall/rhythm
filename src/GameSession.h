@@ -77,8 +77,10 @@ public:
     // audio engine. Returns false if the chart fails validation or any of
     // its stems can't be loaded, with outError describing every problem
     // found (one per line) so the caller can show it and ask for a
-    // different file.
-    bool LoadChart(const std::wstring& chartFilePath, std::wstring& outError);
+    // different file. When easyMode is true, every clip's MIDI-derived
+    // pattern is simplified before it's used - see ApplyEasyModeTransform -
+    // and judging itself changes (see OnPress/OnRelease/RegisterMiss).
+    bool LoadChart(const std::wstring& chartFilePath, bool easyMode, std::wstring& outError);
 
     // Starts gameplay from the beginning of the loaded chart.
     void Start();
@@ -278,6 +280,18 @@ private:
     // shipping one the player could never legitimately press and release.
     static void ExpandLaneNotesToFillClip(ChartClip& clip, double stemDurationSeconds, double bpm);
 
+    // When easy mode is on, simplifies clip's MIDI-derived pattern before
+    // it's tiled/judged: every note is rounded up to the next quarter-note
+    // beat (never earlier - "combined" notes start at or after where the
+    // originals began), multiple originals landing on the same beat within
+    // a lane collapse into one, and a beat claimed by more than one lane
+    // survives only in the lowest-indexed lane that claims it (no
+    // simultaneous notes). No-op unless clip.hasMidi. Must run before
+    // ExpandLaneNotesToFillClip, while spanBeats still means "one
+    // repetition's length" - tiling afterward just repeats whatever this
+    // produces, so it never needs to know easy mode exists.
+    static void ApplyEasyModeTransform(ChartClip& clip);
+
     // Computes the wall-clock second at which loopCount full loops have
     // completed, counted from loopStartSeconds, given a stem of
     // stemDuration seconds - shared by a learn section's lock-in floor, a
@@ -337,6 +351,18 @@ private:
     int m_currentSectionIndex = -1;
     int m_streak = 0;
     int m_consecutiveMisses = 0;
+
+    // Set once from LoadChart's easyMode argument and left alone for the
+    // rest of this chart's lifetime - see ApplyEasyModeTransform,
+    // OnPress/OnRelease's judging differences, and RegisterMiss's grace check.
+    bool m_easyMode = false;
+
+    // One-note grace period (easy mode only): true until this Learn
+    // section's first miss consumes it in RegisterMiss - that miss is then
+    // fully forgiven (streak and consecutive-miss counter both left
+    // untouched). Reset in BeginSection alongside m_streak/
+    // m_consecutiveMisses. Never consulted when m_easyMode is false.
+    bool m_easyGraceAvailable = false;
 
     // Per-clip playback bookkeeping - multiple clips can legitimately play
     // concurrently now (the current learn/solo clip, plus zero or more
