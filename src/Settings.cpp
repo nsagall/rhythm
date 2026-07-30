@@ -32,3 +32,15 @@ void Settings::SaveLastChartPath(const std::wstring& chartPath)
 {
     WritePrivateProfileStringW(L"App", L"LastChartPath", chartPath.c_str(), GetSettingsFilePath().c_str());
 }
+
+// Reads the saved Easy Mode toggle state from disk (false if none saved yet).
+bool Settings::LoadEasyMode()
+{
+    return GetPrivateProfileIntW(L"App", L"EasyMode", 0, GetSettingsFilePath().c_str()) != 0;
+}
+
+// Saves the Easy Mode toggle state so it's restored next launch.
+void Settings::SaveEasyMode(bool easyMode)
+{
+    WritePrivateProfileStringW(L"App", L"EasyMode", easyMode ? L"1" : L"0", GetSettingsFilePath().c_str());
+}

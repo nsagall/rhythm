@@ -11,4 +11,10 @@ public:
 
     // Saves the given chart path so it's pre-filled next launch.
     void SaveLastChartPath(const std::wstring& chartPath);
+
+    // Reads the saved Easy Mode toggle state from disk (false if none saved yet).
+    bool LoadEasyMode();
+
+    // Saves the Easy Mode toggle state so it's restored next launch.
+    void SaveEasyMode(bool easyMode);
 };
