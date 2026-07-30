@@ -214,6 +214,17 @@ int main(int argc, char** argv)
     double watchedSoloLastPosition = -1.0;
     bool watchedSoloConfirmedStopped = true;
 
+    // Dropout-at-transition tracking: while the CURRENT section is a solo
+    // with a real clip, poll engine.IsPlaying() every tick from the moment
+    // it's first observed playing - a solo clip's voice is finite (unlike
+    // a locked-in learn clip), so if loop_count's requested passes finish
+    // before the section's own scheduled advance, the voice self-stops and
+    // leaves genuine silence for whatever's left of the wait.
+    StemHandle currentSoloStem;
+    bool currentSoloEverPlayed = false;
+    bool currentSoloDropoutFlagged = false;
+    int currentSoloSectionIndex = -1;
+
     // Tolerance-bug tracking: CurrentStreak() is polled every iteration
     // (not just after our own explicit press/release calls), so a drop
     // that ISN'T immediately preceded by a printed "-> Miss" from this
@@ -239,6 +250,13 @@ int main(int argc, char** argv)
     // to confirm the lock-in explosion equivalent always fires at or before
     // the actual section transition - never silently skipped.
     bool lastMirroredNextClipShowing = false;
+
+    // CountIn preview visibility tracking: for each lane, the first tick
+    // its PreviewFirstOnsetBeatForLane() note becomes visible (within
+    // kNoteFallBeats of "now"), print how much real lead time is left
+    // before CountIn actually ends - directly answers whether the very
+    // first section's first notes get their full on-screen travel time.
+    bool countInLaneVisiblePrinted[kLaneCount] = {};
 
     // General blank-lane-row tracking (see the check below): negative while
     // something is visible, set to the elapsed-seconds timestamp a blank
@@ -272,6 +290,33 @@ int main(int argc, char** argv)
         bool inIntro = session.IsInIntro();
         bool awaitingAdvance = session.IsAwaitingAdvance();
         double secondsPerBeat = 60.0 / session.Song().bpm;
+
+        if (phase == GamePhase::CountIn)
+        {
+            double nowBeatCountIn = session.Clock().BeatPosition();
+            for (int lane = 0; lane < kLaneCount; ++lane)
+            {
+                if (countInLaneVisiblePrinted[lane])
+                {
+                    continue;
+                }
+                double onset = session.PreviewFirstOnsetBeatForLane(lane);
+                if (onset < 0.0)
+                {
+                    continue;
+                }
+                if (nowBeatCountIn >= onset - kNoteFallBeats)
+                {
+                    countInLaneVisiblePrinted[lane] = true;
+                    double countInEndBeat = 2.0 / secondsPerBeat; // kCountInSeconds, mirrored
+                    double leadBeatsBeforeCountInEnds = countInEndBeat - nowBeatCountIn;
+                    printf("[t=%.2fs]   CountIn preview: lane %d onset=%.4f becomes visible now - "
+                           "%.4f beats of CountIn remain, note is %.4f beats away\n",
+                           session.Clock().ElapsedSeconds(), lane, onset, leadBeatsBeforeCountInEnds,
+                           onset - nowBeatCountIn);
+                }
+            }
+        }
 
         // A streak drop that coincides with a section change is just
         // BeginSection's normal per-section reset, not a miss - only flag
@@ -315,6 +360,21 @@ int main(int argc, char** argv)
             watchedLockinLastPosition = -1.0;
             watchedLockinLastCheckSeconds = -1.0;
             lastMirroredNextClipShowing = false;
+
+            // Entering a NEW solo section (with a real clip): start
+            // watching for a dropout for the rest of this section.
+            currentSoloEverPlayed = false;
+            currentSoloDropoutFlagged = false;
+            currentSoloSectionIndex = -1;
+            if (phase == GamePhase::Learning && playMode == PlayMode::Solo)
+            {
+                int soloClipIndex = session.Song().sections[sectionIndex].clipIndex;
+                if (soloClipIndex >= 0)
+                {
+                    currentSoloStem = session.DebugStemHandle(soloClipIndex);
+                    currentSoloSectionIndex = sectionIndex;
+                }
+            }
 
             const ChartClip* clip = session.CurrentClip();
             printf("[t=%.2fs] phase=%ls section=%d play_mode=%ls clip=(%ls)\n", session.Clock().ElapsedSeconds(),
@@ -447,6 +507,25 @@ int main(int argc, char** argv)
                 }
             }
             lastMirroredNextClipShowing = mirroredNextClipShowing;
+        }
+
+        // Dropout-at-transition check: while the current section is a solo
+        // with a real clip, its stem must never stop playing before the
+        // section's own scheduled advance - see currentSoloStem above.
+        if (playMode == PlayMode::Solo && sectionIndex == currentSoloSectionIndex && currentSoloStem.IsValid())
+        {
+            bool playingNow = engine.IsPlaying(currentSoloStem);
+            if (playingNow)
+            {
+                currentSoloEverPlayed = true;
+            }
+            else if (currentSoloEverPlayed && !currentSoloDropoutFlagged)
+            {
+                currentSoloDropoutFlagged = true;
+                printf("[t=%.2fs]   ** MISMATCH ** solo clip stem stopped playing before its own scheduled "
+                       "advance (dropout) - advanceAt=%.4f\n",
+                       session.Clock().ElapsedSeconds(), session.PendingAdvanceAtSeconds());
+            }
         }
 
         // Mirror NoteLane's own gating logic here to verify the preview window.
