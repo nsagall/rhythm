@@ -1,5 +1,6 @@
 #include "GameSession.h"
 
+#include <algorithm>
 #include <cmath>
 #include <set>
 
@@ -405,10 +406,16 @@ void GameSession::Update()
                 m_isInIntro = false;
                 const ChartClip& clip = m_song.clips[m_song.sections[m_currentSectionIndex].clipIndex];
                 double introEndBeat = m_introEndSeconds / secondsPerBeat - 1e-6;
-                for (int lane = 0; lane < kLaneCount; ++lane)
+                if (m_songHasStarted)
                 {
-                    m_nextExpectedBeat[lane] = m_songHasStarted ? NextOnsetAfter(introEndBeat, clip, lane)
-                                                                 : FirstReachableOnset(introEndBeat, clip, lane);
+                    for (int lane = 0; lane < kLaneCount; ++lane)
+                    {
+                        m_nextExpectedBeat[lane] = NextOnsetAfter(introEndBeat, clip, lane);
+                    }
+                }
+                else
+                {
+                    FirstReachableOnsetForAllLanes(introEndBeat, clip, m_nextExpectedBeat);
                 }
                 m_songHasStarted = true;
             }
@@ -655,13 +662,15 @@ double GameSession::PreviewFirstOnsetBeatForLane(int lane) const
     double transitionBeat = transitionSeconds / secondsPerBeat;
 
     // During the count-in, m_songHasStarted is always still false - the
-    // preview must show the same first-reachable-cycle notes that
-    // BeginSection is about to anchor judging to, not wherever
+    // preview must show the same notes that BeginSection is about to
+    // anchor judging to (see FirstReachableOnsetForAllLanes), not wherever
     // NextOnsetAfter's usual per-lane cutoff logic lands relative to the
     // count-in's fixed duration (see m_songHasStarted's own comment).
     if (m_phase == GamePhase::CountIn)
     {
-        return FirstReachableOnset(transitionBeat - 1e-6, *preview, lane);
+        double allLanes[kLaneCount];
+        FirstReachableOnsetForAllLanes(transitionBeat - 1e-6, *preview, allLanes);
+        return allLanes[lane];
     }
     return NextOnsetAfter(transitionBeat - 1e-6, *preview, lane);
 }
@@ -833,10 +842,16 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
                 m_introEndSeconds = m_clock.ElapsedSeconds() + clip.introBars * m_song.beatsPerBar * secondsPerBeat;
                 return;
             }
-            for (int lane = 0; lane < kLaneCount; ++lane)
+            if (m_songHasStarted)
             {
-                m_nextExpectedBeat[lane] = m_songHasStarted ? NextOnsetAfter(scheduledBeat - 1e-6, clip, lane)
-                                                             : FirstReachableOnset(scheduledBeat - 1e-6, clip, lane);
+                for (int lane = 0; lane < kLaneCount; ++lane)
+                {
+                    m_nextExpectedBeat[lane] = NextOnsetAfter(scheduledBeat - 1e-6, clip, lane);
+                }
+            }
+            else
+            {
+                FirstReachableOnsetForAllLanes(scheduledBeat - 1e-6, clip, m_nextExpectedBeat);
             }
             m_songHasStarted = true;
             return;
@@ -1157,6 +1172,58 @@ double GameSession::FirstReachableOnset(double afterBeat, const ChartClip& clip,
     double span = clip.spanBeats;
     long long barIndex = (span > 0.0) ? static_cast<long long>(std::ceil((afterBeat - 1e-9) / span)) : 0;
     return barIndex * span + notes.front().startBeat;
+}
+
+// Computes every lane's first-note anchor at once - see the header
+// comment for why this tries NextOnsetAfter's direct, per-lane candidates
+// first (safe exactly when they all land in the same pattern cycle) before
+// falling back to FirstReachableOnset's slower, always-safe behavior.
+void GameSession::FirstReachableOnsetForAllLanes(double afterBeat, const ChartClip& clip,
+                                                  double outBeats[kLaneCount]) const
+{
+    double span = clip.spanBeats;
+    double candidates[kLaneCount];
+    long long minCycle = 0;
+    long long maxCycle = 0;
+    bool sawLaneWithNotes = false;
+
+    for (int lane = 0; lane < kLaneCount; ++lane)
+    {
+        candidates[lane] = NextOnsetAfter(afterBeat, clip, lane);
+        if (clip.laneNotes[lane].empty())
+        {
+            continue; // no real note on this lane to constrain the cycle check with
+        }
+
+        long long cycle = (span > 0.0) ? static_cast<long long>(std::floor(candidates[lane] / span)) : 0;
+        if (!sawLaneWithNotes)
+        {
+            minCycle = maxCycle = cycle;
+            sawLaneWithNotes = true;
+        }
+        else
+        {
+            minCycle = std::min(minCycle, cycle);
+            maxCycle = std::max(maxCycle, cycle);
+        }
+    }
+
+    if (sawLaneWithNotes && minCycle == maxCycle)
+    {
+        // Every lane's own next reachable note falls within the same
+        // cycle - no lane is being asked to skip ahead of another, so
+        // using them directly can't corrupt any authored relative timing.
+        for (int lane = 0; lane < kLaneCount; ++lane)
+        {
+            outBeats[lane] = candidates[lane];
+        }
+        return;
+    }
+
+    for (int lane = 0; lane < kLaneCount; ++lane)
+    {
+        outBeats[lane] = FirstReachableOnset(afterBeat, clip, lane);
+    }
 }
 
 // Returns the lane note whose phase-within-span matches absoluteStartBeat's phase, or nullptr if none does.

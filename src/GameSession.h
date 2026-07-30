@@ -249,8 +249,28 @@ private:
     // NextOnsetAfter, which searches each lane independently and can pick
     // a different cycle per lane, silently corrupting notes that are
     // meant to land together (or apart) exactly as authored. Only used
-    // for a song's very first note(s) - see m_songHasStarted.
+    // for a song's very first note(s) - see m_songHasStarted. Prefer
+    // FirstReachableOnsetForAllLanes below over calling this directly, one
+    // lane at a time - it only falls back to this (slower, always-a-fresh-
+    // cycle) behavior when it's actually needed.
     double FirstReachableOnset(double afterBeat, const ChartClip& clip, int lane) const;
+
+    // Computes every lane's anchor for the song's very first judged note
+    // (or the first note after a clip's own intro_bars, if that's what's
+    // being anchored) in one call. Tries each lane's own next reachable
+    // note first (NextOnsetAfter, searched independently per lane) and
+    // uses those directly if they all land in the same pattern cycle - no
+    // desync risk in that case, and it starts judging as soon as each
+    // lane's own next note is actually reachable instead of always
+    // waiting for a fresh cycle, which matters a lot for a long-spanning
+    // pattern (many bars) reached after a leading solo/background section
+    // or a count-in offset that doesn't land near a bar boundary - the
+    // wait could otherwise be most of an entire loop of dead air. Falls
+    // back to FirstReachableOnset's per-lane, always-safe behavior only
+    // when the lanes' own candidates would actually land in different
+    // cycles, which is exactly the scenario that behavior exists to guard
+    // against.
+    void FirstReachableOnsetForAllLanes(double afterBeat, const ChartClip& clip, double outBeats[kLaneCount]) const;
 
     // Returns the lane note whose phase-within-span matches
     // absoluteStartBeat's phase, or nullptr if none does (shouldn't happen
