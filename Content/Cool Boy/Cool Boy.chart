@@ -2,7 +2,7 @@
 title = Cool Boy
 bpm = 125.28
 time_signature = 4/4
-start_tolerance_ms = 100
+start_tolerance_ms = 150
 release_tolerance_ms = 300
 
 [clip]
