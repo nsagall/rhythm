@@ -193,6 +193,23 @@ void GameSession::Stop()
     }
 }
 
+// See the header comment - lets a press that lands right on the count-in's
+// own boundary be judged immediately instead of waiting for the next
+// Update() tick to flip the phase.
+void GameSession::CatchUpCountIn()
+{
+    if (m_phase != GamePhase::CountIn)
+    {
+        return;
+    }
+    double secondsPerBeat = 60.0 / m_song.bpm;
+    double transitionSeconds = CountInSeconds();
+    if (m_clock.ElapsedSeconds() >= transitionSeconds)
+    {
+        BeginSection(0, transitionSeconds / secondsPerBeat);
+    }
+}
+
 // True exactly when OnPress(lane) would actually judge a press right now -
 // mirrors every one of OnPress's own early-return guards, just without any
 // of its judging side effects.
@@ -218,6 +235,7 @@ bool GameSession::IsLaneJudgeable(int lane) const
 // Registers a key-down for lane; judges it against that lane's next expected note if the current section is learning.
 void GameSession::OnPress(int lane)
 {
+    CatchUpCountIn();
     if (!IsLaneJudgeable(lane))
     {
         return;
@@ -408,11 +426,7 @@ void GameSession::Update()
         // nothing here to protect against tolerance-wise: whatever
         // FirstReachableOnsetForAllLanes anchors to at this boundary always
         // has its full start-tolerance window still ahead of it.
-        double transitionSeconds = CountInSeconds();
-        if (now >= transitionSeconds)
-        {
-            BeginSection(0, transitionSeconds / secondsPerBeat);
-        }
+        CatchUpCountIn();
         return;
     }
 

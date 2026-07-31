@@ -197,6 +197,43 @@ int main(int argc, char** argv)
 
     session.Start();
 
+    // DIAG_RACE_TEST=1: reproduce a real player's key-down landing between
+    // two Update() ticks, right on the count-in's own boundary - sleeps on
+    // real wall-clock time past CountInSeconds() *without* ever calling
+    // Update(), so the phase is still nominally CountIn, then presses lane
+    // 0 exactly as MainWindow::RegisterPress would. Before CatchUpCountIn(),
+    // IsLaneJudgeable would reject this outright (wrong phase) regardless
+    // of tolerance; after it, the press should register normally.
+    if (std::getenv("DIAG_RACE_TEST"))
+    {
+        double secondsPerBeat = 60.0 / session.Song().bpm;
+        double countInBeat = session.Song().beatsPerBar;
+        double countInSeconds = countInBeat * secondsPerBeat;
+        DWORD sleepMs = static_cast<DWORD>(countInSeconds * 1000.0) + 5;
+        printf("[race test] phase before sleep=%ls, sleeping %lums (count-in ends at %.4fs)\n",
+               PhaseName(session.Phase()), static_cast<unsigned long>(sleepMs), countInSeconds);
+        Sleep(sleepMs);
+        printf("[race test] phase after sleep (no Update() called)=%ls, elapsed=%.4fs\n",
+               PhaseName(session.Phase()), session.Clock().ElapsedSeconds());
+        session.OnPress(0);
+        JudgementResult raceResult = session.ConsumeLastJudgement();
+        bool held = session.IsLaneHeld(0);
+        // Normal mode doesn't judge Hit until release - a correctly-timed
+        // press leaves judgement=None but starts a hold (held=true). The
+        // bug this guards against also leaves judgement=None, but with
+        // held=false: IsLaneJudgeable rejected the press outright before
+        // OnPress ever reached the tolerance check, so nothing happened at
+        // all - a silent, phase-gated miss indistinguishable from success
+        // by judgement alone, which is exactly why `held` matters here.
+        const char* verdict = (raceResult == JudgementResult::Miss)   ? "MISTIMED (unexpected - press was on time)"
+                              : held                                  ? "OK - press registered, hold started"
+                                                                       : "BUG - press silently ignored (phase-gated)";
+        printf("[race test] OnPress(0) -> phase=%ls judgement=%s held=%s : %s\n", PhaseName(session.Phase()),
+               raceResult == JudgementResult::Hit ? "Hit" : raceResult == JudgementResult::Miss ? "Miss" : "None",
+               held ? "true" : "false", verdict);
+        return 0;
+    }
+
     GamePhase lastPhase = GamePhase::Idle;
     int lastSection = -2;
     PlayMode lastPlayMode = PlayMode::Learn;

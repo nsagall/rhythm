@@ -100,7 +100,22 @@ public:
     // no chart loaded at all), or a lane the current clip never places any
     // notes in at all. Lets the caller show its own "no note there"
     // feedback for a press this lane will otherwise just silently ignore.
+    // Call CatchUpCountIn() first if a real press just happened - see its
+    // own comment for why.
     bool IsLaneJudgeable(int lane) const;
+
+    // If still in the count-in but real elapsed time has already reached
+    // its end, begins the first section immediately instead of waiting for
+    // the next Update() tick to notice. The count-in now ends exactly at
+    // the first section's own first note (see CountInSeconds()), so a
+    // press landing right around that instant is common, not a fluke - and
+    // without this, IsLaneJudgeable's phase check would reject it outright
+    // (count-in still technically in progress) even though it falls well
+    // within that note's own tolerance window, purely because Update()
+    // hadn't ticked yet to notice the boundary had passed. Safe to call
+    // unconditionally; a no-op once the count-in has already ended by any
+    // path.
+    void CatchUpCountIn();
 
     // Registers a key-up for the given lane at the current moment; judges it
     // against the note that lane was holding, if any. Not gated by phase or

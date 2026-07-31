@@ -459,6 +459,11 @@ void MainWindow::OnLButtonDown(LPARAM lParam)
 // would otherwise just silently ignore the tap.
 void MainWindow::RegisterPress(int lane)
 {
+    // Must run before IsLaneJudgeable - a press landing right on the
+    // count-in's own boundary needs the phase to have already flipped to
+    // Learning, or IsLaneJudgeable rejects it outright regardless of
+    // tolerance (see CatchUpCountIn's own comment).
+    m_gameSession.CatchUpCountIn();
     if (!m_gameSession.IsLaneJudgeable(lane))
     {
         m_noteLane.ShowJudgement(JudgementResult::Miss, lane, false);
