@@ -46,8 +46,8 @@ struct JudgementRipple
 // top and crossing the line at the beat rate. Also renders per-lane
 // hit/miss feedback at the line and a status readout (clip name). Positions
 // are computed live from the session's SongClock each frame rather than
-// tracked as spawned objects. When a track locks in, its notes turn green
-// (a duller green if judged a miss) instead of their usual lane color, and
+// tracked as spawned objects. When a track locks in, its notes keep their
+// usual held/hit/miss/lane color but gain a glowing green outline, and
 // keep coming (and being judged) until the next clip's own dots are due;
 // a confetti burst plays across the lane at both of those moments - lock-in
 // itself, and again when the handoff to the next clip's preview actually

@@ -89,14 +89,6 @@ constexpr COLORREF kLaneColors[kLaneCount] = {
 constexpr COLORREF kNoteColorHit = RGB(40, 235, 80);
 constexpr COLORREF kNoteColorMiss = RGB(255, 30, 30);
 
-// Once a track has locked in, every one of its notes turns green instead of
-// its lane's own color - a miss during that extended, still-judged window
-// turns this duller, desaturated green instead of kNoteColorMiss's red,
-// since there's nothing left to fail at that point; deliberately the same
-// hue family as kNoteColorHit, just muted, rather than a dramatically
-// different color.
-constexpr COLORREF kNoteColorLockedMiss = RGB(95, 150, 105);
-
 // Palette confetti pieces are drawn from at lock-in - the lane palette plus
 // a couple of neutral accents, so the burst reads as "party colors" without
 // introducing any new color meaning of its own.
@@ -381,9 +373,15 @@ double PseudoRandom(int seed)
 
 // Draws a music-notation-free notehead marker: dark bevel rim, color fill, a soft alpha glow
 // behind it, and a small specular highlight - the note's start marker, sitting at the bottom
-// (leading) edge of its duration bar.
-void DrawNoteGlyph(HDC hdc, int x, int y, COLORREF color, bool glow)
+// (leading) edge of its duration bar. lockedIn adds a second, wider green glow ring underneath
+// everything else - a supplementary "this track has locked in" cue that doesn't touch color.
+void DrawNoteGlyph(HDC hdc, int x, int y, COLORREF color, bool glow, bool lockedIn)
 {
+    if (lockedIn)
+    {
+        DrawAlphaCircle(hdc, x, y, kGlyphRadiusX + 14, kNoteColorHit, 90);
+    }
+
     if (glow)
     {
         DrawAlphaCircle(hdc, x, y, kGlyphRadiusX + 10, color, 60);
@@ -412,11 +410,20 @@ void DrawNoteGlyph(HDC hdc, int x, int y, COLORREF color, bool glow)
 // Draws a note's duration bar spanning [yTop, yBottom] at horizontal center
 // x, with the same dark-rim/fill/highlight-strip bevel language as the
 // glyph, so the bar and its start marker read as one consistent object.
-void DrawNoteBar(HDC hdc, int x, int yTop, int yBottom, int halfWidth, COLORREF color)
+// lockedIn adds a glowing green outline around the whole bar underneath
+// everything else - a supplementary "this track has locked in" cue that
+// doesn't touch color, matching DrawNoteGlyph's own lockedIn glow.
+void DrawNoteBar(HDC hdc, int x, int yTop, int yBottom, int halfWidth, COLORREF color, bool lockedIn)
 {
     if (yBottom <= yTop)
     {
         return;
+    }
+
+    if (lockedIn)
+    {
+        RECT glowRect{x - halfWidth - 5, yTop - 5, x + halfWidth + 5, yBottom + 5};
+        DrawAlphaRoundRect(hdc, glowRect, kBarCornerRadius + 5, kNoteColorHit, 130);
     }
 
     HPEN nullPen = (HPEN)GetStockObject(NULL_PEN);
@@ -746,11 +753,12 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
     }
 
     // Once a track has locked in (still live-judging through its extended
-    // post-lock-in run - see isLiveJudging/nextClipShowing above), every one
-    // of its notes turns green instead of its lane's own color, whether or
-    // not it's been judged yet; a miss during that window turns the duller
-    // kNoteColorLockedMiss instead of kNoteColorMiss's red, since there's
-    // nothing left to actually fail at that point.
+    // post-lock-in run - see isLiveJudging/nextClipShowing above), every
+    // one of its notes gets a glowing green outline added on top of its
+    // usual color - held/hit/miss/upcoming all keep reading exactly as
+    // they normally would, the glow is purely an additional "this track
+    // has already locked in" cue, not a replacement for the note's own
+    // color.
     bool lockedIn = isLiveJudging && session.IsAwaitingAdvance();
 
     if (dotsClip)
@@ -791,8 +799,9 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
                 // press at all) turns it red - both colors then hold for
                 // the rest of the note's time on screen, all the way until
                 // it scrolls off the bottom, matching the real outcome
-                // rather than fading back to a neutral color.
-                COLORREF color = lockedIn ? kNoteColorHit : kLaneColors[lane];
+                // rather than fading back to a neutral color. Unaffected by
+                // lockedIn - see its own comment above for what that adds instead.
+                COLORREF color = kLaneColors[lane];
                 bool isHeldNote = false;
                 bool isJudgedNote = false;
                 bool skip = false;
@@ -812,7 +821,7 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
                     }
                     else if (result == JudgementResult::Miss)
                     {
-                        color = lockedIn ? kNoteColorLockedMiss : kNoteColorMiss;
+                        color = kNoteColorMiss;
                         isJudgedNote = true;
                     }
                     else if (note.startBeat < session.NextExpectedBeatForLane(lane) - 1e-6)
@@ -832,11 +841,11 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
                     continue;
                 }
 
-                DrawNoteBar(hdc, laneX, yTop, yBottom, barHalfWidth, color);
+                DrawNoteBar(hdc, laneX, yTop, yBottom, barHalfWidth, color, lockedIn);
                 // Judged hit/miss notes get the same glow halo as a held
                 // note - a plain color swap was too easy to miss at a
                 // glance, so the glow makes the pass/fail moment pop.
-                DrawNoteGlyph(hdc, laneX, yBottom, color, isHeldNote || isJudgedNote);
+                DrawNoteGlyph(hdc, laneX, yBottom, color, isHeldNote || isJudgedNote, lockedIn);
             }
         }
     }
