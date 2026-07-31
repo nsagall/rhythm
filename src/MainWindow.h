@@ -118,6 +118,11 @@ private:
     // shows an error dialog instead if the chart fails to load.
     void ChooseSong(int index);
 
+    // Bails out of the current song (Esc while Playing) and returns to the
+    // song list, stopping the session outright rather than leaving a
+    // finished clip's loop running. No-op outside the Playing screen.
+    void QuitToSongSelect();
+
     // Paints the song list: a title row per scraped song, the
     // currently-highlighted one drawn picked out from the rest.
     void DrawSongList(HDC hdc);

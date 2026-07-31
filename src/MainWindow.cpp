@@ -393,6 +393,12 @@ void MainWindow::OnKeyDown(WPARAM key, LPARAM flags)
         return;
     }
 
+    if (static_cast<int>(key) == VK_ESCAPE)
+    {
+        QuitToSongSelect();
+        return;
+    }
+
     for (int lane = 0; lane < kLaneCount; ++lane)
     {
         if (static_cast<int>(key) == kLaneKeys[lane])
@@ -501,6 +507,22 @@ void MainWindow::OnTimer(WPARAM timerId)
     }
 
     m_noteLane.OnTimer(timerId);
+}
+
+// Bails out of the current song (Esc while Playing) and returns to the song
+// list - same screen switch as a natural completion, but also stops the
+// session outright rather than leaving a finished clip's loop running.
+void MainWindow::QuitToSongSelect()
+{
+    if (m_screen != UiScreen::Playing)
+    {
+        return;
+    }
+
+    m_gameSession.Stop();
+    m_screen = UiScreen::SongSelect;
+    ShowWindow(m_hButtonRefresh, SW_SHOW);
+    InvalidateRect(m_hwnd, nullptr, TRUE);
 }
 
 // Stops the session/animation/audio engine and quits the message loop.
