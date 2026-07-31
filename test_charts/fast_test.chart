@@ -6,10 +6,10 @@ start_tolerance_ms = 150
 release_tolerance_ms = 150
 
 [clip]
-name = FastHat
-filename = fast_test_hat
+display_name = FastHat
+name = fast_test_hat
 hits_required = 6
 
 [section]
-clip = FastHat
+clip = fast_test_hat
 play_mode = learn

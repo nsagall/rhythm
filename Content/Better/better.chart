@@ -1,0 +1,43 @@
+[song]
+title = Wouldn't It Just Be Better?
+bpm = 119
+time_signature = 4/4
+start_tolerance_ms = 100
+release_tolerance_ms = 1000
+
+[clip]
+display_name = Drums 1
+name = drums_1
+hits_required = 25
+
+[clip]
+display_name = Drums 2
+name = drums_2
+hits_required = 25
+
+[clip]
+display_name = Bass
+name = bass
+
+[clip]
+display_name = Background 2
+name = background_2
+
+[section]
+play_mode = background
+clip = bass
+
+[section]
+clip = drums_1
+play_mode = learn
+
+[section]
+play_mode = solo
+
+[section]
+play_mode = background
+clip = background_2
+
+[section]
+play_mode = learn
+clip = drums_2

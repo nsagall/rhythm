@@ -6,10 +6,10 @@ start_tolerance_ms = 150
 release_tolerance_ms = 150
 
 [clip]
-name = Bass
-filename = bass_drum
+display_name = Bass
+name = bass_drum
 hits_required = 12
 
 [section]
-clip = Bass
+clip = bass_drum
 play_mode = learn

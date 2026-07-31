@@ -6,10 +6,10 @@ start_tolerance_ms = 150
 release_tolerance_ms = 150
 
 [clip]
-name = FastAndHeld
-filename = multilane_test
+display_name = FastAndHeld
+name = multilane_test
 hits_required = 6
 
 [section]
-clip = FastAndHeld
+clip = multilane_test
 play_mode = learn

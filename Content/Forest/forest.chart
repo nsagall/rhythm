@@ -6,37 +6,37 @@ start_tolerance_ms = 100
 release_tolerance_ms = 400
 
 [clip]
+display_name = Drum Intro
 name = drum_intro
-filename = drum_intro
 hits_required = 16
 
 [clip]
+display_name = Drums 1
 name = drums_1
-filename = drums_1
 
 [clip]
-name = Bass
-filename = Bass
+display_name = Bass
+name = bass
 hits_required = 24
 
 [clip]
+display_name = Piano
 name = piano
-filename = piano
 hits_required = 16
 
 [clip]
+display_name = Melody
 name = melody
-filename = melody
 hits_required = 16
 
 [clip]
+display_name = Drums 2
 name = drums_2
-filename = drums_2
 hits_required = 24
 
 [clip]
+display_name = Melody 2
 name = melody_2
-filename = melody_2
 hits_required = 16
 
 [section]
@@ -51,7 +51,7 @@ clip = drums_1
 play_mode = background
 
 [section]
-clip = Bass
+clip = bass
 play_mode = learn
 loop_count = 1
 
@@ -78,7 +78,7 @@ clip = drums_2
 play_mode = learn
 
 [section]
-clip = Bass
+clip = bass
 play_mode = learn
 loop_count = 1
 

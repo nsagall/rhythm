@@ -19,7 +19,7 @@
 // n*spanBeats + note.startBeat for n = 0, 1, 2, ...
 //
 // wavFilePath/midiFilePath are derived from the chart's declared
-// `filename` field (chart directory + filename + ".wav"/".mid"), not
+// `name` field (chart directory + name + ".wav"/".mid"), not
 // independently authored paths. The .mid file is optional - hasMidi is
 // false (laneNotes/spanBeats left at their defaults) when it doesn't
 // exist on disk, which is only a problem for a clip used in a "learn"
@@ -27,7 +27,11 @@
 // MIDI data at all.
 struct ChartClip
 {
+    // Stable identifier, also the file stem for wavFilePath/midiFilePath.
+    // This is what [section] blocks reference via their `clip` field.
     std::wstring name;
+    // Human-readable label only - never used for cross-referencing.
+    std::wstring displayName;
     std::wstring wavFilePath;
     std::wstring midiFilePath;
     bool hasMidi = false;

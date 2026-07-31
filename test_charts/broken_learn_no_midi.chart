@@ -4,10 +4,10 @@ bpm = 120
 time_signature = 4/4
 
 [clip]
-name = SoloOnly
-filename = solo_only
+display_name = SoloOnly
+name = solo_only
 hits_required = 4
 
 [section]
-clip = SoloOnly
+clip = solo_only
 play_mode = learn

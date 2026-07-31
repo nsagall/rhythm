@@ -6,33 +6,33 @@ start_tolerance_ms = 150
 release_tolerance_ms = 150
 
 [clip]
-name = Bass Drum
-filename = bass_drum
+display_name = Bass Drum
+name = bass_drum
 hits_required = 6
 
 [clip]
-name = Snare
-filename = snare
+display_name = Snare
+name = snare
 hits_required = 6
 
 ; Deliberately overrides the song's default tolerance - proves a clip-level
 ; start_tolerance_ms/release_tolerance_ms actually takes effect instead of
 ; silently falling back to the global value.
 [clip]
-name = Hi-Hat
-filename = fast_test_hat
+display_name = Hi-Hat
+name = fast_test_hat
 hits_required = 8
 start_tolerance_ms = 130
 release_tolerance_ms = 130
 
 [section]
-clip = Bass Drum
+clip = bass_drum
 play_mode = learn
 
 [section]
-clip = Snare
+clip = snare
 play_mode = learn
 
 [section]
-clip = Hi-Hat
+clip = fast_test_hat
 play_mode = learn

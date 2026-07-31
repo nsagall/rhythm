@@ -6,70 +6,70 @@ start_tolerance_ms = 150
 release_tolerance_ms = 300
 
 [clip]
-name = Kick Snare
-filename = Kick Snare
+display_name = Kick Snare
+name = kick Snare
 hits_required = 6
 
 [clip]
-name = HH
-filename = HH
+display_name = HH
+name = hH
 hits_required = 8
 
 [clip]
-name = Bass
-filename = Bass
+display_name = Bass
+name = bass
 hits_required = 15
 
 [clip]
-name = Phee
-filename = Phee
+display_name = Phee
+name = phee
 hits_required = 12
 
 [clip]
+display_name = Kick Snare Hh
 name = kick_snare_hh
-filename = kick_snare_hh
 hits_required = 10
 
 [clip]
-name = Phee_2
-filename = Phee_2
+display_name = Phee 2
+name = phee_2
 hits_required = 15
 
 [clip]
+display_name = Bass 2
 name = bass_2
-filename = bass_2
 hits_required = 15
 
 [clip]
-name = Break
-filename = Break
+display_name = Break
+name = break
 
 [section]
-clip = Kick Snare
+clip = kick Snare
 play_mode = learn
 
 [section]
-clip = HH
-play_mode = learn
-loop_count = 2
-
-[section]
-clip = Bass
+clip = hH
 play_mode = learn
 loop_count = 2
 
 [section]
-clip = Phee
+clip = bass
 play_mode = learn
 loop_count = 2
 
 [section]
-clip = Break
+clip = phee
+play_mode = learn
+loop_count = 2
+
+[section]
+clip = break
 play_mode = solo
 loop_count = 1
 
 [section]
-clip = HH
+clip = hH
 play_mode = learn
 loop_count = 2
 
@@ -79,27 +79,27 @@ play_mode = learn
 loop_count = 2
 
 [section]
-clip = Kick Snare
+clip = kick Snare
 play_mode = learn
 
 [section]
-clip = Phee_2
+clip = phee_2
 play_mode = learn
 loop_count = 2
 
 [section]
-clip = Break
+clip = break
 play_mode = solo
 
 [section]
-clip = HH
+clip = hH
 play_mode = learn
 
 [section]
-clip = Bass
+clip = bass
 play_mode = learn
 
 [section]
-clip = Break
+clip = break
 play_mode = solo
 

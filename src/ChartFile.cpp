@@ -250,8 +250,16 @@ bool ChartFile::Load(const std::wstring& chartFilePath, ChartSong& outSong, std:
         std::wstring context = clipContext();
         ++clipOrdinal;
 
+        if (currentClip.displayName.empty())
+        {
+            outErrors.push_back(context + L": missing required field 'display_name'");
+        }
+
         if (currentClip.name.empty())
         {
+            // wavFilePath/midiFilePath are both derived from the single
+            // `name` field together, so an empty name means it was never
+            // given at all - nothing else to check.
             outErrors.push_back(context + L": missing required field 'name'");
         }
         else
@@ -264,16 +272,7 @@ bool ChartFile::Load(const std::wstring& chartFilePath, ChartSong& outSong, std:
                     break;
                 }
             }
-        }
-        if (currentClip.wavFilePath.empty())
-        {
-            // wavFilePath/midiFilePath are both derived from the single
-            // `filename` field together, so an empty wavFilePath means no
-            // filename was given at all - nothing else to check.
-            outErrors.push_back(context + L": missing required field 'filename'");
-        }
-        else
-        {
+
             std::ifstream stemTest(currentClip.wavFilePath.c_str(), std::ios::binary);
             if (!stemTest)
             {
@@ -499,7 +498,18 @@ bool ChartFile::Load(const std::wstring& chartFilePath, ChartSong& outSong, std:
         else if (currentBlockKind == L"clip")
         {
             std::wstring context = clipContext();
-            if (key == L"name")
+            if (key == L"display_name")
+            {
+                if (value.empty())
+                {
+                    outErrors.push_back(L"Line " + std::to_wstring(lineNumber) + L": " + context + L": display_name must not be empty");
+                }
+                else
+                {
+                    currentClip.displayName = value;
+                }
+            }
+            else if (key == L"name")
             {
                 if (value.empty())
                 {
@@ -508,16 +518,6 @@ bool ChartFile::Load(const std::wstring& chartFilePath, ChartSong& outSong, std:
                 else
                 {
                     currentClip.name = value;
-                }
-            }
-            else if (key == L"filename")
-            {
-                if (value.empty())
-                {
-                    outErrors.push_back(L"Line " + std::to_wstring(lineNumber) + L": " + context + L": filename must not be empty");
-                }
-                else
-                {
                     currentClip.wavFilePath = chartDir + value + L".wav";
                     currentClip.midiFilePath = chartDir + value + L".mid";
                 }

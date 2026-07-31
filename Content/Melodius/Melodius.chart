@@ -6,57 +6,57 @@ start_tolerance_ms = 100
 release_tolerance_ms = 400
 
 [clip]
-name = Drums
-filename = drums
+display_name = Drums
+name = drums
 hits_required = 17
 
 [clip]
-name = Organ
-filename = organ
+display_name = Organ
+name = organ
 hits_required = 12
 
 [clip]
-name = Bass
-filename = Bass
+display_name = Bass
+name = bass
 hits_required = 17
 
 [clip]
-name = Piano
-filename = Piano
+display_name = Piano
+name = piano
 hits_required = 16
 
 [clip]
+display_name = Bridge
 name = bridge
-filename = bridge
 hits_required = 16
 
 [clip]
+display_name = Bridge Bass
 name = bridge_bass
-filename = bridge_bass
 hits_required = 16
 
 [clip]
-name = Melodica
-filename = melodica
+display_name = Melodica
+name = melodica
 hits_required = 24
 
 [section]
-clip = Organ
+clip = organ
 play_mode = learn
 loop_count = 2
 
 [section]
-clip = Bass
+clip = bass
 play_mode = learn
 loop_count = 1
 
 [section]
-clip = Drums
+clip = drums
 play_mode = learn
 loop_count = 1
 
 [section]
-clip = Piano
+clip = piano
 play_mode = learn
 loop_count = 1
 
@@ -73,6 +73,6 @@ clip = bridge_bass
 play_mode = learn
 
 [section]
-clip = Melodica
+clip = melodica
 play_mode = learn
 loop_count = 2

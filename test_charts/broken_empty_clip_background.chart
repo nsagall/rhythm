@@ -4,12 +4,12 @@ bpm = 120
 time_signature = 4/4
 
 [clip]
-name = Hat
-filename = fast_test_hat
+display_name = Hat
+name = fast_test_hat
 hits_required = 4
 
 [section]
-clip = Hat
+clip = fast_test_hat
 play_mode = learn
 
 [section]

@@ -5,9 +5,9 @@ time_signature = 4/4
 
 ; SoloOnly has no .mid file - it's only ever played back whole, never judged.
 [clip]
-name = SoloOnly
-filename = solo_only
+display_name = SoloOnly
+name = solo_only
 
 [section]
-clip = SoloOnly
+clip = solo_only
 play_mode = solo

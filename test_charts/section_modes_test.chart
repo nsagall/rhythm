@@ -6,25 +6,25 @@ start_tolerance_ms = 150
 release_tolerance_ms = 150
 
 [clip]
-name = Click
-filename = fast_test_hat
+display_name = Click
+name = fast_test_hat
 hits_required = 4
 
 [clip]
-name = Pad
-filename = bass_drum
+display_name = Pad
+name = bass_drum
 hits_required = 1
 
 ; Queues Pad to start the instant the next section (Click, learn) begins -
 ; purely additive, never blocks, never itself becomes the "current" section.
 [section]
-clip = Pad
+clip = bass_drum
 play_mode = background
 loop_count = 2
 
 ; Pad starts here, playing alongside Click while it's learned.
 [section]
-clip = Click
+clip = fast_test_hat
 play_mode = learn
 
 ; Empty-clip solo: a silence gate that stops everything (including Pad,
@@ -35,12 +35,12 @@ play_mode = solo
 ; Solo reusing the same Pad clip that was played as a background layer
 ; earlier - proves clips can be reused across different play modes.
 [section]
-clip = Pad
+clip = bass_drum
 play_mode = solo
 loop_count = 1
 
 ; Second learn section reusing Click - proves a clip can be learned more
 ; than once in the same chart.
 [section]
-clip = Click
+clip = fast_test_hat
 play_mode = learn
