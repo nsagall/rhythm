@@ -44,13 +44,14 @@ const wchar_t* JudgementName(JudgementResult result)
     return L"?";
 }
 
-const wchar_t* PlayModeName(PlayMode mode)
+const wchar_t* SectionKindName(SectionKind kind)
 {
-    switch (mode)
+    switch (kind)
     {
-        case PlayMode::Learn: return L"learn";
-        case PlayMode::Solo: return L"solo";
-        case PlayMode::Background: return L"background";
+        case SectionKind::Learn: return L"learn";
+        case SectionKind::Break: return L"break";
+        case SectionKind::Reset: return L"reset";
+        case SectionKind::Background: return L"background";
     }
     return L"?";
 }
@@ -283,7 +284,7 @@ int main(int argc, char** argv)
 
     GamePhase lastPhase = GamePhase::Idle;
     int lastSection = -2;
-    PlayMode lastPlayMode = PlayMode::Learn;
+    SectionKind lastPlayMode = SectionKind::Learn;
     bool lastInIntro = false;
     bool lastAwaitingAdvance = false;
     const ChartClip* lastPreview = nullptr;
@@ -370,7 +371,7 @@ int main(int argc, char** argv)
 
         GamePhase phase = session.Phase();
         int sectionIndex = session.CurrentSectionIndex();
-        PlayMode playMode = session.CurrentPlayMode();
+        SectionKind playMode = session.CurrentSectionKind();
         bool inIntro = session.IsInIntro();
         bool awaitingAdvance = session.IsAwaitingAdvance();
         double secondsPerBeat = 60.0 / session.Song().bpm;
@@ -384,8 +385,9 @@ int main(int argc, char** argv)
             // isLiveJudging/dotsClip/dotsFromBeat chain (see NoteLane.cpp) for lane 0.
             const ChartClip* liveClip = session.CurrentClip();
             bool learnAwaitingAdvance =
-                liveClip && phase == GamePhase::Learning && playMode == PlayMode::Learn && awaitingAdvance;
+                liveClip && phase == GamePhase::Learning && playMode == SectionKind::Learn && awaitingAdvance;
             bool nextClipShowing = false;
+            double notesUpperBoundBeat = nowBeat + kNoteFallBeats;
             if (learnAwaitingAdvance)
             {
                 double advanceAtBeat = session.PendingAdvanceAtSeconds() / secondsPerBeat;
@@ -393,6 +395,7 @@ int main(int argc, char** argv)
                 if (preview == nullptr)
                 {
                     nextClipShowing = (nowBeat >= advanceAtBeat);
+                    notesUpperBoundBeat = std::min(notesUpperBoundBeat, advanceAtBeat);
                 }
                 else
                 {
@@ -411,7 +414,7 @@ int main(int argc, char** argv)
                     nextClipShowing = (nowBeat >= triggerBeat);
                 }
             }
-            bool isLiveJudging = liveClip && phase == GamePhase::Learning && playMode == PlayMode::Learn &&
+            bool isLiveJudging = liveClip && phase == GamePhase::Learning && playMode == SectionKind::Learn &&
                                   !nextClipShowing && !inIntro;
 
             const ChartClip* dotsClip = isLiveJudging ? liveClip : session.PreviewClip();
@@ -438,7 +441,7 @@ int main(int argc, char** argv)
 
             if (dotsClip && haveDotsFromBeat)
             {
-                double toBeat = nowBeat + kNoteFallBeats;
+                double toBeat = isLiveJudging ? notesUpperBoundBeat : (nowBeat + kNoteFallBeats);
                 for (const DiagVisibleNote& n : ListVisibleNotes(*dotsClip, 0, dotsFromBeat, toBeat))
                 {
                     double beatsFromStart = n.absoluteStart - nowBeat;
@@ -512,7 +515,7 @@ int main(int argc, char** argv)
         {
             // We're leaving lastSection right now - if it was a Solo
             // section, start watching its clip's stem position.
-            if (lastPlayMode == PlayMode::Solo && lastSection >= 0)
+            if (lastPlayMode == SectionKind::Break && lastSection >= 0)
             {
                 int soloClipIndex = session.Song().sections[lastSection].clipIndex;
                 if (soloClipIndex >= 0)
@@ -534,7 +537,7 @@ int main(int argc, char** argv)
             currentSoloEverPlayed = false;
             currentSoloDropoutFlagged = false;
             currentSoloSectionIndex = -1;
-            if (phase == GamePhase::Learning && playMode == PlayMode::Solo)
+            if (phase == GamePhase::Learning && playMode == SectionKind::Break)
             {
                 int soloClipIndex = session.Song().sections[sectionIndex].clipIndex;
                 if (soloClipIndex >= 0)
@@ -546,7 +549,7 @@ int main(int argc, char** argv)
 
             const ChartClip* clip = session.CurrentClip();
             printf("[t=%.2fs] phase=%ls section=%d play_mode=%ls clip=(%ls)\n", session.Clock().ElapsedSeconds(),
-                   PhaseName(phase), sectionIndex, PlayModeName(playMode), clip ? clip->name.c_str() : L"-");
+                   PhaseName(phase), sectionIndex, SectionKindName(playMode), clip ? clip->name.c_str() : L"-");
             lastPhase = phase;
             lastSection = sectionIndex;
             lastPlayMode = playMode;
@@ -567,7 +570,7 @@ int main(int argc, char** argv)
         }
         else if (playMode != lastPlayMode)
         {
-            printf("[t=%.2fs]   play_mode -> %ls\n", session.Clock().ElapsedSeconds(), PlayModeName(playMode));
+            printf("[t=%.2fs]   play_mode -> %ls\n", session.Clock().ElapsedSeconds(), SectionKindName(playMode));
             lastPlayMode = playMode;
         }
         if (inIntro != lastInIntro)
@@ -581,7 +584,7 @@ int main(int argc, char** argv)
                    awaitingAdvance ? "true" : "false");
             lastAwaitingAdvance = awaitingAdvance;
 
-            if (awaitingAdvance && playMode == PlayMode::Learn)
+            if (awaitingAdvance && playMode == SectionKind::Learn)
             {
                 lockinPendingAdvanceAtSeconds = session.PendingAdvanceAtSeconds();
                 printf("[t=%.2fs]   locked in - PendingAdvanceAtSeconds=%.4f\n", session.Clock().ElapsedSeconds(),
@@ -607,7 +610,7 @@ int main(int argc, char** argv)
         // are what this is actually testing), and confirm the clip's stem
         // position keeps advancing rather than stopping (RegisterMiss's
         // once-locked-in no-op).
-        if (awaitingAdvance && playMode == PlayMode::Learn && lockinPendingAdvanceAtSeconds >= 0.0)
+        if (awaitingAdvance && playMode == SectionKind::Learn && lockinPendingAdvanceAtSeconds >= 0.0)
         {
             double current = session.PendingAdvanceAtSeconds();
             if (std::abs(current - lockinPendingAdvanceAtSeconds) > 1e-6)
@@ -693,7 +696,7 @@ int main(int argc, char** argv)
         // Dropout-at-transition check: while the current section is a solo
         // with a real clip, its stem must never stop playing before the
         // section's own scheduled advance - see currentSoloStem above.
-        if (playMode == PlayMode::Solo && sectionIndex == currentSoloSectionIndex && currentSoloStem.IsValid())
+        if (playMode == SectionKind::Break && sectionIndex == currentSoloSectionIndex && currentSoloStem.IsValid())
         {
             bool playingNow = engine.IsPlaying(currentSoloStem);
             if (playingNow)
@@ -723,17 +726,17 @@ int main(int argc, char** argv)
         // (isLiveJudging vs preview) and checks every lane for any visible
         // note, independent of the specific explosion-timing mechanism
         // above. Only flagged while something could plausibly be on screen
-        // (CurrentPlayMode()==Learn, or there's a preview to show) - a
+        // (CurrentSectionKind()==Learn, or there's a preview to show) - a
         // genuine solo/background stretch with nothing queued is
         // legitimately blank and not interesting here.
         {
             bool couldShowSomething =
-                phase == GamePhase::Learning && !inIntro && (playMode == PlayMode::Learn || preview != nullptr);
+                phase == GamePhase::Learning && !inIntro && (playMode == SectionKind::Learn || preview != nullptr);
             bool anyVisible = false;
             if (couldShowSomething)
             {
                 double nowBeatCheck = session.Clock().BeatPosition();
-                bool learnAwaitingAdvanceCheck = playMode == PlayMode::Learn && awaitingAdvance;
+                bool learnAwaitingAdvanceCheck = playMode == SectionKind::Learn && awaitingAdvance;
                 bool nextClipShowingCheck = false;
                 if (learnAwaitingAdvanceCheck)
                 {
@@ -747,7 +750,7 @@ int main(int argc, char** argv)
                         nextClipShowingCheck = (nowBeatCheck >= advanceAtBeat - kNoteFallBeats);
                     }
                 }
-                bool isLiveJudgingCheck = playMode == PlayMode::Learn && !nextClipShowingCheck;
+                bool isLiveJudgingCheck = playMode == SectionKind::Learn && !nextClipShowingCheck;
                 const ChartClip* liveClip = session.CurrentClip();
                 for (int lane = 0; lane < kLaneCount && !anyVisible; ++lane)
                 {
@@ -783,7 +786,7 @@ int main(int argc, char** argv)
                 if (duration > 0.25)
                 {
                     printf("[t=%.2fs]   ** BLANK ** lane row empty for %.2fs (from t=%.2fs) while play_mode=%ls\n",
-                           session.Clock().ElapsedSeconds(), duration, blankStartSeconds, PlayModeName(playMode));
+                           session.Clock().ElapsedSeconds(), duration, blankStartSeconds, SectionKindName(playMode));
                 }
                 blankStartSeconds = -1.0;
             }
@@ -812,7 +815,7 @@ int main(int argc, char** argv)
         // Deliberately keeps pressing through awaitingAdvance now (the
         // post-lock-in extension), unless DIAG_MISS_AFTER_LOCKIN asked us to
         // stop once locked in for this section.
-        if (phase == GamePhase::Learning && playMode == PlayMode::Learn && !inIntro && !stopPressingThisSection)
+        if (phase == GamePhase::Learning && playMode == SectionKind::Learn && !inIntro && !stopPressingThisSection)
         {
             const ChartClip& clip = session.Song().clips[session.Song().sections[sectionIndex].clipIndex];
             for (int lane = 0; lane < kLaneCount; ++lane)

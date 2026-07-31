@@ -682,11 +682,23 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
     // runs before Draw() each frame), so this would silently never trigger
     // - falls back to the advance beat itself in that case (and whenever
     // there's nothing to preview at all - end of chart, the next section is
-    // solo, or the next learn section hides its own dots behind an intro),
-    // matching the old, simpler "explode right at the handoff" behavior.
+    // a break/reset, or the next learn section hides its own dots behind an
+    // intro), matching the old, simpler "explode right at the handoff" behavior.
     bool learnAwaitingAdvance = clip && session.Phase() == GamePhase::Learning &&
-                                 session.CurrentPlayMode() == PlayMode::Learn && session.IsAwaitingAdvance();
+                                 session.CurrentSectionKind() == SectionKind::Learn && session.IsAwaitingAdvance();
     bool nextClipShowing = false;
+
+    // Caps how far into the future the live note-drawing loop below tiles
+    // this clip's own repeating pattern - nowBeat + kBeatsAhead by default,
+    // same as always. Only ever tightened, and only in the "nothing to
+    // hand off to" branch just below: past the scheduled advance, this
+    // clip's pattern would otherwise keep tiling forward as if it loops
+    // again, since NotesInRange has no idea the section is actually about
+    // to end there - drawing a phantom repeat of notes that will never be
+    // reached (the section advances to a break/reset, or the chart ends,
+    // before that repeat would ever play).
+    double notesUpperBoundBeat = nowBeat + kBeatsAhead;
+
     if (learnAwaitingAdvance)
     {
         double secondsPerBeat = 60.0 / session.Song().bpm;
@@ -694,9 +706,9 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
 
         if (session.PreviewClip() == nullptr)
         {
-            // Nothing to hand off to (end of chart, the next section is
-            // solo, or the next learn section hides its own dots behind an
-            // intro) - keep this clip's own dots (and judging) live right
+            // Nothing to hand off to (end of chart, the next section is a
+            // break/reset, or the next learn section hides its own dots
+            // behind an intro) - keep this clip's own dots (and judging) live right
             // up until the actual scheduled advance, exactly like the
             // fallback below does when there IS a preview but it isn't
             // visible yet. Without this, locking in immediately made
@@ -706,6 +718,7 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
             // getting judged (Update() doesn't care what's drawn) but
             // simply stopped being drawn at all.
             nextClipShowing = (nowBeat >= advanceAtBeat);
+            notesUpperBoundBeat = std::min(notesUpperBoundBeat, advanceAtBeat);
         }
         else
         {
@@ -725,7 +738,7 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
         }
     }
 
-    bool isLiveJudging = clip && session.Phase() == GamePhase::Learning && session.CurrentPlayMode() == PlayMode::Learn &&
+    bool isLiveJudging = clip && session.Phase() == GamePhase::Learning && session.CurrentSectionKind() == SectionKind::Learn &&
                           !nextClipShowing && !session.IsInIntro();
 
     // Judge-line receptors: one glowing ring per lane, dim by default,
@@ -789,7 +802,7 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
         {
             int laneX = laneCenterX(lane);
             for (const VisibleNote& note :
-                 NotesInRange(nowBeat - kBeatsBehind, nowBeat + kBeatsAhead, clip->laneNotes[lane], clip->spanBeats))
+                 NotesInRange(nowBeat - kBeatsBehind, notesUpperBoundBeat, clip->laneNotes[lane], clip->spanBeats))
             {
                 int noteY = yForBeatsFromNow(note.startBeat - nowBeat);
                 if (noteY < m_laneRect.top - kVisibilityMarginPx || noteY > m_laneRect.bottom + kVisibilityMarginPx)
@@ -812,7 +825,7 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
     m_prevNotesHandoff = nextClipShowing;
 
     // While the player can't act yet (count-in, a clip's intro, a
-    // solo/background section, or the wait before the next clip joins),
+    // break/reset/background section, or the wait before the next clip joins),
     // start showing the upcoming clip's notes from each lane's own actual
     // first required note onward - so each one scrolls in from the top
     // edge one at a time, exactly like live play, instead of a whole batch
@@ -872,7 +885,7 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
 
             int laneX = laneCenterX(lane);
             for (const VisibleNote& note :
-                 NotesInRange(dotsFromBeat, nowBeat + kBeatsAhead, dotsClip->laneNotes[lane], dotsClip->spanBeats))
+                 NotesInRange(dotsFromBeat, notesUpperBoundBeat, dotsClip->laneNotes[lane], dotsClip->spanBeats))
             {
                 double beatsFromStart = note.startBeat - nowBeat;
                 double beatsFromEnd = beatsFromStart + note.durationBeats;
@@ -1016,13 +1029,13 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
             status = L"Get ready...";
             break;
         case GamePhase::Learning:
-            if (session.CurrentPlayMode() == PlayMode::Solo)
+            if (session.CurrentSectionKind() == SectionKind::Break || session.CurrentSectionKind() == SectionKind::Reset)
             {
-                status = clip ? (clip->name + L" - Listen...") : L"...";
+                status = clip ? (clip->displayName + L" - Listen...") : L"...";
             }
             else if (clip)
             {
-                status = (session.IsInIntro()) ? (clip->name + L" - Listen...") : clip->name;
+                status = (session.IsInIntro()) ? (clip->displayName + L" - Listen...") : clip->displayName;
             }
             break;
         case GamePhase::Complete:
