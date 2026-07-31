@@ -7,7 +7,7 @@
 
 namespace fs = std::filesystem;
 
-std::vector<SongEntry> SongLibrary::Scrape(const std::wstring& contentRoot)
+std::vector<SongEntry> SongLibrary::Scrape(const std::wstring& contentRoot, std::vector<std::wstring>* outValidationErrors)
 {
     std::vector<SongEntry> songs;
 
@@ -43,6 +43,15 @@ std::vector<SongEntry> SongLibrary::Scrape(const std::wstring& contentRoot)
         std::vector<std::wstring> errors;
         if (!ChartFile::Load(chartPath, song, errors))
         {
+            if (outValidationErrors)
+            {
+                std::wstring message = chartPath + L":";
+                for (const std::wstring& error : errors)
+                {
+                    message += L"\r\n  " + error;
+                }
+                outValidationErrors->push_back(std::move(message));
+            }
             continue;
         }
 

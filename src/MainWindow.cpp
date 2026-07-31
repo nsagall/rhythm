@@ -345,7 +345,7 @@ void MainWindow::OnCommand(HWND hwnd, int controlId)
 {
     if (controlId == IDC_BUTTON_REFRESH)
     {
-        RescanSongs();
+        RescanSongs(/*reportValidationErrors=*/true);
         // The button would otherwise keep keyboard focus and steal lane/list keystrokes.
         SetFocus(hwnd);
     }
@@ -617,7 +617,7 @@ void MainWindow::OnDrawItem(LPARAM lParam)
 // Re-scrapes Content\ for songs, keeping the currently-highlighted song
 // selected if it's still found, otherwise falling back to the last-played
 // chart from Settings, otherwise index 0.
-void MainWindow::RescanSongs()
+void MainWindow::RescanSongs(bool reportValidationErrors)
 {
     std::wstring preferredPath;
     if (m_selectedSongIndex >= 0 && m_selectedSongIndex < static_cast<int>(m_songs.size()))
@@ -629,7 +629,8 @@ void MainWindow::RescanSongs()
         preferredPath = m_settings.LoadLastChartPath();
     }
 
-    m_songs = SongLibrary::Scrape(kContentRoot);
+    std::vector<std::wstring> validationErrors;
+    m_songs = SongLibrary::Scrape(kContentRoot, reportValidationErrors ? &validationErrors : nullptr);
 
     m_selectedSongIndex = m_songs.empty() ? -1 : 0;
     if (!preferredPath.empty())
@@ -645,6 +646,16 @@ void MainWindow::RescanSongs()
     }
 
     InvalidateRect(m_hwnd, &m_songListRect, FALSE);
+
+    if (!validationErrors.empty())
+    {
+        std::wstring message = L"The following charts failed validation and were left out of the list:\r\n";
+        for (const std::wstring& error : validationErrors)
+        {
+            message += L"\r\n" + error + L"\r\n";
+        }
+        MessageBoxW(m_hwnd, message.c_str(), kWindowTitle, MB_OK | MB_ICONWARNING);
+    }
 }
 
 // Loads and starts the given song and switches to the Playing screen -

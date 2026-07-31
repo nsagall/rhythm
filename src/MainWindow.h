@@ -111,8 +111,12 @@ private:
 
     // Re-scrapes Content\ for songs, keeping the currently-highlighted
     // song's chart selected if it's still found (or falling back to the
-    // last-played chart from Settings, or index 0), then repaints.
-    void RescanSongs();
+    // last-played chart from Settings, or index 0), then repaints. Charts
+    // that fail validation are always left out of the list either way -
+    // reportValidationErrors (default false, for the initial scan at
+    // startup) only controls whether a dialog then reports every one of
+    // them; the explicit refresh button passes true.
+    void RescanSongs(bool reportValidationErrors = false);
 
     // Loads and starts the given song and switches to the Playing screen -
     // shows an error dialog instead if the chart fails to load.
