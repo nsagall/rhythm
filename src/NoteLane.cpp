@@ -761,6 +761,21 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
     // color.
     bool lockedIn = isLiveJudging && session.IsAwaitingAdvance();
 
+    // A note's bar is drawn from its start (bottom edge) to its start+
+    // duration (top edge) - the moment it first becomes visible, its start
+    // sits exactly at the top of the lane, so its top edge necessarily
+    // extends *above* that by its own duration. The visibility check just
+    // below only tests a note's bottom edge against the lane's top (there's
+    // deliberately no equivalent check on the top edge, since a note is
+    // still meant to be at least partly visible then), so without clipping
+    // that excess draws straight onto whatever's above the lane - visible
+    // as a static-looking block for any lane with a note on every beat,
+    // since a new one is always mid-spawn. Scoped to just the note-drawing
+    // loop (not the whole function) so it doesn't also clip the confetti
+    // burst below, which deliberately spawns above the lane and falls in.
+    int savedClipState = SaveDC(hdc);
+    IntersectClipRect(hdc, m_laneRect.left, m_laneRect.top, m_laneRect.right, m_laneRect.bottom);
+
     if (dotsClip)
     {
         for (int lane = 0; lane < kLaneCount; ++lane)
@@ -849,6 +864,8 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
             }
         }
     }
+
+    RestoreDC(hdc, savedClipState);
 
     if (!m_confetti.empty())
     {

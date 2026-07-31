@@ -108,6 +108,41 @@ bool AnyNoteVisible(const ChartClip& clip, int lane, double fromBeat, double toB
 // judge line before scrolling off) - mirrored here since it's not exported.
 constexpr double kDiagBeatsBehind = 1.0;
 
+// Same tiling as AnyNoteVisible, but returns every overlapping note instead
+// of just whether one exists - lets DIAG_NOTELANE_TRACE print NoteLane's
+// exact visible set (including duration/Y-position) instead of a yes/no.
+struct DiagVisibleNote
+{
+    double absoluteStart = 0.0;
+    double durationBeats = 0.0;
+};
+
+std::vector<DiagVisibleNote> ListVisibleNotes(const ChartClip& clip, int lane, double fromBeat, double toBeat)
+{
+    std::vector<DiagVisibleNote> result;
+    double spanBeats = clip.spanBeats;
+    const std::vector<LaneNote>& notes = clip.laneNotes[lane];
+    if (notes.empty() || spanBeats <= 0.0)
+    {
+        return result;
+    }
+    long long firstBar = static_cast<long long>(std::floor(fromBeat / spanBeats)) - 1;
+    long long lastBar = static_cast<long long>(std::floor(toBeat / spanBeats)) + 1;
+    for (long long bar = firstBar; bar <= lastBar; ++bar)
+    {
+        for (const LaneNote& note : notes)
+        {
+            double absoluteStart = bar * spanBeats + note.startBeat;
+            double absoluteEnd = absoluteStart + note.durationBeats;
+            if (absoluteEnd >= fromBeat && absoluteStart <= toBeat)
+            {
+                result.push_back({absoluteStart, note.durationBeats});
+            }
+        }
+    }
+    return result;
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -136,6 +171,18 @@ int main(int argc, char** argv)
     // hits - the only way to actually exercise RegisterMiss()'s new
     // once-locked-in no-op.
     bool diagMissAfterLockin = std::getenv("DIAG_MISS_AFTER_LOCKIN") != nullptr;
+
+    // DIAG_NOTELANE_TRACE=1: reproduces NoteLane::Draw's exact lane-0 note
+    // selection (isLiveJudging, dotsClip, dotsFromBeat, then the same
+    // NotesInRange tiling - here ListVisibleNotes) at intervals throughout
+    // the run, to check for notes appearing far outside the intended
+    // [nowBeat-kBeatsBehind, nowBeat+kNoteFallBeats] window - which would
+    // render outside the visible play area without ever being culled by
+    // NoteLane's own visibility check (that check only looks at a note's
+    // *bottom* edge, never its top, so an anomalous note could silently
+    // draw off the top of the lane).
+    bool diagNoteLaneTrace = std::getenv("DIAG_NOTELANE_TRACE") != nullptr;
+    double lastTraceSeconds = -1.0;
 
     // DIAG_EASY_MODE=1: load the chart in easy mode (quantized/de-chorded
     // patterns, release timing ignored, one-note grace per section) instead
@@ -327,6 +374,83 @@ int main(int argc, char** argv)
         bool inIntro = session.IsInIntro();
         bool awaitingAdvance = session.IsAwaitingAdvance();
         double secondsPerBeat = 60.0 / session.Song().bpm;
+
+        if (diagNoteLaneTrace && session.Clock().ElapsedSeconds() - lastTraceSeconds >= 0.3)
+        {
+            lastTraceSeconds = session.Clock().ElapsedSeconds();
+            double nowBeat = session.Clock().BeatPosition();
+
+            // Exactly mirrors NoteLane::Draw's learnAwaitingAdvance/nextClipShowing/
+            // isLiveJudging/dotsClip/dotsFromBeat chain (see NoteLane.cpp) for lane 0.
+            const ChartClip* liveClip = session.CurrentClip();
+            bool learnAwaitingAdvance =
+                liveClip && phase == GamePhase::Learning && playMode == PlayMode::Learn && awaitingAdvance;
+            bool nextClipShowing = false;
+            if (learnAwaitingAdvance)
+            {
+                const ChartClip* preview = session.PreviewClip();
+                if (preview == nullptr)
+                {
+                    nextClipShowing = true;
+                }
+                else
+                {
+                    double advanceAtBeat = session.PendingAdvanceAtSeconds() / secondsPerBeat;
+                    double earliestOnset = -1.0;
+                    for (int lane = 0; lane < kLaneCount; ++lane)
+                    {
+                        double onset = session.PreviewFirstOnsetBeatForLane(lane);
+                        if (onset >= 0.0 && (earliestOnset < 0.0 || onset < earliestOnset))
+                        {
+                            earliestOnset = onset;
+                        }
+                    }
+                    double visibleAtBeat =
+                        (earliestOnset >= 0.0) ? (earliestOnset - kNoteFallBeats) : (advanceAtBeat - kNoteFallBeats);
+                    double triggerBeat = (visibleAtBeat <= advanceAtBeat) ? visibleAtBeat : (advanceAtBeat - kNoteFallBeats);
+                    nextClipShowing = (nowBeat >= triggerBeat);
+                }
+            }
+            bool isLiveJudging = liveClip && phase == GamePhase::Learning && playMode == PlayMode::Learn &&
+                                  !nextClipShowing && !inIntro;
+
+            const ChartClip* dotsClip = isLiveJudging ? liveClip : session.PreviewClip();
+            double dotsFromBeat = 0.0;
+            bool haveDotsFromBeat = true;
+            if (isLiveJudging)
+            {
+                dotsFromBeat = nowBeat - kDiagBeatsBehind;
+            }
+            else if (dotsClip)
+            {
+                dotsFromBeat = session.PreviewFirstOnsetBeatForLane(0);
+                haveDotsFromBeat = dotsFromBeat >= 0.0;
+            }
+            else
+            {
+                haveDotsFromBeat = false;
+            }
+
+            printf("[t=%.2fs] TRACE nowBeat=%.4f phase=%ls isLiveJudging=%s dotsClip=%ls dotsFromBeat=%s\n",
+                   session.Clock().ElapsedSeconds(), nowBeat, PhaseName(phase), isLiveJudging ? "true" : "false",
+                   dotsClip ? dotsClip->name.c_str() : L"(none)",
+                   haveDotsFromBeat ? std::to_string(dotsFromBeat).c_str() : "n/a");
+
+            if (dotsClip && haveDotsFromBeat)
+            {
+                double toBeat = nowBeat + kNoteFallBeats;
+                for (const DiagVisibleNote& n : ListVisibleNotes(*dotsClip, 0, dotsFromBeat, toBeat))
+                {
+                    double beatsFromStart = n.absoluteStart - nowBeat;
+                    double beatsFromEnd = beatsFromStart + n.durationBeats;
+                    bool aboveTop = beatsFromStart > kNoteFallBeats + 1e-9;
+                    printf("[t=%.2fs]   lane0 visible note: absoluteStart=%.4f dur=%.4f beatsFromStart=%.4f "
+                           "beatsFromEnd=%.4f%s\n",
+                           session.Clock().ElapsedSeconds(), n.absoluteStart, n.durationBeats, beatsFromStart,
+                           beatsFromEnd, aboveTop ? "  ** ABOVE VISIBLE TOP **" : "");
+                }
+            }
+        }
 
         if (phase == GamePhase::CountIn)
         {
