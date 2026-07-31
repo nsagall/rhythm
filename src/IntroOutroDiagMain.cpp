@@ -309,7 +309,7 @@ int main(int argc, char** argv)
                 if (nowBeatCountIn >= onset - kNoteFallBeats)
                 {
                     countInLaneVisiblePrinted[lane] = true;
-                    double countInEndBeat = 2.0 / secondsPerBeat; // kCountInSeconds, mirrored
+                    double countInEndBeat = session.Song().beatsPerBar; // GameSession::CountInSeconds(), mirrored
                     double leadBeatsBeforeCountInEnds = countInEndBeat - nowBeatCountIn;
                     // Directly mirror NoteLane's own dotsFromBeat/NotesInRange
                     // call for the preview path (dotsFromBeat = onset exactly)

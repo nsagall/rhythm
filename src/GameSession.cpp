@@ -7,7 +7,6 @@
 namespace
 {
 
-constexpr double kCountInSeconds = 2.0;
 constexpr int kMaxConsecutiveMisses = 3;
 
 // Easy mode's start-tolerance widening - see EffectiveStartToleranceSeconds.
@@ -403,25 +402,25 @@ void GameSession::Update()
 
     if (m_phase == GamePhase::CountIn)
     {
-        // kCountInSeconds is a flat wall-clock duration with no relationship
-        // to the song's beat grid, so for some BPMs/patterns it lands a hair
-        // *after* the first section's true first note instead of before it.
-        // FirstReachableOnsetForAllLanes still correctly keeps that note as
-        // the anchor rather than skipping to the next one (which would
-        // reproduce the historical "starts on the second beat with two
-        // notes" bug), but by the time this transition actually fires, the
-        // note's own start-tolerance window is already mostly or entirely
-        // elapsed - making it nearly impossible to hit. Capping the
-        // transition at that note's own onset (never later) guarantees its
-        // full forward tolerance window is still intact the instant judging
-        // becomes possible. Only ever shortens the count-in below its usual
-        // duration - a song whose first note falls later, the normal case,
-        // is completely unaffected.
-        double transitionSeconds = kCountInSeconds;
+        // The count-in is one full bar, but that's still not guaranteed to
+        // land exactly on wherever the first section's own pattern actually
+        // starts within a bar. FirstReachableOnsetForAllLanes correctly
+        // keeps the true first note as the anchor rather than skipping to
+        // the next one (which would reproduce the historical "starts on the
+        // second beat with two notes" bug) even when it falls a little
+        // before the bar boundary, but if this transition fired at the full
+        // bar length regardless, a note anchored that far early would have
+        // most or all of its start-tolerance window already elapsed by the
+        // time judging actually becomes possible. Capping the transition at
+        // that note's own onset (never later) guarantees its full forward
+        // tolerance window is still intact instead. Only ever shortens the
+        // count-in below one bar - a song whose first note falls on or after
+        // the downbeat, the normal case, is completely unaffected.
+        double transitionSeconds = CountInSeconds();
         const ChartClip* firstClip = PreviewClip();
         if (firstClip)
         {
-            double baselineBeat = kCountInSeconds / secondsPerBeat;
+            double baselineBeat = m_song.beatsPerBar;
             double allLanes[kLaneCount];
             FirstReachableOnsetForAllLanes(baselineBeat - 1e-6, *firstClip, allLanes);
             double earliestOnsetBeat = -1.0;
@@ -688,7 +687,7 @@ double GameSession::PreviewTransitionSeconds() const
 {
     if (m_phase == GamePhase::CountIn)
     {
-        return kCountInSeconds;
+        return CountInSeconds();
     }
     if (m_phase == GamePhase::Learning && m_isInIntro)
     {
@@ -717,7 +716,7 @@ double GameSession::PreviewFirstOnsetBeatForLane(int lane) const
     // preview must show the same notes that BeginSection is about to
     // anchor judging to (see FirstReachableOnsetForAllLanes), not wherever
     // NextOnsetAfter's usual per-lane cutoff logic lands relative to the
-    // count-in's fixed duration (see m_songHasStarted's own comment).
+    // count-in's own bar-length duration (see m_songHasStarted's own comment).
     if (m_phase == GamePhase::CountIn)
     {
         double allLanes[kLaneCount];
@@ -1089,6 +1088,13 @@ double GameSession::EffectiveStartToleranceSeconds(const ChartClip& clip, int cl
         }
     }
     return toleranceMs / 1000.0;
+}
+
+// One full bar at the song's own tempo/time signature.
+double GameSession::CountInSeconds() const
+{
+    double secondsPerBeat = 60.0 / m_song.bpm;
+    return m_song.beatsPerBar * secondsPerBeat;
 }
 
 // If the clip's declared span is shorter than its stem's actual duration,

@@ -198,7 +198,7 @@ public:
 private:
     // Begins (or resumes) the section at the given index, dispatching on
     // its play_mode. scheduledBeat is the ideal beat this transition was
-    // scheduled for (e.g. kCountInSeconds or m_pendingAdvanceAtSeconds
+    // scheduled for (e.g. CountInSeconds() or m_pendingAdvanceAtSeconds
     // converted to beats) - used instead of the actually-polled clock
     // position to pick a learn section's first note, so it's deterministic
     // and matches what PreviewFirstOnsetBeatForLane() already predicted.
@@ -250,6 +250,11 @@ private:
     // the player get back on track.
     double EffectiveStartToleranceSeconds(const ChartClip& clip, int clipIndex) const;
 
+    // Returns how long the count-in lasts, in seconds: one full bar at the
+    // song's own tempo/time signature, so it's always musically aligned
+    // instead of an arbitrary wall-clock duration.
+    double CountInSeconds() const;
+
     // Returns the smallest note start (in absolute beats) strictly after afterBeat, for this lane.
     double NextOnsetAfter(double afterBeat, const ChartClip& clip, int lane) const;
 
@@ -273,8 +278,8 @@ private:
     // desync risk in that case, and it starts judging as soon as each
     // lane's own next note is actually reachable instead of always
     // waiting for a fresh cycle, which matters a lot for a long-spanning
-    // pattern (many bars) reached after a leading solo/background section
-    // or a count-in offset that doesn't land near a bar boundary - the
+    // pattern (many bars) reached after a leading solo/background section,
+    // or a scheduled transition that doesn't land near a bar boundary - the
     // wait could otherwise be most of an entire loop of dead air. Falls
     // back to FirstReachableOnset's per-lane, always-safe behavior only
     // when the lanes' own candidates would actually land in different
@@ -428,10 +433,10 @@ private:
     // finish). While false, that anchor uses FirstReachableOnset instead
     // of plain NextOnsetAfter, searching every lane against the SAME
     // pattern cycle instead of each lane independently: scheduledBeat at
-    // the start of a song is derived from kCountInSeconds (or that plus a
-    // whole number of intro bars), a fixed real-world duration with no
-    // musical meaning, so at most tempos it doesn't land on the pattern's
-    // own bar boundary. Searching lanes independently there can land
+    // the start of a song is derived from CountInSeconds() (or that plus a
+    // whole number of intro bars) - always a whole number of bars, but not
+    // necessarily aligned with wherever the pattern's own notes actually
+    // start within a bar. Searching lanes independently there can land
     // different lanes on different pattern cycles - e.g. one lane's true
     // opening note gets skipped while another lane's doesn't, corrupting
     // notes that are meant to land together (or apart) exactly as
