@@ -1228,6 +1228,23 @@ void GameSession::FirstReachableOnsetForAllLanes(double afterBeat, const ChartCl
                                                   double outBeats[kLaneCount]) const
 {
     double span = clip.spanBeats;
+
+    // A note up to one press-tolerance window before afterBeat is still
+    // legitimately hittable - OnPress's own tolerance check is symmetric
+    // around the note's true onset, not one-sided - so searching from here
+    // instead of afterBeat itself lets the pattern's own true opening note
+    // stay the very first anchor whenever it's still within reach, rather
+    // than always skipping to whatever comes after it just because a fixed
+    // count-in duration happened to land a hair past it. This is exactly
+    // the scenario that produced the original "starts on the second beat
+    // with two notes instead of the single opening note" bug: the true
+    // first note and the very next one (here, a note shared with another
+    // lane) can be close enough together that the old, tolerance-blind
+    // search skipped straight past the former to the latter.
+    double secondsPerBeat = 60.0 / m_song.bpm;
+    double toleranceBeats = (clip.startToleranceMs / 1000.0) / secondsPerBeat;
+    double searchFrom = afterBeat - toleranceBeats;
+
     double candidates[kLaneCount];
     long long minCycle = 0;
     long long maxCycle = 0;
@@ -1235,7 +1252,7 @@ void GameSession::FirstReachableOnsetForAllLanes(double afterBeat, const ChartCl
 
     for (int lane = 0; lane < kLaneCount; ++lane)
     {
-        candidates[lane] = NextOnsetAfter(afterBeat, clip, lane);
+        candidates[lane] = NextOnsetAfter(searchFrom, clip, lane);
         if (clip.laneNotes[lane].empty())
         {
             continue; // no real note on this lane to constrain the cycle check with
@@ -1268,7 +1285,7 @@ void GameSession::FirstReachableOnsetForAllLanes(double afterBeat, const ChartCl
 
     for (int lane = 0; lane < kLaneCount; ++lane)
     {
-        outBeats[lane] = FirstReachableOnset(afterBeat, clip, lane);
+        outBeats[lane] = FirstReachableOnset(searchFrom, clip, lane);
     }
 }
 
