@@ -8,8 +8,8 @@
 
 // A reusable audio+MIDI bundle: a stem file, its MIDI-authored note
 // pattern, and the thresholds needed to judge/lock it in when played in a
-// "learn" section. A clip is purely a definition - it does nothing on its
-// own until a [section] references it, and the same clip may be
+// [learn] section. A clip is purely a definition - it does nothing on its
+// own until a section block references it, and the same clip may be
 // referenced by more than one section (e.g. once as a background layer,
 // later as the thing being learned). laneNotes[i] holds lane i's own
 // independent, 0-indexed-from-repetition-start note list (each lane's
@@ -22,13 +22,13 @@
 // `name` field (chart directory + name + ".wav"/".mid"), not
 // independently authored paths. The .mid file is optional - hasMidi is
 // false (laneNotes/spanBeats left at their defaults) when it doesn't
-// exist on disk, which is only a problem for a clip used in a "learn"
-// section (rejected at load time); solo/background sections never touch
-// MIDI data at all.
+// exist on disk, which is only a problem for a clip used in a [learn]
+// section (rejected at load time); [break]/[reset]/[background] sections
+// never touch MIDI data at all.
 struct ChartClip
 {
     // Stable identifier, also the file stem for wavFilePath/midiFilePath.
-    // This is what [section] blocks reference via their `clip` field.
+    // This is what section blocks reference via their `clip` field.
     std::wstring name;
     // Human-readable label only - never used for cross-referencing.
     std::wstring displayName;
@@ -45,28 +45,29 @@ struct ChartClip
     double startToleranceMs = 120.0;
     double releaseToleranceMs = 120.0;
     double initVolume = 1.0; // volume while the player is still learning this clip
-    double volume = 1.0;     // volume once it's locked in and looping automatically, or during solo/background playback
+    double volume = 1.0;     // volume once it's locked in and looping automatically, or during break/background playback
     int introBars = 0;       // if > 0, this many bars play automatically (no tap needed) before dots/judging start
     int outroLoops = 0;      // if > 0, this many extra full loops play after locking in before the next section joins
 };
 
-// How a [section] uses its clip.
-enum class PlayMode
+// Which of the four block kinds a section is.
+enum class SectionKind
 {
-    Learn,      // judge presses/releases against the clip, exactly like today's single-instrument flow
-    Solo,       // stop everything else playing, play this clip, block until loop_count loops finish
-    Background, // queue this clip to start playing (without stopping anything) when the *next* section begins
+    Learn,      // [learn]: judge presses/releases against the clip, exactly like today's single-instrument flow
+    Break,      // [break]: stop everything else playing, play this clip, block until loop_count loops finish
+    Reset,      // [reset]: stop everything else playing, then advance immediately (a silence gate, no clip)
+    Background, // [background]: queue this clip to start playing (without stopping anything) when the *next* section begins
 };
 
 // One step of actual gameplay, processed in declared order - clips alone
 // do nothing; only sections drive the song. clipIndex is resolved at
-// parse time to an index into ChartSong::clips, or -1 for a Solo section
-// with a deliberately empty clip reference (the only mode that allows one).
+// parse time to an index into ChartSong::clips, or -1 for a Reset section
+// (the only kind with no clip).
 struct ChartSection
 {
     int clipIndex = -1;
-    PlayMode playMode = PlayMode::Learn;
-    int loopCount = 1; // minimum number of times the clip must loop; see PlayMode-specific semantics in GameSession
+    SectionKind kind = SectionKind::Learn;
+    int loopCount = 1; // minimum number of times the clip must loop; see SectionKind-specific semantics in GameSession
 };
 
 // A full song: tempo/time signature, the pool of reusable clips, and the
@@ -93,8 +94,8 @@ public:
     // wrong-typed or out-of-range values, a malformed time signature,
     // missing required fields, a referenced stem/MIDI file that doesn't
     // exist or can't be parsed, a duplicate clip name, a section
-    // referencing an unknown clip, an invalid play_mode, or a chart with
-    // no [section] blocks at all). On success outErrors is empty and
-    // outSong is filled in.
+    // referencing an unknown clip, an unrecognized block header, or a
+    // chart with no [learn]/[break]/[reset]/[background] blocks at all).
+    // On success outErrors is empty and outSong is filled in.
     static bool Load(const std::wstring& chartFilePath, ChartSong& outSong, std::vector<std::wstring>& outErrors);
 };

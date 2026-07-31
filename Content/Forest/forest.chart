@@ -39,62 +39,48 @@ display_name = Melody 2
 name = melody_2
 hits_required = 16
 
-[section]
+[learn]
 clip = drum_intro
-play_mode = learn
 
-[section]
-play_mode = solo
+[reset]
 
-[section]
+[background]
 clip = drums_1
-play_mode = background
 
-[section]
+[learn]
 clip = bass
-play_mode = learn
 loop_count = 1
 
-[section]
+[learn]
 clip = piano
-play_mode = learn
 loop_count = 1
 
-[section]
+[learn]
 clip = melody
-play_mode = learn
 loop_count = 1
 
-[section]
-play_mode = solo
+[break]
 clip = piano
 
-[section]
+[background]
 clip = piano
-play_mode = background
 
-[section]
+[learn]
 clip = drums_2
-play_mode = learn
 
-[section]
+[learn]
 clip = bass
-play_mode = learn
 loop_count = 1
 
-[section]
+[learn]
 clip = melody_2
-play_mode = learn
 loop_count = 1
 
-[section]
-play_mode = solo
+[break]
 clip = piano
 
-[section]
-play_mode = background
+[background]
 clip = piano
 
-[section]
+[learn]
 clip=drum_intro
-play_mode = learn

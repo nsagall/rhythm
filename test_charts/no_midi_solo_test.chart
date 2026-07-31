@@ -5,12 +5,11 @@ time_signature = 4/4
 
 ; SoloOnly has a .wav but deliberately no matching .mid file - proves a
 ; clip is allowed to have no MIDI at all as long as it's never used in a
-; play_mode 'learn' section.
+; [learn] section.
 [clip]
 display_name = SoloOnly
 name = solo_only
 hits_required = 4
 
-[section]
+[break]
 clip = solo_only
-play_mode = solo

@@ -44,62 +44,49 @@ hits_required = 15
 display_name = Break
 name = break
 
-[section]
+[learn]
 clip = kick Snare
-play_mode = learn
 
-[section]
+[learn]
 clip = hH
-play_mode = learn
 loop_count = 2
 
-[section]
+[learn]
 clip = bass
-play_mode = learn
 loop_count = 2
 
-[section]
+[learn]
 clip = phee
-play_mode = learn
 loop_count = 2
 
-[section]
+[break]
 clip = break
-play_mode = solo
 loop_count = 1
 
-[section]
+[learn]
 clip = hH
-play_mode = learn
 loop_count = 2
 
-[section]
+[learn]
 clip = bass_2
-play_mode = learn
 loop_count = 2
 
-[section]
+[learn]
 clip = kick Snare
-play_mode = learn
 
-[section]
+[learn]
 clip = phee_2
-play_mode = learn
 loop_count = 2
 
-[section]
+[break]
 clip = break
-play_mode = solo
 
-[section]
+[learn]
 clip = hH
-play_mode = learn
 
-[section]
+[learn]
 clip = bass
-play_mode = learn
 
-[section]
+[break]
 clip = break
-play_mode = solo
 

@@ -8,5 +8,4 @@ display_name = Hat
 name = fast_test_hat
 hits_required = 4
 
-[section]
-play_mode = learn
+[learn]

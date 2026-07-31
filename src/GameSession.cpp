@@ -84,7 +84,7 @@ bool GameSession::LoadChart(const std::wstring& chartFilePath, bool easyMode, st
 
         // A clip with no .mid file (hasMidi == false) has no pattern to
         // validate against the stem's length or tile to fill it - it's
-        // only ever played back whole (solo/background), never judged.
+        // only ever played back whole (break/background), never judged.
         if (clip.hasMidi)
         {
             if (easyMode)
@@ -224,9 +224,9 @@ bool GameSession::IsLaneJudgeable(int lane) const
         return false;
     }
     const ChartSection& section = m_song.sections[m_currentSectionIndex];
-    if (section.playMode != PlayMode::Learn)
+    if (section.kind != SectionKind::Learn)
     {
-        return false; // solo/background: no judging, ever
+        return false; // break/reset/background: no judging, ever
     }
     const ChartClip& clip = m_song.clips[section.clipIndex];
     return !clip.laneNotes[lane].empty();
@@ -303,7 +303,7 @@ void GameSession::OnRelease(int lane)
     }
 
     const ChartSection& section = m_song.sections[m_currentSectionIndex];
-    if (section.playMode != PlayMode::Learn)
+    if (section.kind != SectionKind::Learn)
     {
         return; // structurally shouldn't happen (holds only populate in Learn), kept as defense-in-depth
     }
@@ -356,9 +356,9 @@ void GameSession::Update()
     // slipping out of sync with what's actually audible. Every currently-
     // playing clip is started phase-aligned to the same shared beat grid
     // (see StartClipLoop), so the current section's own clip - if it has
-    // one and it's already playing, true for Learn and Solo alike - is an
+    // one and it's already playing, true for Learn and Break alike - is an
     // equally valid drift reference regardless of which section is active.
-    // Also requires AudioEngine::IsPlaying(): a solo section's clip plays a
+    // Also requires AudioEngine::IsPlaying(): a break section's clip plays a
     // *finite* loop_count, and once that last pass finishes XAudio2 stops
     // the voice on its own - m_clipIsPlaying stays true until the section's
     // own scheduled advance explicitly stops it (below), but
@@ -366,7 +366,7 @@ void GameSession::Update()
     // still advancing. Without this check, resyncing against that frozen
     // position every tick pins the clock to that one instant forever, so
     // "now" can never reach the scheduled advance time - the whole game
-    // hangs the moment a solo section's clip finishes playing.
+    // hangs the moment a break section's clip finishes playing.
     if (m_currentSectionIndex >= 0)
     {
         int clipIndex = m_song.sections[m_currentSectionIndex].clipIndex;
@@ -396,7 +396,7 @@ void GameSession::Update()
     if (m_currentSectionIndex >= 0 && !m_easyMode)
     {
         const ChartSection& heldSection = m_song.sections[m_currentSectionIndex];
-        if (heldSection.playMode == PlayMode::Learn)
+        if (heldSection.kind == SectionKind::Learn)
         {
             const ChartClip& heldClip = m_song.clips[heldSection.clipIndex];
             double toleranceSeconds = heldClip.releaseToleranceMs / 1000.0;
@@ -460,24 +460,24 @@ void GameSession::Update()
             m_hasPendingAdvance = false;
 
             const ChartSection& finishedSection = m_song.sections[m_currentSectionIndex];
-            if (finishedSection.playMode == PlayMode::Learn)
+            if (finishedSection.kind == SectionKind::Learn)
             {
                 // Only a learn section's clip switches init_volume ->
-                // volume; a solo clip already plays at `volume`
+                // volume; a break clip already plays at `volume`
                 // throughout (there's no lock-in event to switch on).
                 m_audioEngine.SetVolume(m_stemHandles[finishedSection.clipIndex],
                                          static_cast<float>(m_song.clips[finishedSection.clipIndex].volume));
             }
-            else if (finishedSection.playMode == PlayMode::Solo)
+            else if (finishedSection.kind == SectionKind::Break || finishedSection.kind == SectionKind::Reset)
             {
                 // Unlike a locked-in learn clip (which keeps playing by
-                // design, to build up the arrangement), a solo section
+                // design, to build up the arrangement), a break section
                 // is a one-off scripted interlude - stop it once its own
                 // loop_count wait completes so it doesn't drone on
                 // underneath every subsequent section until the next
-                // solo's StopAll() happens to kill it. Safe no-op for an
-                // empty-clip solo (clipIndex == -1, guarded by
-                // StopClipLoop itself).
+                // break/reset's StopAll() happens to kill it. Safe no-op
+                // for a reset (clipIndex == -1, guarded by StopClipLoop
+                // itself).
                 StopClipLoop(finishedSection.clipIndex);
             }
 
@@ -499,7 +499,7 @@ void GameSession::Update()
         // advances above) - keeps notes timing out/getting judged instead of
         // freezing the instant the streak requirement is met.
         const ChartSection& section = m_song.sections[m_currentSectionIndex];
-        if (section.playMode == PlayMode::Learn)
+        if (section.kind == SectionKind::Learn)
         {
             const ChartClip& clip = m_song.clips[section.clipIndex];
             double toleranceSeconds = EffectiveStartToleranceSeconds(clip, section.clipIndex);
@@ -548,7 +548,7 @@ StemHandle GameSession::DebugStemHandle(int clipIndex) const
     return m_stemHandles[clipIndex];
 }
 
-// Returns the clip the current section refers to, or nullptr if there's no current section or it's an empty solo.
+// Returns the clip the current section refers to, or nullptr if there's no current section or it's a reset.
 const ChartClip* GameSession::CurrentClip() const
 {
     if (m_currentSectionIndex < 0 || m_currentSectionIndex >= static_cast<int>(m_song.sections.size()))
@@ -563,14 +563,14 @@ const ChartClip* GameSession::CurrentClip() const
     return &m_song.clips[clipIndex];
 }
 
-// Returns the current section's play mode, or Learn as a harmless default if there's no current section.
-PlayMode GameSession::CurrentPlayMode() const
+// Returns the current section's kind, or Learn as a harmless default if there's no current section.
+SectionKind GameSession::CurrentSectionKind() const
 {
     if (m_currentSectionIndex < 0 || m_currentSectionIndex >= static_cast<int>(m_song.sections.size()))
     {
-        return PlayMode::Learn;
+        return SectionKind::Learn;
     }
-    return m_song.sections[m_currentSectionIndex].playMode;
+    return m_song.sections[m_currentSectionIndex].kind;
 }
 
 int GameSession::CurrentStreak() const
@@ -613,7 +613,7 @@ int GameSession::NextNonBackgroundSectionAtOrAfter(int startIndex) const
 {
     for (int i = std::max(startIndex, 0); i < static_cast<int>(m_song.sections.size()); ++i)
     {
-        if (m_song.sections[i].playMode != PlayMode::Background)
+        if (m_song.sections[i].kind != SectionKind::Background)
         {
             return i;
         }
@@ -629,7 +629,7 @@ const ChartClip* GameSession::PreviewClip() const
     if (m_phase == GamePhase::CountIn)
     {
         int idx = NextNonBackgroundSectionAtOrAfter(0);
-        if (idx < 0 || m_song.sections[idx].playMode != PlayMode::Learn)
+        if (idx < 0 || m_song.sections[idx].kind != SectionKind::Learn)
         {
             return nullptr;
         }
@@ -642,10 +642,10 @@ const ChartClip* GameSession::PreviewClip() const
     }
 
     // Applies uniformly whether the current section is Learn-awaiting-
-    // advance or Solo-awaiting-advance - both set m_hasPendingAdvance the
-    // same way, so a solo section's own hold is the natural place to
-    // preview the *next* learn section's dots, exactly like a learn
-    // section's own hold already was.
+    // advance or Break/Reset-awaiting-advance - all three set
+    // m_hasPendingAdvance the same way, so a break/reset section's own
+    // hold is the natural place to preview the *next* learn section's
+    // dots, exactly like a learn section's own hold already was.
     if (m_isInIntro)
     {
         // Structurally only ever true while current is Learn (set only in
@@ -655,7 +655,7 @@ const ChartClip* GameSession::PreviewClip() const
     if (m_hasPendingAdvance)
     {
         int nextIdx = NextNonBackgroundSectionAtOrAfter(m_currentSectionIndex + 1);
-        if (nextIdx < 0 || m_song.sections[nextIdx].playMode != PlayMode::Learn)
+        if (nextIdx < 0 || m_song.sections[nextIdx].kind != SectionKind::Learn)
         {
             return nullptr;
         }
@@ -761,7 +761,7 @@ void GameSession::RecordOnsetJudgement(double startBeat, int lane, JudgementResu
 
 // Begins the section at the given index, kicking off any background clip
 // queued by the previous section first, then dispatching on this section's
-// own play_mode.
+// own kind.
 void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
 {
     m_currentSectionIndex = sectionIndex;
@@ -781,9 +781,9 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
     // the previous section (if it was `background`) queued, before this
     // section's own logic runs, so the two play out in parallel from here.
     // Once started, a background clip loops indefinitely - exactly like a
-    // locked-in learn clip - until a later `solo` section's StopAll() (or
-    // Stop()/Start()) silences it; loop_count has no effect on background
-    // sections.
+    // locked-in learn clip - until a later `break`/`reset` section's
+    // StopAll() (or Stop()/Start()) silences it; loop_count has no effect
+    // on background sections.
     if (m_queuedBackground.clipIndex >= 0)
     {
         int bgClipIndex = m_queuedBackground.clipIndex;
@@ -793,9 +793,9 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
 
     const ChartSection& section = m_song.sections[sectionIndex];
 
-    switch (section.playMode)
+    switch (section.kind)
     {
-        case PlayMode::Background:
+        case SectionKind::Background:
         {
             // Never blocks, never itself occupies "current" for judging
             // purposes - queue its clip for the *next* BeginSection and
@@ -815,71 +815,86 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
             return;
         }
 
-        case PlayMode::Solo:
+        case SectionKind::Break:
         {
             m_audioEngine.StopAll();
             std::fill(m_clipIsPlaying.begin(), m_clipIsPlaying.end(), false);
 
             // Same kNoteFallBeats guarantee SchedulePendingAdvance gives a
-            // locked-in learn section: without it, a short/empty-clip solo
-            // can hand off to the next learn section with its first note's
+            // locked-in learn section: without it, a short break can hand
+            // off to the next learn section with its first note's
             // scheduled beat only an instant away, so the note lane's
             // preview lands it already at (or past) the judge line instead
             // of spawning at the top edge with its full travel time.
             double secondsPerBeat = 60.0 / m_song.bpm;
             double tFallSeconds = kNoteFallBeats * secondsPerBeat;
 
-            if (section.clipIndex >= 0)
-            {
-                const ChartClip& clip = m_song.clips[section.clipIndex];
-                double stemDuration = m_audioEngine.GetStemDurationSeconds(m_stemHandles[section.clipIndex]);
-                double nowSeconds = m_clock.ElapsedSeconds();
+            const ChartClip& clip = m_song.clips[section.clipIndex];
+            double stemDuration = m_audioEngine.GetStemDurationSeconds(m_stemHandles[section.clipIndex]);
+            double nowSeconds = m_clock.ElapsedSeconds();
 
-                // A solo's loop_count is already known right now (unlike a
-                // learn clip, whose eventual stop time depends on future
-                // player input), so it's handed straight to StartClipLoop:
-                // the voice stops itself naturally and sample-accurately
-                // once its loops are done, instead of relying solely on
-                // the polled StopClipLoop() call below to catch the exact
-                // instant - which could otherwise let a fraction of a
-                // second of the loop's beginning bleed through first,
-                // especially audible at the very end of a chart where
-                // nothing else is left playing to mask it. But that voice
-                // only plays a *finite* number of passes and then genuinely
-                // stops - unlike a locked-in learn clip, which loops
-                // forever - so loop_count alone isn't necessarily enough to
-                // cover the kNoteFallBeats wait below: extend the loop
-                // count itself (not just the wait) until it is, or the
-                // voice would self-stop early and leave real silence for
-                // whatever's left of the wait instead of playing audio the
-                // whole time.
-                int loopCount = std::max(section.loopCount, 1);
-                while (stemDuration > 0.0 &&
-                       ComputeLoopFloorSeconds(nowSeconds, stemDuration, loopCount) - nowSeconds < tFallSeconds)
-                {
-                    ++loopCount;
-                }
-
-                StartClipLoop(section.clipIndex, clip.volume, loopCount);
-                // Measured from nowSeconds (captured just above, the same
-                // instant StartClipLoop records into
-                // m_clipLoopStartSeconds), not a later clock read - matches
-                // how SchedulePendingAdvance already does this for a learn
-                // section's lock-in floor.
-                m_pendingAdvanceAtSeconds = ComputeLoopFloorSeconds(nowSeconds, stemDuration, loopCount);
-            }
-            else
+            // A break's loop_count is already known right now (unlike a
+            // learn clip, whose eventual stop time depends on future
+            // player input), so it's handed straight to StartClipLoop:
+            // the voice stops itself naturally and sample-accurately
+            // once its loops are done, instead of relying solely on
+            // the polled StopClipLoop() call below to catch the exact
+            // instant - which could otherwise let a fraction of a
+            // second of the loop's beginning bleed through first,
+            // especially audible at the very end of a chart where
+            // nothing else is left playing to mask it. But that voice
+            // only plays a *finite* number of passes and then genuinely
+            // stops - unlike a locked-in learn clip, which loops
+            // forever - so loop_count alone isn't necessarily enough to
+            // cover the kNoteFallBeats wait below: extend the loop
+            // count itself (not just the wait) until it is, or the
+            // voice would self-stop early and leave real silence for
+            // whatever's left of the wait instead of playing audio the
+            // whole time.
+            int loopCount = std::max(section.loopCount, 1);
+            while (stemDuration > 0.0 &&
+                   ComputeLoopFloorSeconds(nowSeconds, stemDuration, loopCount) - nowSeconds < tFallSeconds)
             {
-                // Empty-clip solo: silence gate - stop everything, advance
-                // once the kNoteFallBeats floor below allows.
-                m_pendingAdvanceAtSeconds = m_clock.ElapsedSeconds() + tFallSeconds;
+                ++loopCount;
             }
+
+            StartClipLoop(section.clipIndex, clip.volume, loopCount);
+            // Measured from nowSeconds (captured just above, the same
+            // instant StartClipLoop records into
+            // m_clipLoopStartSeconds), not a later clock read - matches
+            // how SchedulePendingAdvance already does this for a learn
+            // section's lock-in floor.
+            m_pendingAdvanceAtSeconds = ComputeLoopFloorSeconds(nowSeconds, stemDuration, loopCount);
 
             m_hasPendingAdvance = true;
             return;
         }
 
-        case PlayMode::Learn:
+        case SectionKind::Reset:
+        {
+            m_audioEngine.StopAll();
+            std::fill(m_clipIsPlaying.begin(), m_clipIsPlaying.end(), false);
+
+            // Same kNoteFallBeats guarantee a break gives (see above):
+            // silence gate - stop everything, advance once this floor
+            // allows, so the next learn section's notes still get their
+            // full on-screen travel time to preview before going live.
+            double secondsPerBeat = 60.0 / m_song.bpm;
+            m_pendingAdvanceAtSeconds = m_clock.ElapsedSeconds() + kNoteFallBeats * secondsPerBeat;
+
+            // The floor above is purely for that eventual learn section's
+            // notes - any [background] section(s) sitting between here and
+            // there don't need it (nothing to preview), so start their
+            // audio right now instead of leaving real silence for the
+            // whole floor just because BeginSection won't actually walk
+            // through their section indices until it elapses.
+            StartImmediateBackgroundChain(sectionIndex + 1);
+
+            m_hasPendingAdvance = true;
+            return;
+        }
+
+        case SectionKind::Learn:
         {
             const ChartClip& clip = m_song.clips[section.clipIndex];
             if (clip.introBars > 0)
@@ -909,7 +924,7 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
 
 // Computes the wall-clock second at which loopCount full loops have
 // completed, counted from loopStartSeconds, given a stem of stemDuration
-// seconds. Shared by a learn section's lock-in floor, a solo section's
+// seconds. Shared by a learn section's lock-in floor, a break section's
 // unconditional wait, and a background layer's self-stop time.
 double GameSession::ComputeLoopFloorSeconds(double loopStartSeconds, double stemDuration, int loopCount)
 {
@@ -1020,6 +1035,18 @@ void GameSession::StopClipLoop(int clipIndex)
     }
     m_audioEngine.Stop(m_stemHandles[clipIndex]);
     m_clipIsPlaying[clipIndex] = false;
+}
+
+// See the header comment.
+void GameSession::StartImmediateBackgroundChain(int startIndex)
+{
+    int index = startIndex;
+    while (index < static_cast<int>(m_song.sections.size()) && m_song.sections[index].kind == SectionKind::Background)
+    {
+        int clipIndex = m_song.sections[index].clipIndex;
+        StartClipLoop(clipIndex, m_song.clips[clipIndex].volume);
+        ++index;
+    }
 }
 
 // Records a miss: resets the shared streak, and stops the current section's clip loop after 3 in a row. A no-op once already awaiting advance - the track has already locked in, so further misses shouldn't stop it or unfreeze the streak display. In easy mode, the first miss each section is instead fully forgiven (see m_easyGraceAvailable) - streak and consecutive-miss count both left untouched, as if it never happened.

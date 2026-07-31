@@ -215,7 +215,6 @@ bool ChartFile::Load(const std::wstring& chartFilePath, ChartSong& outSong, std:
     ChartSection currentSectionData;
     bool haveSection = false;
     bool clipNameProvided = false;
-    bool playModeProvided = false;
     std::wstring currentClipNameRaw;
     int sectionOrdinal = 0;
 
@@ -233,7 +232,7 @@ bool ChartFile::Load(const std::wstring& chartFilePath, ChartSong& outSong, std:
 
     auto sectionContext = [&]()
     {
-        std::wstring context = L"section #" + std::to_wstring(sectionOrdinal + 1);
+        std::wstring context = L"[" + currentBlockKind + L"] #" + std::to_wstring(sectionOrdinal + 1);
         if (clipNameProvided && !currentClipNameRaw.empty())
         {
             context += L" (" + currentClipNameRaw + L")";
@@ -332,20 +331,34 @@ bool ChartFile::Load(const std::wstring& chartFilePath, ChartSong& outSong, std:
         std::wstring context = sectionContext();
         ++sectionOrdinal;
 
-        if (!playModeProvided)
-        {
-            outErrors.push_back(context + L": missing required field 'play_mode'");
-        }
-
         bool clipGiven = clipNameProvided && !currentClipNameRaw.empty();
 
-        if (playModeProvided && currentSectionData.playMode == PlayMode::Learn && !clipGiven)
+        switch (currentSectionData.kind)
         {
-            outErrors.push_back(context + L": play_mode 'learn' requires a non-empty 'clip'");
-        }
-        else if (playModeProvided && currentSectionData.playMode == PlayMode::Background && !clipGiven)
-        {
-            outErrors.push_back(context + L": play_mode 'background' requires a non-empty 'clip'");
+            case SectionKind::Learn:
+                if (!clipGiven)
+                {
+                    outErrors.push_back(context + L": [learn] requires a non-empty 'clip'");
+                }
+                break;
+            case SectionKind::Break:
+                if (!clipGiven)
+                {
+                    outErrors.push_back(context + L": [break] requires a non-empty 'clip'");
+                }
+                break;
+            case SectionKind::Reset:
+                if (clipGiven)
+                {
+                    outErrors.push_back(context + L": [reset] must not specify a non-empty 'clip' (use [break] instead)");
+                }
+                break;
+            case SectionKind::Background:
+                if (!clipGiven)
+                {
+                    outErrors.push_back(context + L": [background] requires a non-empty 'clip'");
+                }
+                break;
         }
 
         if (clipGiven)
@@ -366,10 +379,10 @@ bool ChartFile::Load(const std::wstring& chartFilePath, ChartSong& outSong, std:
             else
             {
                 currentSectionData.clipIndex = foundIndex;
-                if (playModeProvided && currentSectionData.playMode == PlayMode::Learn && !song.clips[foundIndex].hasMidi)
+                if (currentSectionData.kind == SectionKind::Learn && !song.clips[foundIndex].hasMidi)
                 {
                     outErrors.push_back(context + L": clip '" + currentClipNameRaw +
-                                         L"' has no .mid file and can't be used in a play_mode 'learn' section");
+                                         L"' has no .mid file and can't be used in a [learn] section");
                 }
             }
         }
@@ -382,7 +395,6 @@ bool ChartFile::Load(const std::wstring& chartFilePath, ChartSong& outSong, std:
         currentSectionData = ChartSection{};
         haveSection = false;
         clipNameProvided = false;
-        playModeProvided = false;
         currentClipNameRaw.clear();
     };
 
@@ -412,9 +424,25 @@ bool ChartFile::Load(const std::wstring& chartFilePath, ChartSong& outSong, std:
             {
                 haveClip = true;
             }
-            else if (currentBlockKind == L"section")
+            else if (currentBlockKind == L"learn")
             {
                 haveSection = true;
+                currentSectionData.kind = SectionKind::Learn;
+            }
+            else if (currentBlockKind == L"break")
+            {
+                haveSection = true;
+                currentSectionData.kind = SectionKind::Break;
+            }
+            else if (currentBlockKind == L"reset")
+            {
+                haveSection = true;
+                currentSectionData.kind = SectionKind::Reset;
+            }
+            else if (currentBlockKind == L"background")
+            {
+                haveSection = true;
+                currentSectionData.kind = SectionKind::Background;
             }
             else if (currentBlockKind == L"song")
             {
@@ -605,36 +633,14 @@ bool ChartFile::Load(const std::wstring& chartFilePath, ChartSong& outSong, std:
                 outErrors.push_back(L"Line " + std::to_wstring(lineNumber) + L": unsupported field '" + key + L"' in [clip] section");
             }
         }
-        else if (currentBlockKind == L"section")
+        else if (currentBlockKind == L"learn" || currentBlockKind == L"break" || currentBlockKind == L"reset" ||
+                 currentBlockKind == L"background")
         {
             std::wstring context = sectionContext();
             if (key == L"clip")
             {
                 currentClipNameRaw = value;
                 clipNameProvided = true;
-            }
-            else if (key == L"play_mode")
-            {
-                if (value == L"learn")
-                {
-                    currentSectionData.playMode = PlayMode::Learn;
-                    playModeProvided = true;
-                }
-                else if (value == L"solo")
-                {
-                    currentSectionData.playMode = PlayMode::Solo;
-                    playModeProvided = true;
-                }
-                else if (value == L"background")
-                {
-                    currentSectionData.playMode = PlayMode::Background;
-                    playModeProvided = true;
-                }
-                else
-                {
-                    outErrors.push_back(L"Line " + std::to_wstring(lineNumber) + L": " + context +
-                                         L": play_mode must be one of 'learn', 'solo', 'background', got '" + value + L"'");
-                }
             }
             else if (key == L"loop_count")
             {
@@ -654,13 +660,13 @@ bool ChartFile::Load(const std::wstring& chartFilePath, ChartSong& outSong, std:
             }
             else
             {
-                outErrors.push_back(L"Line " + std::to_wstring(lineNumber) + L": unsupported field '" + key + L"' in [section] section");
+                outErrors.push_back(L"Line " + std::to_wstring(lineNumber) + L": unsupported field '" + key + L"' in [" + currentBlockKind + L"] section");
             }
         }
         else
         {
             outErrors.push_back(L"Line " + std::to_wstring(lineNumber) + L": field '" + key +
-                                 L"' is not inside a recognized [song], [clip], or [section] section");
+                                 L"' is not inside a recognized [song], [clip], [learn], [break], [reset], or [background] section");
         }
     }
 
@@ -676,7 +682,7 @@ bool ChartFile::Load(const std::wstring& chartFilePath, ChartSong& outSong, std:
     }
     if (song.sections.empty())
     {
-        outErrors.push_back(L"Chart must declare at least one [section]");
+        outErrors.push_back(L"Chart must declare at least one [learn], [break], [reset], or [background] block");
     }
 
     if (!outErrors.empty())

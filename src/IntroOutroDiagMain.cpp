@@ -554,6 +554,30 @@ int main(int argc, char** argv)
             lastSection = sectionIndex;
             lastPlayMode = playMode;
 
+            // DIAG_AUDIO_STATE=1: at every section transition, list every
+            // clip whose stem the audio engine currently reports as
+            // playing - lets a background-chain bug (a queued clip that
+            // never actually started, silently) be confirmed directly
+            // instead of inferred from section-index prints alone.
+            if (std::getenv("DIAG_AUDIO_STATE"))
+            {
+                printf("[t=%.2fs]   playing clips:", session.Clock().ElapsedSeconds());
+                bool anyPlaying = false;
+                for (size_t ci = 0; ci < session.Song().clips.size(); ++ci)
+                {
+                    if (engine.IsPlaying(session.DebugStemHandle(static_cast<int>(ci))))
+                    {
+                        printf(" %ls", session.Song().clips[ci].name.c_str());
+                        anyPlaying = true;
+                    }
+                }
+                if (!anyPlaying)
+                {
+                    printf(" (none)");
+                }
+                printf("\n");
+            }
+
             if (!watchedSoloConfirmedStopped && watchedSoloStem.IsValid())
             {
                 double pos = engine.GetPositionSeconds(watchedSoloStem);

@@ -13,7 +13,7 @@ enum class GamePhase
 {
     Idle,
     CountIn,
-    Learning, // a section is active - covers learn/solo/background alike; see CurrentPlayMode() for which
+    Learning, // a section is active - covers learn/break/reset/background alike; see CurrentSectionKind() for which
     Complete,
 };
 
@@ -27,46 +27,51 @@ enum class JudgementResult
 };
 
 // Drives the chart's ordered list of sections, one at a time. Each section
-// references a reusable clip (a stem + MIDI pattern + judging thresholds)
-// and a play_mode:
-//   - Learn: judges key presses/releases against the clip's MIDI-derived
-//     pattern (via SongClock), exactly as a lone "learn one instrument at a
-//     time" flow always has. Each of the kLaneCount lanes tracks its own
-//     note sequence completely independently - its own next-expected-note
-//     pointer, its own press/release judging, its own retry-on-mistimed-
-//     press behavior - the lanes share nothing but the streak/consecutive-
-//     miss counters, so a chart author can require simultaneous presses
-//     across lanes just by placing simultaneous notes in the MIDI file,
-//     with no special "chord" bookkeeping anywhere in here. The clip's
-//     loop starts playing (phase-aligned, at init_volume) on the player's
-//     first correct press on any lane, stops after 3 consecutive misses,
-//     and once the shared streak reaches the clip's hits_required, it
-//     locks in - dots keep coming and keep being judged for a while longer
-//     (the loop just keeps playing, switching init_volume -> volume once
-//     the section actually advances), but misses no longer stop the loop
-//     or affect timing once locked in, since there's nothing left to lose.
-//     A chart-declared loop_count (on the section, default 1) sets a floor
-//     under this: the clip must complete at least that many full loops
-//     (counted from when it first started playing) before advancing, even
-//     if the player locks in well before the first loop finishes -
-//     loop_count=1 never changes anything, since the natural "wait for the
-//     next loop boundary" behavior already guarantees at least one full
-//     loop. A clip with a declared intro_bars instead starts playing
-//     automatically (no press needed) and holds off judging/dots until
-//     that many bars pass.
-//   - Solo: stops every clip currently playing, starts this section's clip
-//     (if any) looping, and blocks advancing until loop_count full loops
-//     complete - no judging happens. An empty-clip solo just stops
-//     everything (a silence gate). Either way, advancing is also floored
-//     at kNoteFallBeats of real time from when the section began, same as
-//     a locked-in learn section, so the next section's notes always get
+// has a kind ([learn]/[break]/[reset]/[background] in the .chart file) and,
+// except for [reset], references a reusable clip (a stem + MIDI pattern +
+// judging thresholds):
+//   - Learn ([learn]): judges key presses/releases against the clip's
+//     MIDI-derived pattern (via SongClock), exactly as a lone "learn one
+//     instrument at a time" flow always has. Each of the kLaneCount lanes
+//     tracks its own note sequence completely independently - its own
+//     next-expected-note pointer, its own press/release judging, its own
+//     retry-on-mistimed-press behavior - the lanes share nothing but the
+//     streak/consecutive-miss counters, so a chart author can require
+//     simultaneous presses across lanes just by placing simultaneous notes
+//     in the MIDI file, with no special "chord" bookkeeping anywhere in
+//     here. The clip's loop starts playing (phase-aligned, at init_volume)
+//     on the player's first correct press on any lane, stops after 3
+//     consecutive misses, and once the shared streak reaches the clip's
+//     hits_required, it locks in - dots keep coming and keep being judged
+//     for a while longer (the loop just keeps playing, switching
+//     init_volume -> volume once the section actually advances), but
+//     misses no longer stop the loop or affect timing once locked in,
+//     since there's nothing left to lose. A chart-declared loop_count (on
+//     the section, default 1) sets a floor under this: the clip must
+//     complete at least that many full loops (counted from when it first
+//     started playing) before advancing, even if the player locks in well
+//     before the first loop finishes - loop_count=1 never changes
+//     anything, since the natural "wait for the next loop boundary"
+//     behavior already guarantees at least one full loop. A clip with a
+//     declared intro_bars instead starts playing automatically (no press
+//     needed) and holds off judging/dots until that many bars pass.
+//   - Break ([break]): stops every clip currently playing, starts this
+//     section's clip looping, and blocks advancing until loop_count full
+//     loops complete - no judging happens. Advancing is also floored at
+//     kNoteFallBeats of real time from when the section began, same as a
+//     locked-in learn section, so the next section's notes always get
 //     their full on-screen travel time to preview before going live.
-//   - Background: queues this section's clip to start playing (without
-//     stopping anything else) at the moment the *next* section begins, then
-//     keeps looping indefinitely - exactly like a locked-in learn clip -
-//     until a later solo section's StopAll() (or Stop()/Start()) silences
-//     it; loop_count has no effect on background sections. This section
-//     itself takes zero time and never blocks.
+//   - Reset ([reset]): stops every clip currently playing (a silence gate,
+//     no clip of its own) and advances - floored at the same
+//     kNoteFallBeats of real time as Break, for the same preview-lead-time
+//     reason.
+//   - Background ([background]): queues this section's clip to start
+//     playing (without stopping anything else) at the moment the *next*
+//     section begins, then keeps looping indefinitely - exactly like a
+//     locked-in learn clip - until a later break/reset section's
+//     StopAll() (or Stop()/Start()) silences it; loop_count has no effect
+//     on background sections. This section itself takes zero time and
+//     never blocks.
 // UI-agnostic - knows nothing about HWNDs or input devices.
 class GameSession
 {
@@ -96,9 +101,9 @@ public:
     // True exactly when OnPress(lane) would actually judge a press right
     // now (whether it turns out to be a timely hit or a mistimed miss) -
     // false whenever there's structurally nothing to press: outside a
-    // Learn section's live judging (count-in, intro, solo/background, or
-    // no chart loaded at all), or a lane the current clip never places any
-    // notes in at all. Lets the caller show its own "no note there"
+    // Learn section's live judging (count-in, intro, break/reset/
+    // background, or no chart loaded at all), or a lane the current clip
+    // never places any notes in at all. Lets the caller show its own "no note there"
     // feedback for a press this lane will otherwise just silently ignore.
     // Call CatchUpCountIn() first if a real press just happened - see its
     // own comment for why.
@@ -132,13 +137,13 @@ public:
     int CurrentSectionIndex() const;
 
     // Returns the clip the current section refers to, or nullptr if there's
-    // no current section or it's a solo section with an empty clip.
+    // no current section or it's a [reset] section (the only kind with no clip).
     const ChartClip* CurrentClip() const;
 
-    // Returns the current section's play mode. Only meaningful when
+    // Returns the current section's kind. Only meaningful when
     // CurrentClip() != nullptr or Phase() == Learning; returns
-    // PlayMode::Learn as a harmless default otherwise.
-    PlayMode CurrentPlayMode() const;
+    // SectionKind::Learn as a harmless default otherwise.
+    SectionKind CurrentSectionKind() const;
 
     int CurrentStreak() const;
 
@@ -168,9 +173,9 @@ public:
     double LaneHoldStartBeat(int lane) const;
 
     // True once the current section has locked in (learn) or finished
-    // starting its clip (solo) and is just waiting for the scheduled time
-    // before the next section begins. For a solo section, no judging
-    // happens either way. For a learn section, presses keep being judged
+    // starting its clip (break/reset) and is just waiting for the scheduled
+    // time before the next section begins. For a break/reset section, no
+    // judging happens either way. For a learn section, presses keep being judged
     // as normal throughout this window - dots keep coming and keep turning
     // red/green - but misses stop affecting anything (the streak display
     // freezes and the clip loop no longer stops from consecutive misses),
@@ -190,14 +195,14 @@ public:
 
     // Returns the clip whose dots should be shown as an early preview while
     // the player can't act yet - during the count-in, a clip's own
-    // intro_bars, or the current section's own awaiting-advance hold (learn
-    // or solo alike). Only ever returns non-null when the very next
+    // intro_bars, or the current section's own awaiting-advance hold (learn,
+    // break, or reset alike). Only ever returns non-null when the very next
     // non-Background section is itself Learn: skips forward over any
     // intervening Background section (since those collapse instantly and
-    // never delay anything), but does NOT skip over an intervening Solo
-    // section, since that solo's own screen time hasn't happened yet and is
-    // itself the right moment to preview what comes after it. Returns
-    // nullptr if there's nothing to preview right now.
+    // never delay anything), but does NOT skip over an intervening Break or
+    // Reset section, since that section's own screen time hasn't happened
+    // yet and is itself the right moment to preview what comes after it.
+    // Returns nullptr if there's nothing to preview right now.
     const ChartClip* PreviewClip() const;
 
     // Returns the beat position of the first note on this lane that
@@ -212,7 +217,7 @@ public:
 
 private:
     // Begins (or resumes) the section at the given index, dispatching on
-    // its play_mode. scheduledBeat is the ideal beat this transition was
+    // its kind. scheduledBeat is the ideal beat this transition was
     // scheduled for (e.g. CountInSeconds() or m_pendingAdvanceAtSeconds
     // converted to beats) - used instead of the actually-polled clock
     // position to pick a learn section's first note, so it's deterministic
@@ -236,7 +241,7 @@ private:
     // finiteLoopCount == 0 (the default) loops forever, for a clip whose
     // eventual stop time isn't known yet (learn/background). A positive
     // value is for a clip whose total loop_count is already known right
-    // now (a solo section) - it's handed straight to AudioEngine so the
+    // now (a break section) - it's handed straight to AudioEngine so the
     // voice stops itself naturally and sample-accurately, rather than
     // relying on a later polled StopClipLoop() call to catch the exact
     // instant (which can let a fraction of a second of the loop's
@@ -245,6 +250,20 @@ private:
 
     // Stops clipIndex's stem if it's playing.
     void StopClipLoop(int clipIndex);
+
+    // Immediately starts every consecutive [background] section's clip
+    // looping, starting at startIndex - not queued for the next
+    // BeginSection like a background reached in the ordinary course of
+    // play. Used by a [reset] section: its own advance is floored at
+    // kNoteFallBeats purely so the eventual next *learn* section's notes
+    // get their full on-screen travel time to preview (background/reset
+    // sections share the same preview machinery a locked-in learn section
+    // uses) - background clips don't need any of that lead time, so
+    // gating their audio behind the same floor was silence for no reason.
+    // Safe to call even if BeginSection later walks through these same
+    // sections for real once the floor elapses - StartClipLoop no-ops
+    // once a clip is already playing.
+    void StartImmediateBackgroundChain(int startIndex);
 
     // Records a miss: resets the shared streak, and stops the current
     // section's clip loop after 3 in a row. A no-op once already awaiting
@@ -293,8 +312,8 @@ private:
     // desync risk in that case, and it starts judging as soon as each
     // lane's own next note is actually reachable instead of always
     // waiting for a fresh cycle, which matters a lot for a long-spanning
-    // pattern (many bars) reached after a leading solo/background section,
-    // or a scheduled transition that doesn't land near a bar boundary - the
+    // pattern (many bars) reached after a leading break/reset/background
+    // section, or a scheduled transition that doesn't land near a bar boundary - the
     // wait could otherwise be most of an entire loop of dead air. Falls
     // back to FirstReachableOnset's per-lane, always-safe behavior only
     // when the lanes' own candidates would actually land in different
@@ -313,13 +332,13 @@ private:
     double PreviewTransitionSeconds() const;
 
     // Returns the index of the first section at or after startIndex whose
-    // play_mode isn't Background (Background sections never persist as
+    // kind isn't Background (Background sections never persist as
     // "current" - BeginSection always recurses straight through them
     // within the same call - so they're never a real waiting/preview
     // point), or -1 if none remain. Used by PreviewClip() to find the next
     // real stopping point; whether that section is itself Learn is checked
-    // separately by the caller, since an intervening Solo section is a
-    // real stopping point too, just not a previewable one.
+    // separately by the caller, since an intervening Break or Reset section
+    // is a real stopping point too, just not a previewable one.
     int NextNonBackgroundSectionAtOrAfter(int startIndex) const;
 
     // If the clip's declared span is shorter than its stem's actual
@@ -348,7 +367,7 @@ private:
     // Computes the wall-clock second at which loopCount full loops have
     // completed, counted from loopStartSeconds, given a stem of
     // stemDuration seconds - shared by a learn section's lock-in floor, a
-    // solo section's unconditional wait, and a background layer's
+    // break section's unconditional wait, and a background layer's
     // self-stop time. Returns loopStartSeconds itself if stemDuration <= 0.
     static double ComputeLoopFloorSeconds(double loopStartSeconds, double stemDuration, int loopCount);
 
@@ -418,7 +437,7 @@ private:
     bool m_easyGraceAvailable = false;
 
     // Per-clip playback bookkeeping - multiple clips can legitimately play
-    // concurrently now (the current learn/solo clip, plus zero or more
+    // concurrently now (the current learn/break clip, plus zero or more
     // background layers), so this replaced a pair of single scalars.
     // Both sized to m_song.clips.size() on every LoadChart.
     std::vector<bool> m_clipIsPlaying;
@@ -431,8 +450,8 @@ private:
     JudgementResult m_lastJudgement = JudgementResult::None;
 
     // Set once a learn section's shared streak meets its clip's
-    // requirement, or immediately on entering a solo section; new presses
-    // stop being judged and the session advances at m_pendingAdvanceAtSeconds.
+    // requirement, or immediately on entering a break or reset section; new
+    // presses stop being judged and the session advances at m_pendingAdvanceAtSeconds.
     bool m_hasPendingAdvance = false;
     double m_pendingAdvanceAtSeconds = 0.0;
 
@@ -444,7 +463,7 @@ private:
 
     // False until the very first note of the song has been anchored (at
     // the first learn section actually reached - possibly after a leading
-    // solo/background section - either directly, or once its intro_bars
+    // break/reset/background section - either directly, or once its intro_bars
     // finish). While false, that anchor uses FirstReachableOnset instead
     // of plain NextOnsetAfter, searching every lane against the SAME
     // pattern cycle instead of each lane independently: scheduledBeat at

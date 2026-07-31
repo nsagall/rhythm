@@ -10,6 +10,5 @@ display_name = FastAndHeld
 name = multilane_test
 hits_required = 6
 
-[section]
+[learn]
 clip = multilane_test
-play_mode = learn

@@ -8,6 +8,5 @@ time_signature = 4/4
 display_name = SoloOnly
 name = solo_only
 
-[section]
+[break]
 clip = solo_only
-play_mode = solo

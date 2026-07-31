@@ -28,51 +28,70 @@ hits_required = 16
 [clip]
 display_name = Bridge
 name = bridge
-hits_required = 16
-
-[clip]
-display_name = Bridge Bass
-name = bridge_bass
-hits_required = 16
 
 [clip]
 display_name = Melodica
 name = melodica
 hits_required = 24
 
-[section]
+[clip]
+display_name = Melodica
+name = melodica_2
+
+[clip]
+display_name = Background
+name = background_2
+
+[clip]
+display_name = Drums
+name = drums_2
+
+[learn]
 clip = organ
-play_mode = learn
 loop_count = 2
 
-[section]
+[learn]
 clip = bass
-play_mode = learn
 loop_count = 1
 
-[section]
+[learn]
 clip = drums
-play_mode = learn
 loop_count = 1
 
-[section]
+[learn]
 clip = piano
-play_mode = learn
 loop_count = 1
 
-[section]
-clip = 
-play_mode = solo
-
-[section]
-clip = bridge
-play_mode = background
-
-[section]
-clip = bridge_bass
-play_mode = learn
-
-[section]
+[learn]
 clip = melodica
-play_mode = learn
 loop_count = 2
+
+[break]
+clip = bridge
+
+[background]
+clip = background_2
+
+[learn]
+clip = melodica_2
+
+[reset]
+
+[background]
+clip = drums
+
+[background]
+clip = piano
+
+[learn]
+clip = organ
+loop_count = 2
+
+[reset]
+
+[learn]
+clip = drums_2
+
+[learn]
+clip = piano
+

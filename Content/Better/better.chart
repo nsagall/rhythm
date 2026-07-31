@@ -3,7 +3,7 @@ title = Wouldn't It Just Be Better?
 bpm = 119
 time_signature = 4/4
 start_tolerance_ms = 100
-release_tolerance_ms = 1000
+release_tolerance_ms = 600
 
 [clip]
 display_name = Drums 1
@@ -23,21 +23,16 @@ name = bass
 display_name = Background 2
 name = background_2
 
-[section]
-play_mode = background
+[background]
 clip = bass
 
-[section]
+[learn]
 clip = drums_1
-play_mode = learn
 
-[section]
-play_mode = solo
+[reset]
 
-[section]
-play_mode = background
+[background]
 clip = background_2
 
-[section]
-play_mode = learn
+[learn]
 clip = drums_2

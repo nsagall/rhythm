@@ -8,6 +8,5 @@ display_name = SoloOnly
 name = solo_only
 hits_required = 4
 
-[section]
+[learn]
 clip = solo_only
-play_mode = learn

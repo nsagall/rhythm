@@ -13,6 +13,5 @@ display_name = Hat
 name = fast_test_hat
 hits_required = 4
 
-[section]
+[learn]
 clip = fast_test_hat
-play_mode = learn

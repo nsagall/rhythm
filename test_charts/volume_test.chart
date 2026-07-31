@@ -17,10 +17,8 @@ display_name = Snare
 name = snare
 hits_required = 4
 
-[section]
+[learn]
 clip = bass_drum
-play_mode = learn
 
-[section]
+[learn]
 clip = snare
-play_mode = learn

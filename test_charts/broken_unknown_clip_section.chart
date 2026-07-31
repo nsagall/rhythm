@@ -8,6 +8,5 @@ display_name = Hat
 name = fast_test_hat
 hits_required = 4
 
-[section]
+[learn]
 clip = DoesNotExist
-play_mode = learn

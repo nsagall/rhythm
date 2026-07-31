@@ -8,6 +8,5 @@ display_name = Hat
 name = fast_test_hat
 hits_required = 4
 
-[section]
+[reset]
 clip = fast_test_hat
-play_mode = solooo

@@ -27,14 +27,11 @@ hits_required = 8
 start_tolerance_ms = 130
 release_tolerance_ms = 130
 
-[section]
+[learn]
 clip = bass_drum
-play_mode = learn
 
-[section]
+[learn]
 clip = snare
-play_mode = learn
 
-[section]
+[learn]
 clip = fast_test_hat
-play_mode = learn

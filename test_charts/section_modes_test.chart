@@ -17,30 +17,25 @@ hits_required = 1
 
 ; Queues Pad to start the instant the next section (Click, learn) begins -
 ; purely additive, never blocks, never itself becomes the "current" section.
-[section]
+[background]
 clip = bass_drum
-play_mode = background
 loop_count = 2
 
 ; Pad starts here, playing alongside Click while it's learned.
-[section]
+[learn]
 clip = fast_test_hat
-play_mode = learn
 
-; Empty-clip solo: a silence gate that stops everything (including Pad,
-; if it's still playing) and advances immediately.
-[section]
-play_mode = solo
+; Reset: a silence gate that stops everything (including Pad, if it's
+; still playing) and advances.
+[reset]
 
-; Solo reusing the same Pad clip that was played as a background layer
-; earlier - proves clips can be reused across different play modes.
-[section]
+; Break reusing the same Pad clip that was played as a background layer
+; earlier - proves clips can be reused across different block kinds.
+[break]
 clip = bass_drum
-play_mode = solo
 loop_count = 1
 
 ; Second learn section reusing Click - proves a clip can be learned more
 ; than once in the same chart.
-[section]
+[learn]
 clip = fast_test_hat
-play_mode = learn

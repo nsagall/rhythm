@@ -10,6 +10,5 @@ display_name = Bass
 name = bass_drum
 hits_required = 12
 
-[section]
+[learn]
 clip = bass_drum
-play_mode = learn
