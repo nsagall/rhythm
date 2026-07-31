@@ -689,15 +689,26 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
     bool nextClipShowing = false;
     if (learnAwaitingAdvance)
     {
+        double secondsPerBeat = 60.0 / session.Song().bpm;
+        double advanceAtBeat = session.PendingAdvanceAtSeconds() / secondsPerBeat;
+
         if (session.PreviewClip() == nullptr)
         {
-            nextClipShowing = true;
+            // Nothing to hand off to (end of chart, the next section is
+            // solo, or the next learn section hides its own dots behind an
+            // intro) - keep this clip's own dots (and judging) live right
+            // up until the actual scheduled advance, exactly like the
+            // fallback below does when there IS a preview but it isn't
+            // visible yet. Without this, locking in immediately made
+            // nextClipShowing true - and with it, dotsClip null - for the
+            // *entire* wait until the real advance, which could be many
+            // seconds with loop_count > 1: every note still due kept
+            // getting judged (Update() doesn't care what's drawn) but
+            // simply stopped being drawn at all.
+            nextClipShowing = (nowBeat >= advanceAtBeat);
         }
         else
         {
-            double secondsPerBeat = 60.0 / session.Song().bpm;
-            double advanceAtBeat = session.PendingAdvanceAtSeconds() / secondsPerBeat;
-
             double earliestOnset = -1.0;
             for (int lane = 0; lane < kLaneCount; ++lane)
             {

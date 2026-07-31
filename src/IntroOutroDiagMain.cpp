@@ -388,14 +388,14 @@ int main(int argc, char** argv)
             bool nextClipShowing = false;
             if (learnAwaitingAdvance)
             {
+                double advanceAtBeat = session.PendingAdvanceAtSeconds() / secondsPerBeat;
                 const ChartClip* preview = session.PreviewClip();
                 if (preview == nullptr)
                 {
-                    nextClipShowing = true;
+                    nextClipShowing = (nowBeat >= advanceAtBeat);
                 }
                 else
                 {
-                    double advanceAtBeat = session.PendingAdvanceAtSeconds() / secondsPerBeat;
                     double earliestOnset = -1.0;
                     for (int lane = 0; lane < kLaneCount; ++lane)
                     {
@@ -635,15 +635,15 @@ int main(int argc, char** argv)
             // something is actually about to become visible (or the
             // transition-beat fallback, when nothing ever would be).
             const ChartClip* mirroredPreview = session.PreviewClip();
+            double nowBeat = session.Clock().BeatPosition();
+            double advanceAtBeat = session.PendingAdvanceAtSeconds() / secondsPerBeat;
             bool mirroredNextClipShowing;
             if (mirroredPreview == nullptr)
             {
-                mirroredNextClipShowing = true;
+                mirroredNextClipShowing = (nowBeat >= advanceAtBeat);
             }
             else
             {
-                double nowBeat = session.Clock().BeatPosition();
-                double advanceAtBeat = session.PendingAdvanceAtSeconds() / secondsPerBeat;
                 double earliestOnset = -1.0;
                 for (int lane = 0; lane < kLaneCount; ++lane)
                 {
@@ -737,13 +737,13 @@ int main(int argc, char** argv)
                 bool nextClipShowingCheck = false;
                 if (learnAwaitingAdvanceCheck)
                 {
+                    double advanceAtBeat = session.PendingAdvanceAtSeconds() / secondsPerBeat;
                     if (preview == nullptr)
                     {
-                        nextClipShowingCheck = true;
+                        nextClipShowingCheck = (nowBeatCheck >= advanceAtBeat);
                     }
                     else
                     {
-                        double advanceAtBeat = session.PendingAdvanceAtSeconds() / secondsPerBeat;
                         nextClipShowingCheck = (nowBeatCheck >= advanceAtBeat - kNoteFallBeats);
                     }
                 }
