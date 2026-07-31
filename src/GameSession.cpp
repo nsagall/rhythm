@@ -403,9 +403,48 @@ void GameSession::Update()
 
     if (m_phase == GamePhase::CountIn)
     {
-        if (now >= kCountInSeconds)
+        // kCountInSeconds is a flat wall-clock duration with no relationship
+        // to the song's beat grid, so for some BPMs/patterns it lands a hair
+        // *after* the first section's true first note instead of before it.
+        // FirstReachableOnsetForAllLanes still correctly keeps that note as
+        // the anchor rather than skipping to the next one (which would
+        // reproduce the historical "starts on the second beat with two
+        // notes" bug), but by the time this transition actually fires, the
+        // note's own start-tolerance window is already mostly or entirely
+        // elapsed - making it nearly impossible to hit. Capping the
+        // transition at that note's own onset (never later) guarantees its
+        // full forward tolerance window is still intact the instant judging
+        // becomes possible. Only ever shortens the count-in below its usual
+        // duration - a song whose first note falls later, the normal case,
+        // is completely unaffected.
+        double transitionSeconds = kCountInSeconds;
+        const ChartClip* firstClip = PreviewClip();
+        if (firstClip)
         {
-            BeginSection(0, kCountInSeconds / secondsPerBeat);
+            double baselineBeat = kCountInSeconds / secondsPerBeat;
+            double allLanes[kLaneCount];
+            FirstReachableOnsetForAllLanes(baselineBeat - 1e-6, *firstClip, allLanes);
+            double earliestOnsetBeat = -1.0;
+            for (int lane = 0; lane < kLaneCount; ++lane)
+            {
+                if (firstClip->laneNotes[lane].empty())
+                {
+                    continue;
+                }
+                if (earliestOnsetBeat < 0.0 || allLanes[lane] < earliestOnsetBeat)
+                {
+                    earliestOnsetBeat = allLanes[lane];
+                }
+            }
+            if (earliestOnsetBeat >= 0.0)
+            {
+                transitionSeconds = std::min(transitionSeconds, earliestOnsetBeat * secondsPerBeat);
+            }
+        }
+
+        if (now >= transitionSeconds)
+        {
+            BeginSection(0, transitionSeconds / secondsPerBeat);
         }
         return;
     }
