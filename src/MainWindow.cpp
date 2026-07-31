@@ -41,7 +41,7 @@ constexpr int kToolbarHeight = 46;
 constexpr int kLaneMargin = 20;
 constexpr int kLaneMinWidth = 200;
 constexpr int kLaneMaxWidth = 480;
-constexpr int kLaneMinHeight = 240;
+constexpr int kLaneMinHeight = 320;
 constexpr int kSongListMaxWidth = 560;
 constexpr int kSongRowHeight = 46;
 constexpr int kHintAreaHeight = 34; // reserved below the song list rect for DrawSongList's hint line
@@ -157,7 +157,7 @@ bool MainWindow::Create(HINSTANCE hInstance, int nCmdShow)
         kWindowTitle,
         WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT, CW_USEDEFAULT,
-        1024, 768,
+        1024, 840,
         nullptr, nullptr, hInstance, this
     );
 

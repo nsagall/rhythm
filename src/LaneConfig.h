@@ -25,4 +25,4 @@ constexpr int kLaneMidiPitches[kLaneCount] = { 72, 74, 76, 77 };
 // locked-in learn section always leaves at least this much real time
 // before the next section, so the next section's notes get their full
 // on-screen travel time instead of popping in late/partway down the lane).
-constexpr double kNoteFallBeats = 3.0;
+constexpr double kNoteFallBeats = 4.0;

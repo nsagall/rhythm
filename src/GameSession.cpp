@@ -402,45 +402,13 @@ void GameSession::Update()
 
     if (m_phase == GamePhase::CountIn)
     {
-        // The count-in is one full bar, but that's still not guaranteed to
-        // land exactly on wherever the first section's own pattern actually
-        // starts within a bar. FirstReachableOnsetForAllLanes correctly
-        // keeps the true first note as the anchor rather than skipping to
-        // the next one (which would reproduce the historical "starts on the
-        // second beat with two notes" bug) even when it falls a little
-        // before the bar boundary, but if this transition fired at the full
-        // bar length regardless, a note anchored that far early would have
-        // most or all of its start-tolerance window already elapsed by the
-        // time judging actually becomes possible. Capping the transition at
-        // that note's own onset (never later) guarantees its full forward
-        // tolerance window is still intact instead. Only ever shortens the
-        // count-in below one bar - a song whose first note falls on or after
-        // the downbeat, the normal case, is completely unaffected.
+        // The count-in is one full bar, which is bar-aligned by
+        // construction - unlike the old fixed wall-clock duration, it can't
+        // land in the middle of the first section's pattern, so there's
+        // nothing here to protect against tolerance-wise: whatever
+        // FirstReachableOnsetForAllLanes anchors to at this boundary always
+        // has its full start-tolerance window still ahead of it.
         double transitionSeconds = CountInSeconds();
-        const ChartClip* firstClip = PreviewClip();
-        if (firstClip)
-        {
-            double baselineBeat = m_song.beatsPerBar;
-            double allLanes[kLaneCount];
-            FirstReachableOnsetForAllLanes(baselineBeat - 1e-6, *firstClip, allLanes);
-            double earliestOnsetBeat = -1.0;
-            for (int lane = 0; lane < kLaneCount; ++lane)
-            {
-                if (firstClip->laneNotes[lane].empty())
-                {
-                    continue;
-                }
-                if (earliestOnsetBeat < 0.0 || allLanes[lane] < earliestOnsetBeat)
-                {
-                    earliestOnsetBeat = allLanes[lane];
-                }
-            }
-            if (earliestOnsetBeat >= 0.0)
-            {
-                transitionSeconds = std::min(transitionSeconds, earliestOnsetBeat * secondsPerBeat);
-            }
-        }
-
         if (now >= transitionSeconds)
         {
             BeginSection(0, transitionSeconds / secondsPerBeat);
@@ -1274,22 +1242,13 @@ void GameSession::FirstReachableOnsetForAllLanes(double afterBeat, const ChartCl
 {
     double span = clip.spanBeats;
 
-    // A note up to one press-tolerance window before afterBeat is still
-    // legitimately hittable - OnPress's own tolerance check is symmetric
-    // around the note's true onset, not one-sided - so searching from here
-    // instead of afterBeat itself lets the pattern's own true opening note
-    // stay the very first anchor whenever it's still within reach, rather
-    // than always skipping to whatever comes after it just because a fixed
-    // count-in duration happened to land a hair past it. This is exactly
-    // the scenario that produced the original "starts on the second beat
-    // with two notes instead of the single opening note" bug: the true
-    // first note and the very next one (here, a note shared with another
-    // lane) can be close enough together that the old, tolerance-blind
-    // search skipped straight past the former to the latter.
-    double secondsPerBeat = 60.0 / m_song.bpm;
-    double toleranceBeats = (clip.startToleranceMs / 1000.0) / secondsPerBeat;
-    double searchFrom = afterBeat - toleranceBeats;
-
+    // Every caller passes a bar-aligned afterBeat (the count-in's own
+    // one-bar length, or a clip's intro_bars tail - both derived straight
+    // from the song's beatsPerBar, not some arbitrary wall-clock offset),
+    // give or take a tiny epsilon so a note landing exactly on that
+    // boundary still counts as reachable rather than skipped. No tolerance
+    // widening is needed on top of that to keep the pattern's own true
+    // opening note as the anchor.
     double candidates[kLaneCount];
     long long minCycle = 0;
     long long maxCycle = 0;
@@ -1297,7 +1256,7 @@ void GameSession::FirstReachableOnsetForAllLanes(double afterBeat, const ChartCl
 
     for (int lane = 0; lane < kLaneCount; ++lane)
     {
-        candidates[lane] = NextOnsetAfter(searchFrom, clip, lane);
+        candidates[lane] = NextOnsetAfter(afterBeat, clip, lane);
         if (clip.laneNotes[lane].empty())
         {
             continue; // no real note on this lane to constrain the cycle check with
@@ -1330,7 +1289,7 @@ void GameSession::FirstReachableOnsetForAllLanes(double afterBeat, const ChartCl
 
     for (int lane = 0; lane < kLaneCount; ++lane)
     {
-        outBeats[lane] = FirstReachableOnset(searchFrom, clip, lane);
+        outBeats[lane] = FirstReachableOnset(afterBeat, clip, lane);
     }
 }
 
