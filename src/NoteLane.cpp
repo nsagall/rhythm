@@ -22,6 +22,15 @@ constexpr DWORD kFlashDurationMs = 220;
 constexpr DWORD kConfettiDurationMs = 1400;
 constexpr int kConfettiPieceCount = 60;
 
+// Notes-exploding burst (see ExplosionParticle) - shorter and snappier
+// than the confetti burst since it's marking a bunch of individual notes
+// popping at once, not one big celebration.
+constexpr DWORD kExplosionDurationMs = 500;
+constexpr int kExplosionParticlesPerNote = 10;
+constexpr double kExplosionMinSpeedPxPerSec = 90.0;
+constexpr double kExplosionMaxSpeedPxPerSec = 260.0;
+constexpr double kExplosionDragPerSec = 2.5; // exponential slowdown - a burst outward that settles, not a straight-line fly-off
+
 // A miss ripple's speed was originally 260 px/sec; it now takes 75% as long
 // to grow past the lane and disappear, so it travels the same distance in
 // 75% of the time - i.e. 1/0.75 as fast. A hit ripple takes half as long
@@ -495,6 +504,30 @@ void DrawConfetti(HDC hdc, const std::vector<ConfettiPiece>& pieces, double elap
     }
 }
 
+// Draws the in-progress notes-exploding burst: each spark flies straight
+// outward from wherever its note was, under exponential drag rather than
+// gravity - decelerating to a stop rather than falling - fading out
+// linearly over its short, fixed lifetime.
+void DrawExplosion(HDC hdc, const std::vector<ExplosionParticle>& particles, double elapsedSeconds, double t)
+{
+    constexpr int kParticleRadiusPx = 3;
+
+    BYTE fadeAlpha = static_cast<BYTE>(ClampChannel(static_cast<int>(255 * (1.0 - t))));
+
+    // Closed-form position under v(t) = v0*exp(-k*t): integrates to
+    // x0 + (v0/k)*(1 - exp(-k*t)), asymptotically settling instead of
+    // ever reversing or overshooting like a naive per-frame velocity
+    // decay would.
+    double factor = (1.0 - std::exp(-kExplosionDragPerSec * elapsedSeconds)) / kExplosionDragPerSec;
+
+    for (const ExplosionParticle& particle : particles)
+    {
+        int x = static_cast<int>(particle.x + particle.velX * factor);
+        int y = static_cast<int>(particle.y + particle.velY * factor);
+        DrawAlphaCircle(hdc, x, y, kParticleRadiusPx, particle.color, fadeAlpha);
+    }
+}
+
 } // namespace
 
 // Stores the window that owns this lane's timer and repaints.
@@ -703,19 +736,13 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
         DrawReceptor(hdc, x, lineY, kLaneColors[lane], held, flashing, flashColor, flashProgress);
     }
 
-    // Burst a confetti celebration across the full width of the lane at two
-    // separate moments: the instant a track locks in (learnAwaitingAdvance
-    // flips false->true), and again when its dots actually give way to the
-    // next clip's preview (nextClipShowing flips false->true) - the second
-    // burst is what keeps whatever notes are still on screen at that exact
-    // instant (there's very likely at least one, since dots keep coming
-    // right up until this moment) from just vanishing with no visual
-    // treatment at all. Positions/velocities/colors are all generated here
-    // from PseudoRandom() (same stable-scatter trick the background
-    // sparkles use) and simulated purely from elapsed time in DrawConfetti.
+    // The instant a track locks in (learnAwaitingAdvance flips
+    // false->true), burst a confetti celebration across the full width of
+    // the lane. Positions/velocities/colors are all generated here from
+    // PseudoRandom() (same stable-scatter trick the background sparkles
+    // use) and simulated purely from elapsed time in DrawConfetti.
     bool justLockedIn = learnAwaitingAdvance && !m_prevLockedIn;
-    bool justHandedOff = nextClipShowing && !m_prevNotesHandoff;
-    if (justLockedIn || justHandedOff)
+    if (justLockedIn)
     {
         m_confetti.clear();
         m_confetti.reserve(kConfettiPieceCount);
@@ -731,6 +758,44 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
             m_confetti.push_back({spawnX, spawnY, velX, velY, spinPhase, color});
         }
         m_confettiStartMs = GetTickCount();
+    }
+
+    // The instant a locked-in track's dots actually give way to the next
+    // clip's preview (nextClipShowing flips false->true), whatever notes
+    // of the outgoing clip are still on screen right then burst apart at
+    // their own positions - a handful of sparks flying outward from each
+    // one - instead of a generic confetti celebration or just vanishing
+    // with no visual treatment at all. Mirrors the same
+    // dotsFromBeat/NotesInRange/yForBeatsFromNow the live note-drawing
+    // loop below uses, since these are exactly the notes that loop would
+    // have drawn one frame earlier (isLiveJudging just flipped false).
+    bool justHandedOff = nextClipShowing && !m_prevNotesHandoff;
+    if (justHandedOff && clip)
+    {
+        m_explosion.clear();
+        int particleSeed = 0;
+        for (int lane = 0; lane < kLaneCount; ++lane)
+        {
+            int laneX = laneCenterX(lane);
+            for (const VisibleNote& note :
+                 NotesInRange(nowBeat - kBeatsBehind, nowBeat + kBeatsAhead, clip->laneNotes[lane], clip->spanBeats))
+            {
+                int noteY = yForBeatsFromNow(note.startBeat - nowBeat);
+                if (noteY < m_laneRect.top - kVisibilityMarginPx || noteY > m_laneRect.bottom + kVisibilityMarginPx)
+                {
+                    continue;
+                }
+                for (int p = 0; p < kExplosionParticlesPerNote; ++p)
+                {
+                    double angle = PseudoRandom(particleSeed++) * 6.283185307;
+                    double speed = kExplosionMinSpeedPxPerSec +
+                                   PseudoRandom(particleSeed++) * (kExplosionMaxSpeedPxPerSec - kExplosionMinSpeedPxPerSec);
+                    m_explosion.push_back({static_cast<double>(laneX), static_cast<double>(noteY),
+                                            std::cos(angle) * speed, std::sin(angle) * speed, kLaneColors[lane]});
+                }
+            }
+        }
+        m_explosionStartMs = GetTickCount();
     }
     m_prevLockedIn = learnAwaitingAdvance;
     m_prevNotesHandoff = nextClipShowing;
@@ -878,6 +943,20 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
         {
             double t = elapsed / static_cast<double>(kConfettiDurationMs);
             DrawConfetti(hdc, m_confetti, elapsed / 1000.0, t);
+        }
+    }
+
+    if (!m_explosion.empty())
+    {
+        DWORD elapsed = GetTickCount() - m_explosionStartMs;
+        if (elapsed >= kExplosionDurationMs)
+        {
+            m_explosion.clear();
+        }
+        else
+        {
+            double t = elapsed / static_cast<double>(kExplosionDurationMs);
+            DrawExplosion(hdc, m_explosion, elapsed / 1000.0, t);
         }
     }
 

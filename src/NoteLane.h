@@ -21,6 +21,21 @@ struct ConfettiPiece
     COLORREF color = 0;
 };
 
+// One spark from the notes-exploding burst spawned when a locked-in
+// track's dots actually hand off to the next clip's preview: flies
+// straight outward (with drag, so it decelerates rather than flying off
+// forever) from wherever a specific note was at that instant, fading out
+// over its fixed lifetime - one burst per note still on screen right
+// then, not one generic burst across the lane like the confetti above.
+struct ExplosionParticle
+{
+    double x = 0.0;
+    double y = 0.0;
+    double velX = 0.0;
+    double velY = 0.0;
+    COLORREF color = 0;
+};
+
 // An expanding colored ring spawned at the instant a press/release is
 // judged - starts at that lane's judge-line position and grows outward
 // (at its own fixed speed - a hit ripple grows faster than a miss ripple)
@@ -48,10 +63,11 @@ struct JudgementRipple
 // are computed live from the session's SongClock each frame rather than
 // tracked as spawned objects. When a track locks in, its notes keep their
 // usual held/hit/miss/lane color but gain a glowing green outline, and
-// keep coming (and being judged) until the next clip's own dots are due;
-// a confetti burst plays across the lane at both of those moments - lock-in
-// itself, and again when the handoff to the next clip's preview actually
-// happens.
+// keep coming (and being judged) until the next clip's own dots are due.
+// A confetti burst plays across the lane the instant a track locks in;
+// when the handoff to the next clip's preview actually happens, whatever
+// notes are still on screen right then burst apart at their own
+// positions instead (see ExplosionParticle) rather than just vanishing.
 class NoteLane
 {
 public:
@@ -106,6 +122,11 @@ private:
     bool m_prevNotesHandoff = false;
     DWORD m_confettiStartMs = 0;
     std::vector<ConfettiPiece> m_confetti;
+
+    // The notes-exploding burst (see ExplosionParticle) fired at the
+    // m_prevNotesHandoff edge instead of another confetti burst.
+    DWORD m_explosionStartMs = 0;
+    std::vector<ExplosionParticle> m_explosion;
 
     std::vector<JudgementRipple> m_ripples;
 };
