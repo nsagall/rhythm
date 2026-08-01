@@ -3,6 +3,8 @@
 #include <imgui.h>
 
 #include <cstring>
+#include <cwctype>
+#include <set>
 
 #include "ChartMidi.h"
 #include "FileDialogs.h"
@@ -43,6 +45,61 @@ bool FileExistsOnDisk(const std::wstring& path)
 {
     DWORD attrs = GetFileAttributesW(path.c_str());
     return attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY);
+}
+
+// Turns a filename stem into a plausible display name - "drum_intro" ->
+// "Drum Intro" - matching the convention already used throughout
+// hand-authored Content/ charts. Only ever uppercases a word's own first
+// letter (never forces the rest of a word to lowercase), so an
+// intentional acronym like "hH" survives as "HH" rather than getting
+// mangled into "Hh".
+std::wstring PrettifyDisplayName(const std::wstring& base)
+{
+    std::wstring result = base;
+    for (wchar_t& c : result)
+    {
+        if (c == L'_' || c == L'-')
+        {
+            c = L' ';
+        }
+    }
+    bool capitalizeNext = true;
+    for (wchar_t& c : result)
+    {
+        if (c == L' ')
+        {
+            capitalizeNext = true;
+        }
+        else if (capitalizeNext)
+        {
+            c = static_cast<wchar_t>(std::towupper(c));
+            capitalizeNext = false;
+        }
+    }
+    return result;
+}
+
+// Enumerates every *.wav / *.mid file directly inside folderPath, keyed by
+// filename stem (extension stripped, case preserved as found on disk).
+void ScanStemFiles(const std::wstring& folderPath, const wchar_t* pattern, std::set<std::wstring>& outStems)
+{
+    WIN32_FIND_DATAW findData;
+    HANDLE handle = FindFirstFileW((folderPath + pattern).c_str(), &findData);
+    if (handle == INVALID_HANDLE_VALUE)
+    {
+        return;
+    }
+    do
+    {
+        if (findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+        {
+            continue;
+        }
+        std::wstring name = findData.cFileName;
+        size_t dot = name.find_last_of(L'.');
+        outStems.insert(dot == std::wstring::npos ? name : name.substr(0, dot));
+    } while (FindNextFileW(handle, &findData));
+    FindClose(handle);
 }
 
 // Draws an override-toggle + value pair for one of a clip's two optional
@@ -86,7 +143,7 @@ void DrawToleranceField(const char* label, Overridable<double>& field, double so
 
 void ClipPanel::Draw(EditorDocument& doc, HWND owner)
 {
-    ImGui::BeginChild("ClipList", ImVec2(220, 0), true);
+    ImGui::BeginChild("ClipList", ImVec2(300, 0), true);
     DrawList(doc);
     ImGui::EndChild();
 
@@ -116,6 +173,19 @@ void ClipPanel::DrawList(EditorDocument& doc)
     if (ImGui::Button("Delete") && m_selectedClipId >= 0)
     {
         RequestDelete(doc, m_selectedClipId);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Detect"))
+    {
+        DetectClips(doc);
+    }
+    if (ImGui::IsItemHovered())
+    {
+        ImGui::SetTooltip("Scan this song's folder for .wav/.mid files not yet used by any clip,\nand create a clip for each one found.");
+    }
+    if (!m_lastDetectSummary.empty())
+    {
+        ImGui::TextWrapped("%s", ToUtf8(m_lastDetectSummary).c_str());
     }
     ImGui::Separator();
 
@@ -489,6 +559,77 @@ void ClipPanel::CreateNewClip(EditorDocument& doc)
     doc.clips.push_back(clip);
     m_selectedClipId = clip.id;
     MarkDirty(doc);
+}
+
+void ClipPanel::DetectClips(EditorDocument& doc)
+{
+    if (doc.folderPath.empty())
+    {
+        m_lastDetectSummary = L"No song folder yet - use New or Open first.";
+        return;
+    }
+
+    std::set<std::wstring> wavStems;
+    std::set<std::wstring> midStems;
+    ScanStemFiles(doc.folderPath, L"*.wav", wavStems);
+    ScanStemFiles(doc.folderPath, L"*.mid", midStems);
+
+    std::set<std::wstring> existingNames;
+    for (const EditorClip& clip : doc.clips)
+    {
+        existingNames.insert(clip.name);
+    }
+
+    int created = 0;
+    int lastCreatedClipId = -1;
+    for (const std::wstring& stem : wavStems)
+    {
+        if (existingNames.count(stem) != 0)
+        {
+            continue; // already used by some clip - leave it alone
+        }
+
+        EditorClip clip;
+        clip.id = doc.nextClipId++;
+        clip.name = stem;
+        clip.displayName = PrettifyDisplayName(stem);
+        clip.hasWav = true;
+        clip.hasMidi = midStems.count(stem) != 0;
+        if (clip.hasMidi)
+        {
+            MidiLaneData midiData;
+            std::wstring midiError;
+            if (ChartMidi::LoadLaneNotes(doc.folderPath + stem + L".mid", midiData, midiError))
+            {
+                for (int lane = 0; lane < kLaneCount; ++lane)
+                {
+                    clip.laneNotes[lane] = midiData.lanes[lane];
+                }
+                clip.spanBeats = midiData.totalBeats;
+            }
+            // A failure here just leaves the info-readout cache empty -
+            // clip.hasMidi still reflects that a .mid file exists; whether
+            // it's actually usable in a [learn] block is decided for real
+            // at validate/save time, same as the Import MIDI button.
+        }
+
+        doc.clips.push_back(clip);
+        existingNames.insert(stem);
+        lastCreatedClipId = clip.id;
+        ++created;
+    }
+
+    if (created > 0)
+    {
+        m_selectedClipId = lastCreatedClipId;
+        MarkDirty(doc);
+        m_lastDetectSummary =
+            L"Found " + std::to_wstring(created) + (created == 1 ? L" new clip." : L" new clips.");
+    }
+    else
+    {
+        m_lastDetectSummary = L"No new .wav/.mid files found.";
+    }
 }
 
 void ClipPanel::DuplicateSelected(EditorDocument& doc)

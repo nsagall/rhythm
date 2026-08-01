@@ -2,6 +2,8 @@
 
 #include <objbase.h>
 
+#include <cwchar>
+
 #include <imgui.h>
 
 #include "EditorChartIO.h"
@@ -25,6 +27,22 @@ std::wstring LastPathComponent(const std::wstring& path)
     std::wstring stripped = StripTrailingSlash(path);
     size_t slash = stripped.find_last_of(L"\\/");
     return slash == std::wstring::npos ? stripped : stripped.substr(slash + 1);
+}
+
+// "3:45" - never plain seconds, so a long song doesn't read as an
+// implausible three-digit number.
+std::wstring FormatMinutesSeconds(double seconds)
+{
+    int totalSeconds = static_cast<int>(seconds + 0.5);
+    if (totalSeconds < 0)
+    {
+        totalSeconds = 0;
+    }
+    int minutes = totalSeconds / 60;
+    int secs = totalSeconds % 60;
+    wchar_t buf[32];
+    swprintf(buf, 32, L"%d:%02d", minutes, secs);
+    return buf;
 }
 
 } // namespace
@@ -258,6 +276,19 @@ void EditorApp::DrawBottomWindow(float x, float y, float w, float h)
         {
             m_blockPlayer.SetLoopWholeSong(loop);
         }
+
+        const BlockSchedule::Schedule* schedule = m_blockPlayer.CurrentSchedule();
+        if (schedule != nullptr && !schedule->entries.empty())
+        {
+            // Assumes perfect learning - the same assumption the whole
+            // block schedule/playhead is built on (see BlockSchedule.h).
+            ImGui::Text("Estimated length (perfect play): %s", ToUtf8(FormatMinutesSeconds(schedule->totalSeconds)).c_str());
+        }
+        else
+        {
+            ImGui::TextDisabled("Estimated length: (unavailable - fix validation problems first)");
+        }
+
         ImGui::TextWrapped("%s", ToUtf8(m_blockPlayer.NowPlayingText()).c_str());
     }
     else

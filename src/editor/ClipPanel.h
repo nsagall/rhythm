@@ -37,6 +37,13 @@ private:
     void CreateNewClip(EditorDocument& doc);
     void DuplicateSelected(EditorDocument& doc);
     void RequestDelete(EditorDocument& doc, int clipId);
+    // Scans doc.folderPath for .wav/.mid files not already used by any
+    // existing clip (matched by base filename against EditorClip::name)
+    // and creates a new clip per unmatched .wav - paired with its .mid if
+    // one exists alongside it, wav-only otherwise. A .mid with no matching
+    // .wav is skipped (a clip always needs audio). Sets m_lastDetectSummary
+    // for DrawList to show a one-line result.
+    void DetectClips(EditorDocument& doc);
 
     int m_selectedClipId = -1;
 
@@ -66,4 +73,9 @@ private:
     int m_deleteClipId = -1;
 
     std::wstring m_lastMidiImportError;
+
+    // One-line result of the most recent Detect click (e.g. "Found 3 new
+    // clip(s)."), shown under the toolbar until the next Detect - empty
+    // means nothing to show.
+    std::wstring m_lastDetectSummary;
 };
