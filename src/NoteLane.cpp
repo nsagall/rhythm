@@ -655,6 +655,32 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
         return m_laneRect.top + static_cast<int>((kBeatsAhead - beatsFromNow) * pixelsPerBeat);
     };
 
+    // A faint horizontal line at every measure boundary crossing the
+    // visible window, so the falling pattern reads against the song's own
+    // bar grid instead of floating with no sense of scale. Drawn behind
+    // the rails/notes below, inset slightly from the rounded border so it
+    // doesn't clip oddly into the corners.
+    int beatsPerBar = session.Song().beatsPerBar;
+    if (beatsPerBar > 0)
+    {
+        double rangeStart = nowBeat - kBeatsBehind;
+        double rangeEnd = nowBeat + kBeatsAhead;
+        long long firstMeasure = static_cast<long long>(std::floor(rangeStart / beatsPerBar));
+        long long lastMeasure = static_cast<long long>(std::ceil(rangeEnd / beatsPerBar));
+        for (long long measure = firstMeasure; measure <= lastMeasure; ++measure)
+        {
+            double measureBeat = measure * beatsPerBar;
+            if (measureBeat < rangeStart || measureBeat > rangeEnd)
+            {
+                continue;
+            }
+            int y = yForBeatsFromNow(measureBeat - nowBeat);
+            int cx = (m_laneRect.left + m_laneRect.right) / 2;
+            int halfWidth = (m_laneRect.right - m_laneRect.left) / 2 - 10;
+            DrawAlphaRect(hdc, cx, y, halfWidth, 1, RGB(255, 255, 255), 28);
+        }
+    }
+
     // A faint glowing rail down each column, in that lane's color, so every
     // lane has a visible identity even where no notes are currently on screen.
     for (int lane = 0; lane < kLaneCount; ++lane)
