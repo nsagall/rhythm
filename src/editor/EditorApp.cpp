@@ -92,10 +92,13 @@ void EditorApp::Update()
             m_observedVersion = m_doc.docVersion;
             m_lastEditTimeMs = GetTickCount64();
         }
-        // Debounced: only re-validate (and rebuild the block schedule)
-        // ~750ms after the last edit, so typing never triggers file I/O
+        // Debounced: only re-validate (and rebuild the block schedule,
+        // which is what keeps every block's displayed timing - e.g. a
+        // clip's hits_required changing - in sync automatically) ~300ms
+        // after the last edit. Short enough to feel immediate once the
+        // user pauses, long enough that typing never triggers file I/O
         // mid-keystroke.
-        if (m_observedVersion != m_lastValidatedVersion && GetTickCount64() - m_lastEditTimeMs > 750)
+        if (m_observedVersion != m_lastValidatedVersion && GetTickCount64() - m_lastEditTimeMs > 300)
         {
             EditorChartIO::ValidateDocument(m_doc, m_currentErrors);
             m_lastValidatedVersion = m_observedVersion;

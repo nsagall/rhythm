@@ -9,15 +9,32 @@
 namespace
 {
 
-constexpr float kPixelsPerSecond = 60.0f;
-constexpr float kMinLearnBreakWidthPx = 60.0f;
-constexpr float kDefaultLearnBreakWidthPx = 140.0f; // used when no schedule/entry is available yet
-constexpr float kMarkerWidthPx = 28.0f;             // Background/Reset - narrow, reads as "doesn't take real time"
+// Narrow by design - the point is to see as much of the song's structure
+// at once as possible; a block only needs to be wide enough to read its
+// label and to be a comfortable click/drag target, not to be visually
+// proportioned like a duration bar.
+constexpr float kPixelsPerSecond = 22.0f;
+constexpr float kMinLearnBreakWidthPx = 34.0f;
+constexpr float kDefaultLearnBreakWidthPx = 56.0f; // used when no schedule/entry is available yet
+constexpr float kMarkerWidthPx = 14.0f;            // Background/Reset - narrow, reads as "doesn't take real time"
 constexpr float kBlockHeight = 64.0f;
-constexpr float kBlockGap = 4.0f;
+constexpr float kBlockGap = 2.0f;
 constexpr float kPlayheadStripHeight = 14.0f; // room above the blocks for the playhead's triangle marker
+constexpr float kLabelFontScale = 1.2f;       // "a little larger" than the default UI text
 
 const char* kKindNames[] = {"Learn", "Break", "Reset", "Background"};
+
+// The default ImGui font (no bundled bold weight) has no true bold variant
+// to switch to, so bold is faked the standard bitmap-font way: draw the
+// text twice, offset by a single pixel, so the strokes double up and read
+// noticeably heavier without needing a second font asset.
+void DrawBoldText(ImDrawList* drawList, ImVec2 pos, ImU32 color, const char* text)
+{
+    ImFont* font = ImGui::GetFont();
+    float fontSize = ImGui::GetFontSize() * kLabelFontScale;
+    drawList->AddText(font, fontSize, pos, color, text);
+    drawList->AddText(font, fontSize, ImVec2(pos.x + 1.0f, pos.y), color, text);
+}
 
 ImVec4 BlockKindColor(SectionKind kind)
 {
@@ -199,7 +216,7 @@ void BlockTimeline::DrawBlockRow(EditorDocument& doc, const std::vector<BlockLay
 
         std::string label = clip != nullptr ? ToUtf8(clip->displayName) : kKindNames[static_cast<int>(block.kind)];
         drawList->PushClipRect(rectMin, rectMax, true);
-        drawList->AddText(ImVec2(rectMin.x + 6.0f, rectMin.y + 6.0f), IM_COL32(10, 10, 10, 255), label.c_str());
+        DrawBoldText(drawList, ImVec2(rectMin.x + 4.0f, rectMin.y + 4.0f), IM_COL32(10, 10, 10, 255), label.c_str());
         drawList->PopClipRect();
 
         ImGui::PopID();
