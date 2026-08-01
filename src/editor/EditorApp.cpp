@@ -216,7 +216,7 @@ void EditorApp::DrawBlockPropertiesWindow(float x, float y, float w, float h)
     ImGui::Separator();
     if (m_hasDocument)
     {
-        bool deleted = m_blockPropertiesPanel.Draw(m_doc, m_blockTimeline.SelectedBlockId(), m_blockPlayer.CurrentSchedule());
+        bool deleted = m_blockPropertiesPanel.Draw(m_doc, m_blockTimeline.SelectedBlockId(), m_blockPlayer);
         (void)deleted; // BlockTimeline re-checks SelectedBlockId() against doc.blocks every frame on its own, so a deleted selection simply stops matching anything next frame - nothing else to do here.
     }
     else

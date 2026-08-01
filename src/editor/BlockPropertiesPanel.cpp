@@ -9,14 +9,16 @@ namespace
 const char* kKindNames[] = {"Learn", "Break", "Reset", "Background"};
 } // namespace
 
-bool BlockPropertiesPanel::Draw(EditorDocument& doc, int selectedBlockId, const BlockSchedule::Schedule* schedule)
+bool BlockPropertiesPanel::Draw(EditorDocument& doc, int selectedBlockId, BlockPlayer& player)
 {
     EditorBlock* block = nullptr;
-    for (EditorBlock& candidate : doc.blocks)
+    int blockIndex = -1;
+    for (size_t i = 0; i < doc.blocks.size(); ++i)
     {
-        if (candidate.id == selectedBlockId)
+        if (doc.blocks[i].id == selectedBlockId)
         {
-            block = &candidate;
+            block = &doc.blocks[i];
+            blockIndex = static_cast<int>(i);
             break;
         }
     }
@@ -92,20 +94,15 @@ bool BlockPropertiesPanel::Draw(EditorDocument& doc, int selectedBlockId, const 
 
     ImGui::Separator();
     ImGui::Text("Computed timing");
+    const BlockSchedule::Schedule* schedule = player.CurrentSchedule();
     const BlockSchedule::Entry* entry = nullptr;
     if (schedule != nullptr)
     {
-        for (size_t i = 0; i < doc.blocks.size(); ++i)
+        for (const BlockSchedule::Entry& e : schedule->entries)
         {
-            if (&doc.blocks[i] == block)
+            if (e.sectionIndex == blockIndex)
             {
-                for (const BlockSchedule::Entry& e : schedule->entries)
-                {
-                    if (e.sectionIndex == static_cast<int>(i))
-                    {
-                        entry = &e;
-                    }
-                }
+                entry = &e;
                 break;
             }
         }
@@ -125,19 +122,31 @@ bool BlockPropertiesPanel::Draw(EditorDocument& doc, int selectedBlockId, const 
     }
 
     ImGui::Separator();
+    bool canSeek = schedule != nullptr && !schedule->entries.empty();
+    if (!canSeek)
+    {
+        ImGui::BeginDisabled();
+    }
+    if (ImGui::Button("Seek Here"))
+    {
+        player.SeekToBlockStart(blockIndex);
+    }
+    if (ImGui::IsItemHovered())
+    {
+        ImGui::SetTooltip("Jump playback to the moment this block begins.");
+    }
+    if (!canSeek)
+    {
+        ImGui::EndDisabled();
+    }
+
+    ImGui::SameLine();
     bool deleted = false;
     if (ImGui::Button("Delete Block"))
     {
-        for (size_t i = 0; i < doc.blocks.size(); ++i)
-        {
-            if (doc.blocks[i].id == selectedBlockId)
-            {
-                doc.blocks.erase(doc.blocks.begin() + static_cast<long>(i));
-                MarkDirty(doc);
-                deleted = true;
-                break;
-            }
-        }
+        doc.blocks.erase(doc.blocks.begin() + blockIndex);
+        MarkDirty(doc);
+        deleted = true;
     }
     return deleted;
 }

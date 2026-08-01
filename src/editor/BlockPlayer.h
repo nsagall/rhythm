@@ -44,13 +44,21 @@ public:
     void Pause();
     // Stops all audio and resets position to 0.
     void Stop();
+    // Jumps the playback position to an arbitrary point - the general
+    // "jump to a specific point" entry point used by both the timeline's
+    // click/drag-to-seek ruler and SeekToBlockStart below. Clamped to
+    // >= 0; not clamped to totalSeconds (Update() is what reconciles an
+    // out-of-range position against looping/stopping).
     void SeekToSeconds(double seconds);
-    // Convenience: seeks to the start of the BlockSchedule::Entry whose
-    // sectionIndex matches (its sectionStartSeconds) - sectionIndex is the
-    // block's position in doc.blocks/ChartSong::sections, which the
-    // schedule's entries preserve 1:1. Does nothing if no entry matches
-    // (Reset/Background sections never get one, and neither does an index
-    // past the end while validation is currently failing).
+    // Convenience: seeks to wherever sectionIndex's own block conceptually
+    // begins - sectionIndex is the block's position in
+    // doc.blocks/ChartSong::sections, which the schedule's entries
+    // preserve 1:1. If sectionIndex has its own BlockSchedule::Entry
+    // (Learn/Break), seeks to that entry's sectionStartSeconds. Background/
+    // Reset never get an entry of their own (both are zero-duration), so
+    // this falls back to wherever the next real entry actually begins -
+    // exactly that section's own instant in time - or to the very end if
+    // sectionIndex is trailing, past the last real entry.
     void SeekToBlockStart(int sectionIndex);
 
     void SetLoopWholeSong(bool loop);

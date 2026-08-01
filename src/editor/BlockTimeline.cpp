@@ -74,6 +74,8 @@ void BlockTimeline::Draw(EditorDocument& doc, BlockPlayer& player)
         DrawPlayhead(*schedule, player.PositionSeconds(), layout, origin.x, origin.y);
     }
 
+    DrawSeekRuler(player, layout, origin.x, origin.y);
+
     float totalWidth = layout.empty() ? 0.0f : (layout.back().leftX + layout.back().width);
     ImGui::SetCursorScreenPos(ImVec2(origin.x, origin.y + kBlockHeight));
     ImGui::Dummy(ImVec2(std::max(totalWidth, 1.0f), 1.0f));
@@ -247,4 +249,90 @@ void BlockTimeline::DrawPlayhead(const BlockSchedule::Schedule& schedule, double
     drawList->AddLine(ImVec2(x, originY), ImVec2(x, originY + kBlockHeight), kPlayheadColor, 3.0f);
     drawList->AddTriangleFilled(ImVec2(x - 6.0f, originY - kPlayheadStripHeight), ImVec2(x + 6.0f, originY - kPlayheadStripHeight),
                                  ImVec2(x, originY), kPlayheadColor);
+}
+
+void BlockTimeline::DrawSeekRuler(BlockPlayer& player, const std::vector<BlockLayout>& layout, float originX,
+                                   float originY)
+{
+    const BlockSchedule::Schedule* schedule = player.CurrentSchedule();
+    if (schedule == nullptr || schedule->entries.empty() || layout.empty())
+    {
+        return;
+    }
+
+    float totalWidth = layout.back().leftX + layout.back().width;
+
+    ImGui::SetCursorScreenPos(ImVec2(originX, originY - kPlayheadStripHeight));
+    ImGui::InvisibleButton("seekRuler", ImVec2(std::max(totalWidth, 1.0f), kPlayheadStripHeight));
+
+    if (ImGui::IsItemActive() && ImGui::IsMouseDown(ImGuiMouseButton_Left))
+    {
+        float x = ImGui::GetMousePos().x - originX;
+        player.SeekToSeconds(LayoutXToSeconds(x, layout, *schedule));
+    }
+    if (ImGui::IsItemHovered())
+    {
+        ImGui::SetTooltip("Click or drag to jump playback to this point.");
+    }
+}
+
+double BlockTimeline::LayoutXToSeconds(float x, const std::vector<BlockLayout>& layout,
+                                        const BlockSchedule::Schedule& schedule) const
+{
+    if (layout.empty())
+    {
+        return 0.0;
+    }
+    if (x <= 0.0f)
+    {
+        return 0.0;
+    }
+    float totalWidth = layout.back().leftX + layout.back().width;
+    if (x >= totalWidth)
+    {
+        return schedule.totalSeconds;
+    }
+
+    for (size_t i = 0; i < layout.size(); ++i)
+    {
+        const BlockLayout& block = layout[i];
+        if (x >= block.leftX + block.width)
+        {
+            continue;
+        }
+
+        if (block.entry != nullptr)
+        {
+            float frac = (x - block.leftX) / block.width;
+            if (frac < 0.0f)
+            {
+                frac = 0.0f;
+            }
+            if (frac > 1.0f)
+            {
+                frac = 1.0f;
+            }
+            // Maps into the block's first loop pass only - loop 2+ of a
+            // multi-loop block isn't individually reachable by clicking
+            // its (single, fixed-width) rendered span, same tradeoff
+            // BlockPlayer::SeekToBlockStart makes by always landing on
+            // sectionStartSeconds rather than a specific pass.
+            return block.entry->audioStartSeconds + static_cast<double>(frac) * block.entry->loopSeconds;
+        }
+
+        // Background/Reset marker - zero real duration, so there's no
+        // "position within it" to map; land on wherever this block's own
+        // instant actually falls, exactly mirroring
+        // BlockPlayer::SeekToBlockStart's own fallback for the same case.
+        for (const BlockSchedule::Entry& entry : schedule.entries)
+        {
+            if (entry.sectionIndex >= static_cast<int>(i))
+            {
+                return entry.sectionStartSeconds;
+            }
+        }
+        return schedule.totalSeconds;
+    }
+
+    return schedule.totalSeconds;
 }
