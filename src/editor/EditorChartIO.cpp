@@ -169,8 +169,6 @@ bool LoadIntoDocument(const std::wstring& chartFilePath, EditorDocument& outDoc,
         editorClip.releaseToleranceMs.value = clip.releaseToleranceMs;
         editorClip.initVolume = clip.initVolume;
         editorClip.volume = clip.volume;
-        editorClip.introBars = clip.introBars;
-        editorClip.outroLoops = clip.outroLoops;
         doc.clips.push_back(std::move(editorClip));
     }
 
@@ -229,14 +227,6 @@ std::wstring SerializeToText(const EditorDocument& doc)
         if (clip.volume != 1.0)
         {
             out += L"volume = " + FormatDouble(clip.volume) + L"\r\n";
-        }
-        if (clip.introBars != 0)
-        {
-            out += L"intro_bars = " + std::to_wstring(clip.introBars) + L"\r\n";
-        }
-        if (clip.outroLoops != 0)
-        {
-            out += L"outro_loops = " + std::to_wstring(clip.outroLoops) + L"\r\n";
         }
         out += L"\r\n";
     }

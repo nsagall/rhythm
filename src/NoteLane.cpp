@@ -739,7 +739,7 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
     }
 
     bool isLiveJudging = clip && session.Phase() == GamePhase::Learning && session.CurrentSectionKind() == SectionKind::Learn &&
-                          !nextClipShowing && !session.IsInIntro();
+                          !nextClipShowing;
 
     // Judge-line receptors: one glowing ring per lane, dim by default,
     // glowing while a note is held, and popping brightly for a moment when
@@ -1035,7 +1035,7 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
             }
             else if (clip)
             {
-                status = (session.IsInIntro()) ? (clip->displayName + L" - Listen...") : clip->displayName;
+                status = clip->displayName;
             }
             break;
         case GamePhase::Complete:

@@ -127,7 +127,6 @@ bool GameSession::LoadChart(const std::wstring& chartFilePath, bool easyMode, st
     m_clipLoopStartSeconds.assign(m_song.clips.size(), 0.0);
     m_queuedBackground = QueuedBackground{};
     m_hasPendingAdvance = false;
-    m_isInIntro = false;
     m_songHasStarted = false;
     m_lastJudgement = JudgementResult::None;
     m_judgedNotes.clear();
@@ -160,7 +159,6 @@ void GameSession::Start()
     std::fill(m_clipIsPlaying.begin(), m_clipIsPlaying.end(), false);
     m_queuedBackground = QueuedBackground{};
     m_hasPendingAdvance = false;
-    m_isInIntro = false;
     m_songHasStarted = false;
     m_lastJudgement = JudgementResult::None;
     m_judgedNotes.clear();
@@ -185,7 +183,6 @@ void GameSession::Stop()
     std::fill(m_clipIsPlaying.begin(), m_clipIsPlaying.end(), false);
     m_queuedBackground = QueuedBackground{};
     m_hasPendingAdvance = false;
-    m_isInIntro = false;
     m_lastJudgement = JudgementResult::None;
     for (int lane = 0; lane < kLaneCount; ++lane)
     {
@@ -215,7 +212,7 @@ void GameSession::CatchUpCountIn()
 // of its judging side effects.
 bool GameSession::IsLaneJudgeable(int lane) const
 {
-    if (m_phase != GamePhase::Learning || m_isInIntro)
+    if (m_phase != GamePhase::Learning)
     {
         return false;
     }
@@ -432,29 +429,6 @@ void GameSession::Update()
 
     if (m_phase == GamePhase::Learning)
     {
-        if (m_isInIntro)
-        {
-            if (now >= m_introEndSeconds)
-            {
-                m_isInIntro = false;
-                const ChartClip& clip = m_song.clips[m_song.sections[m_currentSectionIndex].clipIndex];
-                double introEndBeat = m_introEndSeconds / secondsPerBeat - 1e-6;
-                if (m_songHasStarted)
-                {
-                    for (int lane = 0; lane < kLaneCount; ++lane)
-                    {
-                        m_nextExpectedBeat[lane] = NextOnsetAfter(introEndBeat, clip, lane);
-                    }
-                }
-                else
-                {
-                    FirstReachableOnsetForAllLanes(introEndBeat, clip, m_nextExpectedBeat);
-                }
-                m_songHasStarted = true;
-            }
-            return;
-        }
-
         if (m_hasPendingAdvance && now >= m_pendingAdvanceAtSeconds)
         {
             m_hasPendingAdvance = false;
@@ -603,11 +577,6 @@ double GameSession::PendingAdvanceAtSeconds() const
     return m_hasPendingAdvance ? m_pendingAdvanceAtSeconds : -1.0;
 }
 
-bool GameSession::IsInIntro() const
-{
-    return m_isInIntro;
-}
-
 // Returns the index of the first section at or after startIndex whose play_mode isn't Background, or -1 if none remain.
 int GameSession::NextNonBackgroundSectionAtOrAfter(int startIndex) const
 {
@@ -623,9 +592,6 @@ int GameSession::NextNonBackgroundSectionAtOrAfter(int startIndex) const
 
 const ChartClip* GameSession::PreviewClip() const
 {
-    // A clip with its own intro_bars hides dots for a while after it goes
-    // live too, so there's nothing useful to preview until its own intro
-    // tail arrives (handled by the m_isInIntro branch below).
     if (m_phase == GamePhase::CountIn)
     {
         int idx = NextNonBackgroundSectionAtOrAfter(0);
@@ -634,7 +600,7 @@ const ChartClip* GameSession::PreviewClip() const
             return nullptr;
         }
         const ChartClip& clip = m_song.clips[m_song.sections[idx].clipIndex];
-        return clip.introBars > 0 ? nullptr : &clip;
+        return &clip;
     }
     if (m_phase != GamePhase::Learning || m_currentSectionIndex < 0)
     {
@@ -646,12 +612,6 @@ const ChartClip* GameSession::PreviewClip() const
     // m_hasPendingAdvance the same way, so a break/reset section's own
     // hold is the natural place to preview the *next* learn section's
     // dots, exactly like a learn section's own hold already was.
-    if (m_isInIntro)
-    {
-        // Structurally only ever true while current is Learn (set only in
-        // BeginSection's Learn case), so CurrentClip() here is unaffected.
-        return CurrentClip();
-    }
     if (m_hasPendingAdvance)
     {
         int nextIdx = NextNonBackgroundSectionAtOrAfter(m_currentSectionIndex + 1);
@@ -660,7 +620,7 @@ const ChartClip* GameSession::PreviewClip() const
             return nullptr;
         }
         const ChartClip& next = m_song.clips[m_song.sections[nextIdx].clipIndex];
-        return next.introBars > 0 ? nullptr : &next;
+        return &next;
     }
     return nullptr;
 }
@@ -670,10 +630,6 @@ double GameSession::PreviewTransitionSeconds() const
     if (m_phase == GamePhase::CountIn)
     {
         return CountInSeconds();
-    }
-    if (m_phase == GamePhase::Learning && m_isInIntro)
-    {
-        return m_introEndSeconds;
     }
     if (m_phase == GamePhase::Learning && m_hasPendingAdvance)
     {
@@ -769,7 +725,6 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
     m_consecutiveMisses = 0;
     m_easyGraceAvailable = true;
     m_hasPendingAdvance = false;
-    m_isInIntro = false;
     m_phase = GamePhase::Learning;
     m_judgedNotes.clear();
     for (int lane = 0; lane < kLaneCount; ++lane)
@@ -897,14 +852,6 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
         case SectionKind::Learn:
         {
             const ChartClip& clip = m_song.clips[section.clipIndex];
-            if (clip.introBars > 0)
-            {
-                StartClipLoop(section.clipIndex, clip.initVolume);
-                m_isInIntro = true;
-                double secondsPerBeat = 60.0 / m_song.bpm;
-                m_introEndSeconds = m_clock.ElapsedSeconds() + clip.introBars * m_song.beatsPerBar * secondsPerBeat;
-                return;
-            }
             if (m_songHasStarted)
             {
                 for (int lane = 0; lane < kLaneCount; ++lane)
@@ -956,8 +903,7 @@ void GameSession::SchedulePendingAdvance()
     }
     else
     {
-        int extraLoops = std::max(clip.outroLoops, 0);
-        double naturalAdvance = std::ceil(nowSeconds / stemDuration) * stemDuration + extraLoops * stemDuration;
+        double naturalAdvance = std::ceil(nowSeconds / stemDuration) * stemDuration;
 
         // loop_count sets a floor measured from when this clip's loop
         // actually started, independent of how fast the player locked in.
@@ -1284,10 +1230,10 @@ void GameSession::FirstReachableOnsetForAllLanes(double afterBeat, const ChartCl
     double span = clip.spanBeats;
 
     // Every caller passes a bar-aligned afterBeat (the count-in's own
-    // one-bar length, or a clip's intro_bars tail - both derived straight
-    // from the song's beatsPerBar, not some arbitrary wall-clock offset),
-    // give or take a tiny epsilon so a note landing exactly on that
-    // boundary still counts as reachable rather than skipped. No tolerance
+    // one-bar length, derived from the song's beatsPerBar, not some
+    // arbitrary wall-clock offset), give or take a tiny epsilon so a note
+    // landing exactly on that boundary still counts as reachable rather
+    // than skipped. No tolerance
     // widening is needed on top of that to keep the pattern's own true
     // opening note as the anchor.
     double candidates[kLaneCount];

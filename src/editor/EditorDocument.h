@@ -67,8 +67,6 @@ struct EditorClip
     Overridable<double> releaseToleranceMs;
     double initVolume = 1.0;
     double volume = 1.0;
-    int introBars = 0;
-    int outroLoops = 0;
 };
 
 struct EditorSection

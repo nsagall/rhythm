@@ -226,28 +226,6 @@ void ClipPanel::DrawInspector(EditorDocument& doc, HWND owner)
         MarkDirty(doc);
     }
 
-    int introBars = clip->introBars;
-    if (ImGui::InputInt("Intro Bars", &introBars))
-    {
-        if (introBars < 0)
-        {
-            introBars = 0;
-        }
-        clip->introBars = introBars;
-        MarkDirty(doc);
-    }
-
-    int outroLoops = clip->outroLoops;
-    if (ImGui::InputInt("Outro Loops", &outroLoops))
-    {
-        if (outroLoops < 0)
-        {
-            outroLoops = 0;
-        }
-        clip->outroLoops = outroLoops;
-        MarkDirty(doc);
-    }
-
     ImGui::Separator();
     ImGui::Text("Timing Tolerances");
     DrawToleranceField("Start Tolerance (ms)", clip->startToleranceMs, doc.startToleranceMs, doc);

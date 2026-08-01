@@ -56,7 +56,6 @@ int main()
     RunOne(L"test_charts/tile_test.chart", true);
     RunOne(L"test_charts/fast_test.chart", true);
     RunOne(L"test_charts/volume_test.chart", true);
-    RunOne(L"test_charts/intro_outro_test.chart", true);
     RunOne(L"test_charts/multilane_test.chart", true);
     RunOne(L"test_charts/section_modes_test.chart", true);
     RunOne(L"test_charts/no_midi_solo_test.chart", true);

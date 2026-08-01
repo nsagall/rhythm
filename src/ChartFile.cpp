@@ -608,26 +608,6 @@ bool ChartFile::Load(const std::wstring& chartFilePath, ChartSong& outSong, std:
                     currentClip.volume = volume;
                 }
             }
-            else if (key == L"intro_bars" || key == L"outro_loops")
-            {
-                int count;
-                if (!TryParseStrictInt(value, count))
-                {
-                    outErrors.push_back(L"Line " + std::to_wstring(lineNumber) + L": " + context + L": " + key + L" must be a whole number, got '" + value + L"'");
-                }
-                else if (count < 0)
-                {
-                    outErrors.push_back(L"Line " + std::to_wstring(lineNumber) + L": " + context + L": " + key + L" must not be negative, got '" + value + L"'");
-                }
-                else if (key == L"intro_bars")
-                {
-                    currentClip.introBars = count;
-                }
-                else
-                {
-                    currentClip.outroLoops = count;
-                }
-            }
             else
             {
                 outErrors.push_back(L"Line " + std::to_wstring(lineNumber) + L": unsupported field '" + key + L"' in [clip] section");

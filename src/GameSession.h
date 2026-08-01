@@ -52,9 +52,7 @@ enum class JudgementResult
 //     started playing) before advancing, even if the player locks in well
 //     before the first loop finishes - loop_count=1 never changes
 //     anything, since the natural "wait for the next loop boundary"
-//     behavior already guarantees at least one full loop. A clip with a
-//     declared intro_bars instead starts playing automatically (no press
-//     needed) and holds off judging/dots until that many bars pass.
+//     behavior already guarantees at least one full loop.
 //   - Break ([break]): stops every clip currently playing, starts this
 //     section's clip looping, and blocks advancing until loop_count full
 //     loops complete - no judging happens. Advancing is also floored at
@@ -101,7 +99,7 @@ public:
     // True exactly when OnPress(lane) would actually judge a press right
     // now (whether it turns out to be a timely hit or a mistimed miss) -
     // false whenever there's structurally nothing to press: outside a
-    // Learn section's live judging (count-in, intro, break/reset/
+    // Learn section's live judging (count-in, break/reset/
     // background, or no chart loaded at all), or a lane the current clip
     // never places any notes in at all. Lets the caller show its own "no note there"
     // feedback for a press this lane will otherwise just silently ignore.
@@ -189,14 +187,10 @@ public:
     // when) the next clip's own notes become visible.
     double PendingAdvanceAtSeconds() const;
 
-    // True while the current learn section's chart-declared intro_bars are
-    // still playing automatically, before dots/judging begin.
-    bool IsInIntro() const;
-
     // Returns the clip whose dots should be shown as an early preview while
-    // the player can't act yet - during the count-in, a clip's own
-    // intro_bars, or the current section's own awaiting-advance hold (learn,
-    // break, or reset alike). Only ever returns non-null when the very next
+    // the player can't act yet - during the count-in, or the current
+    // section's own awaiting-advance hold (learn, break, or reset alike).
+    // Only ever returns non-null when the very next
     // non-Background section is itself Learn: skips forward over any
     // intervening Background section (since those collapse instantly and
     // never delay anything), but does NOT skip over an intervening Break or
@@ -304,9 +298,8 @@ private:
     // cycle) behavior when it's actually needed.
     double FirstReachableOnset(double afterBeat, const ChartClip& clip, int lane) const;
 
-    // Computes every lane's anchor for the song's very first judged note
-    // (or the first note after a clip's own intro_bars, if that's what's
-    // being anchored) in one call. Tries each lane's own next reachable
+    // Computes every lane's anchor for the song's very first judged note in
+    // one call. Tries each lane's own next reachable
     // note first (NextOnsetAfter, searched independently per lane) and
     // uses those directly if they all land in the same pattern cycle - no
     // desync risk in that case, and it starts judging as soon as each
@@ -455,20 +448,13 @@ private:
     bool m_hasPendingAdvance = false;
     double m_pendingAdvanceAtSeconds = 0.0;
 
-    // Set while the current learn section's clip-declared intro_bars are
-    // still playing automatically; presses aren't judged until
-    // m_introEndSeconds is reached.
-    bool m_isInIntro = false;
-    double m_introEndSeconds = 0.0;
-
     // False until the very first note of the song has been anchored (at
     // the first learn section actually reached - possibly after a leading
-    // break/reset/background section - either directly, or once its intro_bars
-    // finish). While false, that anchor uses FirstReachableOnset instead
-    // of plain NextOnsetAfter, searching every lane against the SAME
-    // pattern cycle instead of each lane independently: scheduledBeat at
-    // the start of a song is derived from CountInSeconds() (or that plus a
-    // whole number of intro bars) - always a whole number of bars, but not
+    // break/reset/background section). While false, that anchor uses
+    // FirstReachableOnset instead of plain NextOnsetAfter, searching every
+    // lane against the SAME pattern cycle instead of each lane
+    // independently: scheduledBeat at the start of a song is derived from
+    // CountInSeconds() - always a whole number of bars, but not
     // necessarily aligned with wherever the pattern's own notes actually
     // start within a bar. Searching lanes independently there can land
     // different lanes on different pattern cycles - e.g. one lane's true

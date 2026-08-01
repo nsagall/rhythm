@@ -46,8 +46,6 @@ struct ChartClip
     double releaseToleranceMs = 120.0;
     double initVolume = 1.0; // volume while the player is still learning this clip
     double volume = 1.0;     // volume once it's locked in and looping automatically, or during break/background playback
-    int introBars = 0;       // if > 0, this many bars play automatically (no tap needed) before dots/judging start
-    int outroLoops = 0;      // if > 0, this many extra full loops play after locking in before the next section joins
 };
 
 // Which of the four block kinds a section is.
