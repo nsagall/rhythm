@@ -23,6 +23,7 @@ target_include_directories(midifile PUBLIC third_party/midifile/include)
 add_library(RhythmCore STATIC
     src/ChartFile.cpp
     src/ChartMidi.cpp
+    src/ChartTiming.cpp
     src/AudioEngine.cpp
     src/SongClock.cpp
 )
@@ -66,8 +67,10 @@ add_executable(RhythmEditor WIN32
     src/editor/EditorApp.cpp
     src/editor/EditorChartIO.cpp
     src/editor/ClipPanel.cpp
-    src/editor/SectionPanel.cpp
-    src/editor/PreviewPlayer.cpp
+    src/editor/BlockSchedule.cpp
+    src/editor/BlockPlayer.cpp
+    src/editor/BlockTimeline.cpp
+    src/editor/BlockPropertiesPanel.cpp
     src/editor/FileDialogs.cpp
     src/editor/EditorSettings.cpp
 )

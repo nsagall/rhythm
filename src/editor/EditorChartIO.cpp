@@ -4,6 +4,7 @@
 
 #include <cwchar>
 #include <fstream>
+#include <utility>
 
 namespace
 {
@@ -172,17 +173,17 @@ bool LoadIntoDocument(const std::wstring& chartFilePath, EditorDocument& outDoc,
         doc.clips.push_back(std::move(editorClip));
     }
 
-    doc.sections.reserve(song.sections.size());
+    doc.blocks.reserve(song.sections.size());
     for (const ChartSection& section : song.sections)
     {
-        EditorSection editorSection;
-        editorSection.id = doc.nextSectionId++;
-        editorSection.kind = section.kind;
-        editorSection.clipId = (section.clipIndex >= 0 && static_cast<size_t>(section.clipIndex) < doc.clips.size())
-                                    ? doc.clips[static_cast<size_t>(section.clipIndex)].id
-                                    : -1;
-        editorSection.loopCount = section.loopCount;
-        doc.sections.push_back(editorSection);
+        EditorBlock editorBlock;
+        editorBlock.id = doc.nextBlockId++;
+        editorBlock.kind = section.kind;
+        editorBlock.clipId = (section.clipIndex >= 0 && static_cast<size_t>(section.clipIndex) < doc.clips.size())
+                                  ? doc.clips[static_cast<size_t>(section.clipIndex)].id
+                                  : -1;
+        editorBlock.loopCount = section.loopCount;
+        doc.blocks.push_back(editorBlock);
     }
 
     doc.dirty = false;
@@ -231,20 +232,20 @@ std::wstring SerializeToText(const EditorDocument& doc)
         out += L"\r\n";
     }
 
-    for (const EditorSection& section : doc.sections)
+    for (const EditorBlock& block : doc.blocks)
     {
-        out += L"[" + std::wstring(SectionKindHeader(section.kind)) + L"]\r\n";
-        if (section.kind != SectionKind::Reset)
+        out += L"[" + std::wstring(SectionKindHeader(block.kind)) + L"]\r\n";
+        if (block.kind != SectionKind::Reset)
         {
-            const EditorClip* clip = FindClipById(doc, section.clipId);
+            const EditorClip* clip = FindClipById(doc, block.clipId);
             // Left empty (rather than skipped) when no clip has been
             // picked yet, so ValidateDocument surfaces the real
             // "[kind] requires a non-empty 'clip'" error instead of a
             // confusing generic parse failure.
             out += L"clip = " + (clip ? clip->name : std::wstring()) + L"\r\n";
-            if (section.loopCount != 1)
+            if (block.loopCount != 1)
             {
-                out += L"loop_count = " + std::to_wstring(section.loopCount) + L"\r\n";
+                out += L"loop_count = " + std::to_wstring(block.loopCount) + L"\r\n";
             }
         }
         out += L"\r\n";
@@ -253,7 +254,7 @@ std::wstring SerializeToText(const EditorDocument& doc)
     return out;
 }
 
-bool ValidateDocument(const EditorDocument& doc, std::vector<std::wstring>& outErrors)
+bool ValidateDocument(const EditorDocument& doc, std::vector<std::wstring>& outErrors, ChartSong* outSong)
 {
     outErrors.clear();
 
@@ -277,6 +278,10 @@ bool ValidateDocument(const EditorDocument& doc, std::vector<std::wstring>& outE
     ChartSong tempSong;
     bool ok = ChartFile::Load(tempPath, tempSong, outErrors);
     DeleteFileW(tempPath.c_str());
+    if (ok && outSong != nullptr)
+    {
+        *outSong = std::move(tempSong);
+    }
     return ok;
 }
 

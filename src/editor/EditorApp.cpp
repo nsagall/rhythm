@@ -59,7 +59,8 @@ bool EditorApp::Initialize(HWND hwnd)
         {
             m_hasDocument = true;
             std::wstring prepError;
-            m_previewPlayer.PrepareForDocument(m_doc, prepError);
+            m_blockPlayer.PrepareStems(m_doc, prepError);
+            RebuildBlockSchedule();
         }
     }
 
@@ -84,19 +85,21 @@ void EditorApp::Update()
 {
     if (m_hasDocument)
     {
-        m_previewPlayer.Update();
+        m_blockPlayer.Update(ImGui::GetIO().DeltaTime);
 
         if (m_doc.docVersion != m_observedVersion)
         {
             m_observedVersion = m_doc.docVersion;
             m_lastEditTimeMs = GetTickCount64();
         }
-        // Debounced: only re-validate ~750ms after the last edit, so
-        // typing never triggers file I/O mid-keystroke.
+        // Debounced: only re-validate (and rebuild the block schedule)
+        // ~750ms after the last edit, so typing never triggers file I/O
+        // mid-keystroke.
         if (m_observedVersion != m_lastValidatedVersion && GetTickCount64() - m_lastEditTimeMs > 750)
         {
             EditorChartIO::ValidateDocument(m_doc, m_currentErrors);
             m_lastValidatedVersion = m_observedVersion;
+            RebuildBlockSchedule();
         }
     }
 
@@ -106,18 +109,20 @@ void EditorApp::Update()
 
     ImGuiIO& io = ImGui::GetIO();
     float menuBarHeight = ImGui::GetFrameHeight();
-    float bottomHeight = 200.0f;
+    float bottomHeight = 160.0f;
+    float timelineHeight = 220.0f;
     float contentY = menuBarHeight;
-    float contentHeight = io.DisplaySize.y - menuBarHeight - bottomHeight;
-    if (contentHeight < 100.0f)
+    float upperHeight = io.DisplaySize.y - menuBarHeight - bottomHeight - timelineHeight;
+    if (upperHeight < 100.0f)
     {
-        contentHeight = 100.0f;
+        upperHeight = 100.0f;
     }
-    float leftWidth = io.DisplaySize.x * 0.45f;
+    float leftWidth = io.DisplaySize.x * 0.4f;
 
-    DrawClipsWindow(0.0f, contentY, leftWidth, contentHeight);
-    DrawSectionsWindow(leftWidth, contentY, io.DisplaySize.x - leftWidth, contentHeight);
-    DrawBottomWindow(0.0f, contentY + contentHeight, io.DisplaySize.x, bottomHeight);
+    DrawClipsWindow(0.0f, contentY, leftWidth, upperHeight);
+    DrawBlockPropertiesWindow(leftWidth, contentY, io.DisplaySize.x - leftWidth, upperHeight);
+    DrawBlockTimelineWindow(0.0f, contentY + upperHeight, io.DisplaySize.x, timelineHeight);
+    DrawBottomWindow(0.0f, contentY + upperHeight + timelineHeight, io.DisplaySize.x, bottomHeight);
 
     DrawDirtyGuardModal();
     DrawErrorModal();
@@ -181,16 +186,35 @@ void EditorApp::DrawClipsWindow(float x, float y, float w, float h)
     ImGui::End();
 }
 
-void EditorApp::DrawSectionsWindow(float x, float y, float w, float h)
+void EditorApp::DrawBlockPropertiesWindow(float x, float y, float w, float h)
 {
     ImGui::SetNextWindowPos(ImVec2(x, y));
     ImGui::SetNextWindowSize(ImVec2(w, h));
-    ImGui::Begin("SectionsWindow", nullptr, kFixedPanelFlags);
-    ImGui::Text("Section Sequence");
+    ImGui::Begin("BlockPropertiesWindow", nullptr, kFixedPanelFlags);
+    ImGui::Text("Block Properties");
     ImGui::Separator();
     if (m_hasDocument)
     {
-        m_sectionPanel.Draw(m_doc, &m_previewPlayer);
+        bool deleted = m_blockPropertiesPanel.Draw(m_doc, m_blockTimeline.SelectedBlockId(), m_blockPlayer.CurrentSchedule());
+        (void)deleted; // BlockTimeline re-checks SelectedBlockId() against doc.blocks every frame on its own, so a deleted selection simply stops matching anything next frame - nothing else to do here.
+    }
+    else
+    {
+        ImGui::TextDisabled("No document open - File > New or Open.");
+    }
+    ImGui::End();
+}
+
+void EditorApp::DrawBlockTimelineWindow(float x, float y, float w, float h)
+{
+    ImGui::SetNextWindowPos(ImVec2(x, y));
+    ImGui::SetNextWindowSize(ImVec2(w, h));
+    ImGui::Begin("BlockTimelineWindow", nullptr, kFixedPanelFlags);
+    ImGui::Text("Blocks");
+    ImGui::Separator();
+    if (m_hasDocument)
+    {
+        m_blockTimeline.Draw(m_doc, m_blockPlayer);
     }
     else
     {
@@ -210,28 +234,28 @@ void EditorApp::DrawBottomWindow(float x, float y, float w, float h)
     ImGui::Separator();
     if (m_hasDocument)
     {
-        if (ImGui::Button(m_previewPlayer.IsPlaying() ? "Pause" : "Play"))
+        if (ImGui::Button(m_blockPlayer.IsPlaying() ? "Pause" : "Play"))
         {
-            if (m_previewPlayer.IsPlaying())
+            if (m_blockPlayer.IsPlaying())
             {
-                m_previewPlayer.Pause();
+                m_blockPlayer.Pause();
             }
             else
             {
-                m_previewPlayer.Play();
+                m_blockPlayer.Play();
             }
         }
         ImGui::SameLine();
         if (ImGui::Button("Stop"))
         {
-            m_previewPlayer.Stop();
+            m_blockPlayer.Stop();
         }
-        bool loop = m_previewPlayer.LoopWholeSong();
+        bool loop = m_blockPlayer.LoopWholeSong();
         if (ImGui::Checkbox("Loop whole song", &loop))
         {
-            m_previewPlayer.SetLoopWholeSong(loop);
+            m_blockPlayer.SetLoopWholeSong(loop);
         }
-        ImGui::TextWrapped("%s", ToUtf8(m_previewPlayer.NowPlayingText()).c_str());
+        ImGui::TextWrapped("%s", ToUtf8(m_blockPlayer.NowPlayingText()).c_str());
     }
     else
     {
@@ -260,6 +284,7 @@ void EditorApp::DrawBottomWindow(float x, float y, float w, float h)
     {
         EditorChartIO::ValidateDocument(m_doc, m_currentErrors);
         m_lastValidatedVersion = m_doc.docVersion;
+        RebuildBlockSchedule();
     }
     if (!canValidate)
     {
@@ -362,6 +387,20 @@ void EditorApp::ApplyWindowTitleIfChanged()
     }
 }
 
+void EditorApp::RebuildBlockSchedule()
+{
+    if (!m_hasDocument)
+    {
+        return;
+    }
+    // BlockPlayer::RebuildSchedule leaves the previous schedule in place on
+    // failure (see its own doc comment) - errors here are already
+    // reflected in m_currentErrors via the validation pass that triggered
+    // this call, so there's nothing extra to surface.
+    std::vector<std::wstring> scheduleErrors;
+    m_blockPlayer.RebuildSchedule(m_doc, scheduleErrors);
+}
+
 void EditorApp::DoNew()
 {
     std::wstring folder;
@@ -372,7 +411,7 @@ void EditorApp::DoNew()
     folder = StripTrailingSlash(folder) + L"\\";
     std::wstring name = LastPathComponent(folder);
 
-    m_previewPlayer.Stop();
+    m_blockPlayer.Stop();
 
     EditorDocument doc;
     doc.chartFilePath = folder + name + L".chart";
@@ -387,7 +426,8 @@ void EditorApp::DoNew()
     m_currentErrors.clear();
 
     std::wstring prepError;
-    m_previewPlayer.PrepareForDocument(m_doc, prepError);
+    m_blockPlayer.PrepareStems(m_doc, prepError);
+    RebuildBlockSchedule();
 }
 
 void EditorApp::DoOpen()
@@ -406,7 +446,7 @@ void EditorApp::DoOpen()
         return;
     }
 
-    m_previewPlayer.Stop();
+    m_blockPlayer.Stop();
     m_doc = newDoc;
     m_hasDocument = true;
     m_observedVersion = m_doc.docVersion;
@@ -415,7 +455,8 @@ void EditorApp::DoOpen()
     m_settings.SaveLastChartPath(path);
 
     std::wstring prepError;
-    m_previewPlayer.PrepareForDocument(m_doc, prepError);
+    m_blockPlayer.PrepareStems(m_doc, prepError);
+    RebuildBlockSchedule();
 }
 
 void EditorApp::DoSave()
@@ -448,7 +489,7 @@ void EditorApp::DoSaveAs()
         return;
     }
 
-    m_previewPlayer.Stop();
+    m_blockPlayer.Stop();
     std::vector<std::wstring> errors;
     if (!EditorChartIO::SaveDocumentAs(m_doc, path, errors))
     {
@@ -460,7 +501,8 @@ void EditorApp::DoSaveAs()
     m_lastValidatedVersion = m_doc.docVersion;
 
     std::wstring prepError;
-    m_previewPlayer.PrepareForDocument(m_doc, prepError);
+    m_blockPlayer.PrepareStems(m_doc, prepError);
+    RebuildBlockSchedule();
 }
 
 void EditorApp::RequestActionWithGuard(PendingAction action)

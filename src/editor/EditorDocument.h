@@ -13,10 +13,18 @@
 // already-valid chart. Those lose information the editor needs while a
 // chart is still being built: whether an optional field was explicitly set
 // versus left to inherit a song-level default, and stable identities for
-// clips/sections that survive edits like a renamed clip (ChartSection
+// clips/blocks that survive edits like a renamed clip (ChartSection
 // resolves to a plain clip index, which shifts if clips are reordered or
-// deleted - EditorSection instead points at an EditorClip::id that never
+// deleted - EditorBlock instead points at an EditorClip::id that never
 // changes for that clip's lifetime).
+//
+// Note on vocabulary: the .chart file format and the shared runtime
+// (ChartFile.h/GameSession.h) call a [learn]/[break]/[reset]/[background]
+// entry a "section" - that term is kept everywhere it mirrors the file
+// format or the live game. The editor's own UI presents these as "blocks"
+// on a horizontal timeline instead (see src/editor/BlockTimeline.h), so
+// EditorBlock and EditorDocument::blocks use that name instead - purely a
+// presentation-layer distinction, not a different concept.
 
 // A field that may either be explicitly set on a clip or left to inherit
 // its song-level default. Mirrors the "was this key present" bit
@@ -33,10 +41,10 @@ struct Overridable
 struct EditorClip
 {
     // Stable editor-only identity, assigned once at creation (or on load,
-    // one per clip in the source chart) and never reused - EditorSection
+    // one per clip in the source chart) and never reused - EditorBlock
     // and UI selection state reference clips by this, not by their
     // position in EditorDocument::clips, so reordering/deleting other
-    // clips never silently repoints a section at the wrong one.
+    // clips never silently repoints a block at the wrong one.
     int id = 0;
 
     // Mirrors ChartClip::name/displayName - see ChartFile.h for the full
@@ -69,7 +77,7 @@ struct EditorClip
     double volume = 1.0;
 };
 
-struct EditorSection
+struct EditorBlock
 {
     int id = 0;
     SectionKind kind = SectionKind::Learn;
@@ -79,8 +87,9 @@ struct EditorSection
     // EditorDocument::clips.
     int clipId = -1;
 
-    // Meaningless for Reset - SectionPanel never shows a control for it on
-    // a Reset row, so it can never be set to anything but this default.
+    // Meaningless for Reset - BlockPropertiesPanel never shows a control
+    // for it on a Reset block, so it can never be set to anything but this
+    // default.
     int loopCount = 1;
 };
 
@@ -110,11 +119,11 @@ struct EditorDocument
     // Declaration order here is the actual gameplay order - this is the
     // sequence SerializeToText emits as [learn]/[break]/[reset]/
     // [background] blocks, after every [clip] block regardless of how
-    // clips and sections were interleaved while editing.
-    std::vector<EditorSection> sections;
+    // clips and blocks were interleaved while editing.
+    std::vector<EditorBlock> blocks;
 
     int nextClipId = 1;
-    int nextSectionId = 1;
+    int nextBlockId = 1;
 
     // True once the document differs from what's on disk (or is brand new
     // and has never been saved). Cleared by a successful Load/Save/SaveAs.
@@ -129,7 +138,7 @@ struct EditorDocument
 };
 
 // Finds a clip by its stable id, or nullptr if it no longer exists (e.g.
-// referenced by a section whose clip was since deleted). Non-const/const
+// referenced by a block whose clip was since deleted). Non-const/const
 // overloads so callers editing the document don't need a const_cast.
 inline EditorClip* FindClipById(EditorDocument& doc, int clipId)
 {

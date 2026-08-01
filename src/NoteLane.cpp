@@ -1055,7 +1055,7 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
             status = L"Get ready...";
             break;
         case GamePhase::Learning:
-            if (session.CurrentSectionKind() == SectionKind::Break || session.CurrentSectionKind() == SectionKind::Reset)
+            if (session.CurrentSectionKind() == SectionKind::Break)
             {
                 status = clip ? (clip->displayName + L" - Listen...") : L"...";
             }

@@ -122,9 +122,9 @@ void ClipPanel::DrawList(EditorDocument& doc)
     for (const EditorClip& clip : doc.clips)
     {
         bool referenced = false;
-        for (const EditorSection& section : doc.sections)
+        for (const EditorBlock& block : doc.blocks)
         {
-            if (section.clipId == clip.id)
+            if (block.clipId == clip.id)
             {
                 referenced = true;
                 break;
@@ -527,9 +527,9 @@ void ClipPanel::DuplicateSelected(EditorDocument& doc)
 void ClipPanel::RequestDelete(EditorDocument& doc, int clipId)
 {
     bool referenced = false;
-    for (const EditorSection& section : doc.sections)
+    for (const EditorBlock& block : doc.blocks)
     {
-        if (section.clipId == clipId)
+        if (block.clipId == clipId)
         {
             referenced = true;
             break;
@@ -570,12 +570,12 @@ void ClipPanel::DrawDeleteModal(EditorDocument& doc)
     {
         ImGui::Text("This clip is used by:");
         int usedCount = 0;
-        for (size_t i = 0; i < doc.sections.size(); ++i)
+        for (size_t i = 0; i < doc.blocks.size(); ++i)
         {
-            if (doc.sections[i].clipId == m_deleteClipId)
+            if (doc.blocks[i].clipId == m_deleteClipId)
             {
                 const wchar_t* kindName = L"Learn";
-                switch (doc.sections[i].kind)
+                switch (doc.blocks[i].kind)
                 {
                     case SectionKind::Learn:
                         kindName = L"Learn";
@@ -595,14 +595,14 @@ void ClipPanel::DrawDeleteModal(EditorDocument& doc)
             }
         }
 
-        std::string deleteLabel = "Delete clip and remove " + std::to_string(usedCount) + " section(s)";
+        std::string deleteLabel = "Delete clip and remove " + std::to_string(usedCount) + " block(s)";
         if (ImGui::Button(deleteLabel.c_str()))
         {
-            for (size_t i = doc.sections.size(); i-- > 0;)
+            for (size_t i = doc.blocks.size(); i-- > 0;)
             {
-                if (doc.sections[i].clipId == m_deleteClipId)
+                if (doc.blocks[i].clipId == m_deleteClipId)
                 {
-                    doc.sections.erase(doc.sections.begin() + static_cast<long>(i));
+                    doc.blocks.erase(doc.blocks.begin() + static_cast<long>(i));
                 }
             }
             for (size_t i = 0; i < doc.clips.size(); ++i)

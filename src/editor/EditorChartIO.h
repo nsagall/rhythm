@@ -22,7 +22,7 @@ namespace EditorChartIO
 
     // Builds canonical .chart text for doc: one [song] block, then every
     // [clip] block (in doc.clips order), then every section block (in
-    // doc.sections order - the actual gameplay order). Clips are always
+    // doc.blocks order - the actual gameplay order). Clips are always
     // emitted before sections regardless of how they were interleaved
     // while editing, which is what protects against the format's "a
     // section can only reference a clip declared earlier in the file"
@@ -38,8 +38,14 @@ namespace EditorChartIO
     // either way. This is the sole validation strategy - no rule is
     // reimplemented here, so the editor can never produce a chart the game
     // itself would reject, and stays correct automatically as
-    // ChartFile.cpp evolves. Requires doc.folderPath to already exist.
-    bool ValidateDocument(const EditorDocument& doc, std::vector<std::wstring>& outErrors);
+    // ChartFile.cpp evolves. Requires doc.folderPath to already exist. If
+    // outSong is non-null and validation succeeds, it's filled with the
+    // real, already-parsed ChartSong (not yet ExpandLaneNotesToFillClip'd -
+    // that needs real stem durations this function doesn't have) - used by
+    // the editor's analytical block scheduler (src/editor/BlockSchedule.h)
+    // to get a fully-resolved song without a second round-trip through
+    // ChartFile::Load.
+    bool ValidateDocument(const EditorDocument& doc, std::vector<std::wstring>& outErrors, ChartSong* outSong = nullptr);
 
     // Validates doc first; on failure, doc.chartFilePath is never touched
     // and outErrors explains why. On success, writes the real file and
