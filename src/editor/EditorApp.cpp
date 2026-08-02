@@ -76,6 +76,7 @@ bool EditorApp::Initialize(HWND hwnd)
         if (EditorChartIO::LoadIntoDocument(lastPath, m_doc, errors))
         {
             m_hasDocument = true;
+            m_undoHistory.Reset(m_doc);
             std::wstring prepError;
             m_blockPlayer.PrepareStems(m_doc, prepError);
             RebuildBlockSchedule();
@@ -104,6 +105,19 @@ void EditorApp::Update()
     if (m_hasDocument)
     {
         m_blockPlayer.Update(ImGui::GetIO().DeltaTime);
+
+        ImGuiIO& io = ImGui::GetIO();
+        // WantTextInput guard: while a text field has keyboard focus, let
+        // ImGui's own per-widget text-undo handle Ctrl+Z instead of jumping
+        // to a full document-level undo out from under an in-progress edit.
+        if (!io.WantTextInput && io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Z, false))
+        {
+            DoUndo();
+        }
+        if (!io.WantTextInput && io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Y, false))
+        {
+            DoRedo();
+        }
 
         if (m_doc.docVersion != m_observedVersion)
         {
@@ -145,6 +159,11 @@ void EditorApp::Update()
     DrawBlockTimelineWindow(0.0f, contentY + upperHeight, io.DisplaySize.x, timelineHeight);
     DrawBottomWindow(0.0f, contentY + upperHeight + timelineHeight, io.DisplaySize.x, bottomHeight);
 
+    if (m_hasDocument)
+    {
+        m_undoHistory.RecordFrame(m_doc, ImGui::IsAnyItemActive());
+    }
+
     DrawDirtyGuardModal();
     DrawErrorModal();
 }
@@ -175,6 +194,18 @@ void EditorApp::DrawMenuBar()
             if (ImGui::MenuItem("Exit"))
             {
                 RequestActionWithGuard(PendingAction::Exit);
+            }
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("Edit"))
+        {
+            if (ImGui::MenuItem("Undo", "Ctrl+Z", false, m_hasDocument && m_undoHistory.CanUndo()))
+            {
+                DoUndo();
+            }
+            if (ImGui::MenuItem("Redo", "Ctrl+Y", false, m_hasDocument && m_undoHistory.CanRedo()))
+            {
+                DoRedo();
             }
             ImGui::EndMenu();
         }
@@ -455,6 +486,7 @@ void EditorApp::DoNew()
 
     m_doc = doc;
     m_hasDocument = true;
+    m_undoHistory.Reset(m_doc);
     m_observedVersion = m_doc.docVersion;
     m_lastValidatedVersion = m_doc.docVersion - 1; // force a prompt validation pass
     m_currentErrors.clear();
@@ -483,6 +515,7 @@ void EditorApp::DoOpen()
     m_blockPlayer.Stop();
     m_doc = newDoc;
     m_hasDocument = true;
+    m_undoHistory.Reset(m_doc);
     m_observedVersion = m_doc.docVersion;
     m_lastValidatedVersion = m_doc.docVersion - 1;
     m_currentErrors.clear();
@@ -537,6 +570,26 @@ void EditorApp::DoSaveAs()
     std::wstring prepError;
     m_blockPlayer.PrepareStems(m_doc, prepError);
     RebuildBlockSchedule();
+}
+
+void EditorApp::DoUndo()
+{
+    if (!m_undoHistory.CanUndo())
+    {
+        return;
+    }
+    m_undoHistory.Undo(m_doc);
+    m_clipPanel.NotifyDocumentReplaced();
+}
+
+void EditorApp::DoRedo()
+{
+    if (!m_undoHistory.CanRedo())
+    {
+        return;
+    }
+    m_undoHistory.Redo(m_doc);
+    m_clipPanel.NotifyDocumentReplaced();
 }
 
 void EditorApp::RequestActionWithGuard(PendingAction action)

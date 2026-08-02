@@ -24,6 +24,15 @@ public:
         return m_selectedClipId;
     }
 
+    // Forces the Name/Display Name edit buffers to re-sync from doc on the
+    // next Draw() call instead of showing stale staged text - call after
+    // anything that replaces doc's contents out from under this panel
+    // (undo/redo restoring a snapshot).
+    void NotifyDocumentReplaced()
+    {
+        m_scratchForClipId = -1;
+    }
+
 private:
     void DrawList(EditorDocument& doc);
     void DrawInspector(EditorDocument& doc, HWND owner);

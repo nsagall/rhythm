@@ -12,6 +12,7 @@
 #include "ClipPanel.h"
 #include "EditorDocument.h"
 #include "EditorSettings.h"
+#include "EditorUndoHistory.h"
 
 // Top-level orchestrator: owns the audio engine, block player, the
 // currently-open document, its settings, and every panel; lays out the
@@ -65,6 +66,8 @@ private:
     void DoOpen();
     void DoSave();
     void DoSaveAs();
+    void DoUndo();
+    void DoRedo();
 
     // Re-resolves the block player's schedule from the current document -
     // called after every successful Load/New/SaveAs, and from Update()'s
@@ -92,6 +95,7 @@ private:
 
     EditorDocument m_doc;
     bool m_hasDocument = false;
+    EditorUndoHistory m_undoHistory;
 
     PendingAction m_pendingAction = PendingAction::None;
     bool m_showDirtyGuardModal = false;
