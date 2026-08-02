@@ -53,8 +53,40 @@ StemHandle BlockPlayer::GetStemForEditorClipId(int editorClipId) const
     return StemHandle{};
 }
 
+bool BlockPlayer::EnsureStemsLoaded(const EditorDocument& doc, std::wstring& outError)
+{
+    for (const EditorClip& clip : doc.clips)
+    {
+        if (!clip.hasWav || GetStemForEditorClipId(clip.id).IsValid())
+        {
+            continue;
+        }
+        std::wstring wavPath = doc.folderPath + clip.name + L".wav";
+        StemHandle handle = m_audioEngine.LoadStem(wavPath);
+        if (!handle.IsValid())
+        {
+            outError = L"Could not load " + wavPath;
+            return false;
+        }
+        ClipStem stem;
+        stem.editorClipId = clip.id;
+        stem.handle = handle;
+        stem.durationSeconds = m_audioEngine.GetStemDurationSeconds(handle);
+        m_stems.push_back(stem);
+    }
+    return true;
+}
+
 bool BlockPlayer::RebuildSchedule(const EditorDocument& doc, std::vector<std::wstring>& outErrors)
 {
+    std::wstring stemError;
+    if (!EnsureStemsLoaded(doc, stemError))
+    {
+        outErrors.clear();
+        outErrors.push_back(stemError);
+        return false;
+    }
+
     ChartSong song;
     if (!EditorChartIO::ValidateDocument(doc, outErrors, &song))
     {
@@ -241,7 +273,12 @@ void BlockPlayer::ApplyAudioForPosition()
         if (!wasActive)
         {
             double stemDuration = m_audioEngine.GetStemDurationSeconds(stem);
-            double phase = stemDuration > 0.0 ? std::fmod(m_positionSeconds, stemDuration) : 0.0;
+            const ChartClip& clip = m_song.clips[static_cast<size_t>(voice.clipIndex)];
+            // ChartTiming::ComputeClipPhaseSeconds, matching GameSession's
+            // own real-game phase-seek exactly - see its doc comment for
+            // why this must use the clip's beat-based pattern length
+            // (spanBeats), not the audio file's own raw measured duration.
+            double phase = ChartTiming::ComputeClipPhaseSeconds(m_positionSeconds, clip, stemDuration, m_song.bpm);
             m_audioEngine.StartLooping(stem, phase, static_cast<float>(voice.volume), 0);
         }
         else

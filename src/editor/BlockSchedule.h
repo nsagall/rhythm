@@ -49,11 +49,6 @@ struct Entry
     double loopSeconds = 0.0; // one stem loop's duration - the timeline "block width" unit
     int loopCount = 1;        // informational: total passes spanning [audioStartSeconds, endSeconds) - see Build()
     double endSeconds = 0.0;  // == next entry's sectionStartSeconds
-    // fmod(audioStartSeconds, loopSeconds) - where this entry's own pass 1
-    // starts, for timeline rendering purposes (see the audioStartSeconds
-    // comment above for the one edge case where this is a cosmetic
-    // approximation rather than the literal current audio phase).
-    double firstPassPhaseSeconds = 0.0;
 };
 
 // One clip's actual audible window - covers a Learn clip (once locked in
@@ -115,8 +110,29 @@ struct SeekResult
     // 1-based pass number within the entry; 0 if entryIndex >= 0 but
     // elapsedSeconds is still in the anchor-to-first-press gap (before
     // audioStartSeconds) - notes are anchored but nothing is audible yet.
+    // Pass 2 onward each span exactly loopSeconds of real elapsed time -
+    // this is a timeline/playhead-only notion of "which pass" and
+    // deliberately does NOT track the underlying audio voice's actual
+    // absolute-time-aligned sample phase (see
+    // BlockPlayer::ApplyAudioForPosition, which computes that separately
+    // and correctly starts a clip's audio mid-loop if it begins partway
+    // through the song - the "beat grid" phase-alignment a real player
+    // would hear). Pass 1 is the one exception, and deliberately so: its
+    // REAL duration is loopSeconds - fmod(audioStartSeconds, loopSeconds)
+    // - shorter than a full loopSeconds whenever audioStartSeconds doesn't
+    // land exactly on a loop boundary (the real, phase-seeked audio voice
+    // genuinely wraps that much sooner) - but phaseSeconds is still
+    // reported rescaled into the full 0..loopSeconds range so pass 1's
+    // rendered sweep still runs edge-to-edge across the block's full
+    // width, just compressed into that shorter real time span, rather
+    // than stopping partway across it. Getting this wrong (assuming pass 1
+    // also spans a full loopSeconds) was a confirmed bug: a block would
+    // visually stop advancing at some fraction short of its own right edge
+    // and jump straight to the next block instead, since the section's
+    // real end can land before a naively-assumed full-loopSeconds pass 1
+    // would have finished.
     int loopIndex = 0;
-    double phaseSeconds = 0.0; // position within the current pass, 0..entries[entryIndex].loopSeconds
+    double phaseSeconds = 0.0; // rescaled into 0..entries[entryIndex].loopSeconds - see loopIndex's own comment
     // Every clip that should currently be audible, each with its current
     // (post- or pre-lock-in) volume - not just background layers, per
     // VoiceWindow's own comment.

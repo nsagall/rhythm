@@ -23,18 +23,45 @@ public:
     // "unload" operation, so calling this repeatedly across a long editing
     // session accumulates loaded PCM data rather than freeing the previous
     // set - an accepted, session-scoped limitation (matches the old
-    // PreviewPlayer's own documented tradeoff).
+    // PreviewPlayer's own documented tradeoff). Clears and reloads
+    // everything unconditionally, which is what a wav re-import needs
+    // (AudioEngine has no way to refresh an already-loaded stem's content
+    // in place) - for the common case of just picking up any clip(s)
+    // that don't have a stem yet, see the cheaper EnsureStemsLoaded, which
+    // RebuildSchedule already calls automatically.
     bool PrepareStems(const EditorDocument& doc, std::wstring& outError);
 
     // Re-resolves doc via EditorChartIO::ValidateDocument (getting a real
     // ChartSong), applies ChartTiming::ExpandLaneNotesToFillClip per clip
-    // using the stem durations PrepareStems already recorded, and rebuilds
-    // the schedule via BlockSchedule::Build. On validation failure, leaves
-    // the previous schedule in place (so the timeline/playhead don't blink
-    // empty over a momentary invalid edit) and returns false with
-    // outErrors filled in. Cheap enough to call after every successful
-    // debounced revalidation pass.
+    // using the stem durations PrepareStems/EnsureStemsLoaded already
+    // recorded, and rebuilds the schedule via BlockSchedule::Build. Calls
+    // EnsureStemsLoaded first, so a clip added since the last full
+    // PrepareStems (e.g. via the Clips panel's Detect button, then used by
+    // a new block) still gets a real stem duration instead of silently
+    // reading as 0 - see EnsureStemsLoaded's own comment for why that
+    // matters. On validation failure, leaves the previous schedule in
+    // place (so the timeline/playhead don't blink empty over a momentary
+    // invalid edit) and returns false with outErrors filled in. Cheap
+    // enough to call after every successful debounced revalidation pass.
     bool RebuildSchedule(const EditorDocument& doc, std::vector<std::wstring>& outErrors);
+
+    // Loads a stem for any clip in doc.clips that doesn't already have one
+    // (by EditorClip::id) - unlike PrepareStems, this is purely additive:
+    // it never clears or reloads a clip that's already loaded, so it's
+    // cheap and safe to call on every RebuildSchedule() (including from
+    // the debounced live-edit path), regardless of play state. This is
+    // what makes a clip added via Detect (or any other live-editing path
+    // outside New/Open/SaveAs) actually playable without a full
+    // PrepareStems() - previously, RebuildSchedule only ever looked up
+    // stems PrepareStems had already recorded, so a brand new clip's
+    // duration silently read as 0 until the next Open/SaveAs, which made
+    // ClipFitsOneLoop reject it with a misleading "MIDI pattern longer
+    // than audio" error and left any block using it unscheduled (and
+    // therefore silent) until the document was saved and reloaded. Does
+    // NOT handle a wav re-import replacing an already-loaded clip's file
+    // content - that still needs a full PrepareStems() (see its own
+    // comment on why AudioEngine can't refresh a stem in place).
+    bool EnsureStemsLoaded(const EditorDocument& doc, std::wstring& outError);
 
     const BlockSchedule::Schedule* CurrentSchedule() const;
 

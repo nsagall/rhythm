@@ -211,4 +211,24 @@ BreakAdvance ComputeBreakAdvance(double loopStartSeconds, double stemDuration, i
     return result;
 }
 
+double ComputeClipPhaseSeconds(double nowSeconds, const ChartClip& clip, double stemDuration, double bpm)
+{
+    double cycleDuration = stemDuration;
+    if (clip.hasMidi && clip.spanBeats > 0.0 && bpm > 0.0)
+    {
+        cycleDuration = clip.spanBeats * (60.0 / bpm);
+    }
+    if (cycleDuration <= 0.0)
+    {
+        return 0.0;
+    }
+
+    double phase = std::fmod(nowSeconds, cycleDuration);
+    if (phase < 0.0)
+    {
+        phase += cycleDuration;
+    }
+    return phase;
+}
+
 } // namespace ChartTiming

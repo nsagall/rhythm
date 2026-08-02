@@ -80,9 +80,18 @@ Schedule Build(const ChartSong& song, const std::vector<double>& stemDurationsBy
     double tFallSeconds = kNoteFallBeats * secondsPerBeat;
 
     double t = 0.0;
-    bool songHasStarted = false;
     int queuedBackgroundClipIndex = -1;
     int queuedBackgroundSectionIndex = -1;
+
+    // Per-clip, mirroring GameSession's own m_clipPatternAnchored exactly -
+    // NOT a single whole-schedule flag. A clip's first-ever appearance
+    // needs FirstReachableOnsetForAllLanes so its pattern starts at its own
+    // true beginning, no matter how far into the song that first
+    // appearance happens to fall; a later reuse of that same clip anchors
+    // independently per lane instead, continuing its groove from wherever
+    // the shared beat grid says it'd be. See GameSession.h's own comment on
+    // m_clipPatternAnchored for why this must be keyed per clip.
+    std::vector<bool> clipPatternAnchored(song.clips.size(), false);
 
     // Per-clip playback state, mirroring GameSession's own
     // m_clipIsPlaying/m_clipLoopStartSeconds arrays exactly - a clip
@@ -180,7 +189,6 @@ Schedule Build(const ChartSong& song, const std::vector<double>& stemDurationsBy
                 entry.audioStartSeconds = t;
                 entry.lockInSeconds = -1.0;
                 entry.loopSeconds = stemDuration;
-                entry.firstPassPhaseSeconds = stemDuration > 0.0 ? std::fmod(t, stemDuration) : 0.0;
 
                 ChartTiming::BreakAdvance advance =
                     ChartTiming::ComputeBreakAdvance(t, stemDuration, section.loopCount, tFallSeconds);
@@ -211,7 +219,7 @@ Schedule Build(const ChartSong& song, const std::vector<double>& stemDurationsBy
                 double afterBeat = t / secondsPerBeat - 1e-6;
 
                 double anchors[kLaneCount];
-                if (songHasStarted)
+                if (clipPatternAnchored[static_cast<size_t>(section.clipIndex)])
                 {
                     for (int lane = 0; lane < kLaneCount; ++lane)
                     {
@@ -221,8 +229,8 @@ Schedule Build(const ChartSong& song, const std::vector<double>& stemDurationsBy
                 else
                 {
                     ChartTiming::FirstReachableOnsetForAllLanes(afterBeat, clip, anchors);
+                    clipPatternAnchored[static_cast<size_t>(section.clipIndex)] = true;
                 }
-                songHasStarted = true;
 
                 double firstOnsetBeat;
                 double lockInBeat;
@@ -239,7 +247,6 @@ Schedule Build(const ChartSong& song, const std::vector<double>& stemDurationsBy
                 entry.audioStartSeconds = audioStartSeconds;
                 entry.lockInSeconds = lockInSeconds;
                 entry.loopSeconds = stemDuration;
-                entry.firstPassPhaseSeconds = stemDuration > 0.0 ? std::fmod(audioStartSeconds, stemDuration) : 0.0;
 
                 // If this clip is already playing (still open from an
                 // earlier, un-stopped section), startVoiceIfNeeded is a
@@ -257,18 +264,23 @@ Schedule Build(const ChartSong& song, const std::vector<double>& stemDurationsBy
                     lockInSeconds, effectiveLoopStartSeconds, stemDuration, section.loopCount, tFallSeconds);
 
                 // Informational only - the total number of passes spanning
-                // [audioStartSeconds, endSeconds). Seek() independently
-                // re-derives the true loop/phase from elapsedSeconds
-                // directly against the fields above, so this can never
-                // desync playback even if it's slightly off at a boundary.
+                // [audioStartSeconds, endSeconds), each exactly stemDuration
+                // long (see Seek()'s own matching per-pass math). Seek()
+                // independently re-derives the true loop/phase from
+                // elapsedSeconds directly against the fields above, so this
+                // can never desync playback even if it's slightly off at a
+                // boundary.
                 entry.loopCount = 1;
                 if (stemDuration > 0.0)
                 {
-                    double firstPassSpan = stemDuration - entry.firstPassPhaseSeconds;
-                    double remaining = (entry.endSeconds - audioStartSeconds) - firstPassSpan;
-                    if (remaining > 1e-6)
+                    double span = entry.endSeconds - audioStartSeconds;
+                    if (span > 1e-6)
                     {
-                        entry.loopCount = 1 + static_cast<int>(std::ceil(remaining / stemDuration - 1e-9));
+                        entry.loopCount = static_cast<int>(std::ceil(span / stemDuration - 1e-9));
+                        if (entry.loopCount < 1)
+                        {
+                            entry.loopCount = 1;
+                        }
                     }
                 }
 
@@ -310,16 +322,46 @@ SeekResult Seek(const Schedule& schedule, double elapsedSeconds)
         }
         else
         {
+            // Pass 2 onward always spans exactly loopSeconds of real time -
+            // see SeekResult::loopIndex's own comment for why the RENDERED
+            // phaseSeconds is deliberately independent of the underlying
+            // audio voice's absolute-time-aligned phase. But pass 1 is the
+            // one exception: the real voice was phase-seeked to
+            // fmod(audioStartSeconds, loopSeconds) when it started (see
+            // ChartTiming::ComputeClipPhaseSeconds/GameSession::StartClipLoop),
+            // so its own first buffer-wrap - and therefore the real end of
+            // pass 1 - lands loopSeconds - startPhase real seconds later,
+            // not a full loopSeconds later. (ComputeLearnAdvanceSeconds/
+            // ComputeBreakAdvance's advance targets are themselves always
+            // exact multiples of loopSeconds measured from t=0 - i.e.
+            // exactly where the real, phase-seeked voice actually wraps -
+            // so this is not an approximation: passes 2+ always land
+            // perfectly full-length once pass 1's own real length is
+            // accounted for.) Skipping this would make pass 1's rendered
+            // sweep run at the wrong rate: reaching only
+            // (loopSeconds-startPhase)/loopSeconds of the block's width
+            // before the entry actually ends, instead of the full width -
+            // visually "jumping to the end" of the block early, especially
+            // stark for a clip whose first-ever appearance starts well
+            // after a loop boundary (see BlockSchedule.cpp's own diagnostic
+            // history for a confirmed real repro: a single-pass block that
+            // only ever reached ~73% of its own width).
+            double startPhase = std::fmod(entry.audioStartSeconds, entry.loopSeconds);
+            double firstPassSeconds = entry.loopSeconds - startPhase;
+            if (firstPassSeconds <= 1e-9)
+            {
+                firstPassSeconds = entry.loopSeconds;
+            }
+
             double loopOffset = elapsedSeconds - entry.audioStartSeconds;
-            double firstPassRemaining = entry.loopSeconds - entry.firstPassPhaseSeconds;
-            if (loopOffset < firstPassRemaining)
+            if (loopOffset < firstPassSeconds)
             {
                 result.loopIndex = 1;
-                result.phaseSeconds = entry.firstPassPhaseSeconds + loopOffset;
+                result.phaseSeconds = (loopOffset / firstPassSeconds) * entry.loopSeconds;
             }
             else
             {
-                double afterFirstPass = loopOffset - firstPassRemaining;
+                double afterFirstPass = loopOffset - firstPassSeconds;
                 result.loopIndex = 2 + static_cast<int>(std::floor(afterFirstPass / entry.loopSeconds));
                 result.phaseSeconds = std::fmod(afterFirstPass, entry.loopSeconds);
             }

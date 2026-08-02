@@ -89,4 +89,27 @@ struct BreakAdvance
 BreakAdvance ComputeBreakAdvance(double loopStartSeconds, double stemDuration, int requestedLoopCount,
                                   double tFallSeconds);
 
+// Computes the phase (seconds, 0..cycleDurationSeconds) a clip's audio
+// should seek to when starting to play at absolute elapsed time
+// nowSeconds, so it enters exactly in sync with the clip's own note
+// pattern's beat grid rather than the raw audio file's own measured
+// duration. The two are close but not necessarily bit-identical - real
+// WAV export rarely lands a stem's sample count on an exact beat boundary
+// (see ClipFitsOneLoop's own tolerance for the same reason) - and using
+// the raw audio duration as the phase modulus lets that tiny per-loop
+// imprecision compound: over the many loops elapsed by the time a clip
+// starts late in a long song, the accumulated drift between "where the
+// judged notes say the pattern is" (always exact, beat-based) and "where
+// fmod(nowSeconds, stemDuration) says it is" can become large enough that
+// the clip audibly starts partway through its own loop - even near the
+// very end - instead of at its pattern's true beginning. Uses
+// clip.spanBeats (the pattern's own exact cycle length, converted via the
+// song's current bpm) whenever the clip actually has a pattern to sync to
+// (hasMidi); falls back to the audio's own raw duration for a clip with
+// no pattern at all (pure Break/Background material with no judged
+// notes), since there's nothing to synchronize with beat-wise in that
+// case - that fallback's own imprecision is harmless there, since nothing
+// else is ever compared against it.
+double ComputeClipPhaseSeconds(double nowSeconds, const ChartClip& clip, double stemDuration, double bpm);
+
 } // namespace ChartTiming

@@ -120,9 +120,9 @@ bool GameSession::LoadChart(const std::wstring& chartFilePath, bool easyMode, st
     m_easyGraceAvailable = false;
     m_clipIsPlaying.assign(m_song.clips.size(), false);
     m_clipLoopStartSeconds.assign(m_song.clips.size(), 0.0);
+    m_clipPatternAnchored.assign(m_song.clips.size(), false);
     m_queuedBackground = QueuedBackground{};
     m_hasPendingAdvance = false;
-    m_songHasStarted = false;
     m_lastJudgement = JudgementResult::None;
     m_judgedNotes.clear();
     for (int lane = 0; lane < kLaneCount; ++lane)
@@ -152,9 +152,9 @@ void GameSession::Start()
     m_consecutiveMisses = 0;
     m_easyGraceAvailable = false;
     std::fill(m_clipIsPlaying.begin(), m_clipIsPlaying.end(), false);
+    std::fill(m_clipPatternAnchored.begin(), m_clipPatternAnchored.end(), false);
     m_queuedBackground = QueuedBackground{};
     m_hasPendingAdvance = false;
-    m_songHasStarted = false;
     m_lastJudgement = JudgementResult::None;
     m_judgedNotes.clear();
     for (int lane = 0; lane < kLaneCount; ++lane)
@@ -589,21 +589,20 @@ int GameSession::NextPersistentSectionAtOrAfter(int startIndex) const
     return -1;
 }
 
-const ChartClip* GameSession::PreviewClip() const
+int GameSession::PreviewSectionIndex() const
 {
     if (m_phase == GamePhase::CountIn)
     {
         int idx = NextPersistentSectionAtOrAfter(0);
         if (idx < 0 || m_song.sections[idx].kind != SectionKind::Learn)
         {
-            return nullptr;
+            return -1;
         }
-        const ChartClip& clip = m_song.clips[m_song.sections[idx].clipIndex];
-        return &clip;
+        return idx;
     }
     if (m_phase != GamePhase::Learning || m_currentSectionIndex < 0)
     {
-        return nullptr;
+        return -1;
     }
 
     // Applies uniformly whether the current section is Learn-awaiting-
@@ -617,12 +616,21 @@ const ChartClip* GameSession::PreviewClip() const
         int nextIdx = NextPersistentSectionAtOrAfter(m_currentSectionIndex + 1);
         if (nextIdx < 0 || m_song.sections[nextIdx].kind != SectionKind::Learn)
         {
-            return nullptr;
+            return -1;
         }
-        const ChartClip& next = m_song.clips[m_song.sections[nextIdx].clipIndex];
-        return &next;
+        return nextIdx;
     }
-    return nullptr;
+    return -1;
+}
+
+const ChartClip* GameSession::PreviewClip() const
+{
+    int idx = PreviewSectionIndex();
+    if (idx < 0)
+    {
+        return nullptr;
+    }
+    return &m_song.clips[m_song.sections[idx].clipIndex];
 }
 
 double GameSession::PreviewTransitionSeconds() const
@@ -640,28 +648,32 @@ double GameSession::PreviewTransitionSeconds() const
 
 double GameSession::PreviewFirstOnsetBeatForLane(int lane) const
 {
-    const ChartClip* preview = PreviewClip();
-    if (!preview || lane < 0 || lane >= kLaneCount)
+    int idx = PreviewSectionIndex();
+    if (idx < 0 || lane < 0 || lane >= kLaneCount)
     {
         return -1.0;
     }
+    int clipIndex = m_song.sections[idx].clipIndex;
+    const ChartClip& preview = m_song.clips[clipIndex];
 
     double transitionSeconds = PreviewTransitionSeconds();
     double secondsPerBeat = 60.0 / m_song.bpm;
     double transitionBeat = transitionSeconds / secondsPerBeat;
 
-    // During the count-in, m_songHasStarted is always still false - the
-    // preview must show the same notes that BeginSection is about to
-    // anchor judging to (see FirstReachableOnsetForAllLanes), not wherever
-    // NextOnsetAfter's usual per-lane cutoff logic lands relative to the
-    // count-in's own bar-length duration (see m_songHasStarted's own comment).
-    if (m_phase == GamePhase::CountIn)
+    // Must mirror BeginSection's own Learn-case anchoring choice exactly
+    // (see m_clipPatternAnchored) - a clip previewed here before it has
+    // ever actually been anchored (its first appearance, whether that's
+    // the count-in or any later point in the song) needs
+    // FirstReachableOnsetForAllLanes, same as BeginSection will use once
+    // this section actually goes live - otherwise the notes shown here
+    // would silently disagree with what ends up judged.
+    if (!m_clipPatternAnchored[clipIndex])
     {
         double allLanes[kLaneCount];
-        ChartTiming::FirstReachableOnsetForAllLanes(transitionBeat - 1e-6, *preview, allLanes);
+        ChartTiming::FirstReachableOnsetForAllLanes(transitionBeat - 1e-6, preview, allLanes);
         return allLanes[lane];
     }
-    return ChartTiming::NextOnsetAfter(transitionBeat - 1e-6, *preview, lane);
+    return ChartTiming::NextOnsetAfter(transitionBeat - 1e-6, preview, lane);
 }
 
 // Returns and clears the most recent judgement (Hit/Miss/None).
@@ -841,7 +853,19 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
         case SectionKind::Learn:
         {
             const ChartClip& clip = m_song.clips[section.clipIndex];
-            if (m_songHasStarted)
+            // Anchoring per clip, not per song: independent per-lane
+            // NextOnsetAfter is only safe once THIS clip has already
+            // established a phase (it's played before, so continuing its
+            // groove from wherever the shared beat grid says it'd be is
+            // the right, seamless behavior) - a clip's first-ever
+            // appearance, however far into the song that happens to be,
+            // needs the same true-beginning guarantee the song's actual
+            // first note gets, or independent per-lane anchoring can land
+            // deep into an unfamiliar pattern (confirmed: this was the
+            // root cause of a clip's first Learn block appearing to
+            // "jump to near the end" instead of starting at the top - see
+            // m_clipPatternAnchored's own comment).
+            if (m_clipPatternAnchored[section.clipIndex])
             {
                 for (int lane = 0; lane < kLaneCount; ++lane)
                 {
@@ -851,8 +875,8 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
             else
             {
                 ChartTiming::FirstReachableOnsetForAllLanes(scheduledBeat - 1e-6, clip, m_nextExpectedBeat);
+                m_clipPatternAnchored[section.clipIndex] = true;
             }
-            m_songHasStarted = true;
             return;
         }
     }
@@ -908,7 +932,14 @@ void GameSession::StartClipLoop(int clipIndex, double volume, int finiteLoopCoun
     StemHandle handle = m_stemHandles[clipIndex];
     double stemDuration = m_audioEngine.GetStemDurationSeconds(handle);
     double nowSeconds = m_clock.ElapsedSeconds();
-    double phaseSeconds = stemDuration > 0.0 ? std::fmod(nowSeconds, stemDuration) : 0.0;
+    // ChartTiming::ComputeClipPhaseSeconds, not a raw fmod against
+    // stemDuration - see its own doc comment for why: the audio needs to
+    // phase-align to the judged notes' own beat grid (clip.spanBeats), not
+    // the audio file's own measured length, or the two drift apart over
+    // many loops and a clip reached late in a song can start audibly
+    // partway through (even near the end of) its own pattern.
+    double phaseSeconds =
+        ChartTiming::ComputeClipPhaseSeconds(nowSeconds, m_song.clips[clipIndex], stemDuration, m_song.bpm);
     m_audioEngine.StartLooping(handle, phaseSeconds, static_cast<float>(volume), finiteLoopCount);
     m_clipIsPlaying[clipIndex] = true;
     m_clipLoopStartSeconds[clipIndex] = nowSeconds;

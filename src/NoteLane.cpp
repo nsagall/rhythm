@@ -958,11 +958,11 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
                     {
                         // Genuinely skipped past by the judging anchor,
                         // never held or judged - only possible for a
-                        // song's very first note or so, which can jump
-                        // straight to a later reachable repeat of the
-                        // pattern instead of the pattern's literal start
-                        // (see GameSession's m_songHasStarted). Never
-                        // drawn as live.
+                        // clip's very first appearance in the song, which
+                        // anchors to its pattern's own true beginning (see
+                        // GameSession's m_clipPatternAnchored) and so can
+                        // legitimately start partway into a bar if no lane
+                        // has a note exactly on beat 0. Never drawn as live.
                         skip = true;
                     }
                 }

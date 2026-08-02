@@ -287,6 +287,14 @@ private:
     // go live, or a negative value if there's nothing to preview.
     double PreviewTransitionSeconds() const;
 
+    // Returns the section index PreviewClip()/PreviewFirstOnsetBeatForLane()
+    // are currently previewing, or -1 if nothing is being previewed right
+    // now - the shared logic both of those built on top of, factored out
+    // so PreviewFirstOnsetBeatForLane() can look up the previewed clip's
+    // own index (needed for the m_clipPatternAnchored check) without
+    // duplicating PreviewClip()'s own section-walking logic.
+    int PreviewSectionIndex() const;
+
     // Returns the index of the first section at or after startIndex whose
     // kind is neither Background nor Reset (neither ever persists as
     // "current" - BeginSection always recurses straight through both
@@ -404,23 +412,40 @@ private:
     bool m_hasPendingAdvance = false;
     double m_pendingAdvanceAtSeconds = 0.0;
 
-    // False until the very first note of the song has been anchored (at
-    // the first learn section actually reached - possibly after a leading
-    // break/reset/background section). While false, that anchor uses
-    // FirstReachableOnset instead of plain NextOnsetAfter, searching every
-    // lane against the SAME pattern cycle instead of each lane
-    // independently: scheduledBeat at the start of a song is derived from
-    // CountInSeconds() - always a whole number of bars, but not
-    // necessarily aligned with wherever the pattern's own notes actually
-    // start within a bar. Searching lanes independently there can land
-    // different lanes on different pattern cycles - e.g. one lane's true
-    // opening note gets skipped while another lane's doesn't, corrupting
-    // notes that are meant to land together (or apart) exactly as
-    // authored (this is exactly what produced a real reported bug: a
-    // clip whose file starts with one note then a two-note beat instead
-    // played its two-note beat first). Once any section is underway,
-    // NextOnsetAfter's normal per-lane "pick up wherever the loop
-    // naturally is" is exactly the right behavior, so this only ever
-    // matters once, at the very start of a song.
-    bool m_songHasStarted = false;
+    // Per clip index: false until that clip's pattern has been anchored for
+    // judging for the first time (at the first learn section that uses it -
+    // possibly after a leading break/reset/background section, and
+    // possibly long after other clips have already started the song off).
+    // Sized/reset alongside m_clipIsPlaying. While false for a given clip,
+    // BeginSection's Learn case anchors it via FirstReachableOnsetForAllLanes
+    // instead of plain NextOnsetAfter, searching every lane against the SAME
+    // pattern cycle instead of each lane independently: scheduledBeat at
+    // that moment is not generally aligned with wherever the pattern's own
+    // notes actually start within a bar (at the very start of a song it
+    // comes from CountInSeconds(), always a whole number of bars but not
+    // bar-aligned to the pattern's own notes; later in the song it comes
+    // from wherever the previous section happened to end). Searching lanes
+    // independently there can land different lanes on different pattern
+    // cycles - e.g. one lane's true opening note gets skipped while another
+    // lane's doesn't, corrupting notes that are meant to land together (or
+    // apart) exactly as authored (this is exactly what produced a real
+    // reported bug: a clip whose file starts with one note then a two-note
+    // beat instead played its two-note beat first). Once a given clip's
+    // pattern has been anchored once, NextOnsetAfter's normal per-lane
+    // "pick up wherever the loop naturally is" is exactly the right
+    // behavior for that clip - it keeps a returning clip's groove
+    // continuous with the shared beat grid instead of restarting it.
+    // Keyed per clip (not a single whole-song flag, which this used to be):
+    // a *different* clip's first appearance can happen at any point in the
+    // song, long after some other clip has already started the song off -
+    // each one still needs its own true-beginning anchor the first time,
+    // independent of whether some other clip got there first. (This was a
+    // real reported bug when it was still a single whole-song flag: a
+    // clip's first-ever appearance elsewhere in the song could land 70%+
+    // into its own pattern instead of at its start, since by then every
+    // OTHER clip had already flipped the single flag true - both the
+    // judged notes and, downstream via StartClipLoop's phase-seek off the
+    // same beat grid, the audible audio landed deep in the pattern instead
+    // of at its beginning.)
+    std::vector<bool> m_clipPatternAnchored;
 };
