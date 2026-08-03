@@ -18,7 +18,7 @@ namespace
 constexpr double kClipLengthToleranceSeconds = 0.1;
 } // namespace
 
-double NextOnsetAfter(double afterBeat, const ChartClip& clip, int lane)
+double NextOnsetAfter(double originBeat, double afterBeat, const ChartClip& clip, int lane)
 {
     const std::vector<LaneNote>& notes = clip.laneNotes[lane];
     if (notes.empty())
@@ -27,88 +27,39 @@ double NextOnsetAfter(double afterBeat, const ChartClip& clip, int lane)
     }
 
     double span = clip.spanBeats;
-    long long barIndex = static_cast<long long>(std::floor(afterBeat / span));
+    double localAfterBeat = afterBeat - originBeat;
+    long long barIndex = static_cast<long long>(std::floor(localAfterBeat / span));
 
     for (const LaneNote& note : notes)
     {
         double candidate = barIndex * span + note.startBeat;
-        if (candidate > afterBeat + 1e-9)
+        if (candidate > localAfterBeat + 1e-9)
         {
-            return candidate;
+            return originBeat + candidate;
         }
     }
-    return (barIndex + 1) * span + notes.front().startBeat;
+    return originBeat + (barIndex + 1) * span + notes.front().startBeat;
 }
 
-double FirstReachableOnset(double afterBeat, const ChartClip& clip, int lane)
+void FreshOnsetForAllLanes(double originBeat, const ChartClip& clip, double outBeats[kLaneCount])
 {
-    const std::vector<LaneNote>& notes = clip.laneNotes[lane];
-    if (notes.empty())
-    {
-        return NextOnsetAfter(afterBeat, clip, lane);
-    }
-
-    double span = clip.spanBeats;
-    long long barIndex = (span > 0.0) ? static_cast<long long>(std::ceil((afterBeat - 1e-9) / span)) : 0;
-    return barIndex * span + notes.front().startBeat;
-}
-
-void FirstReachableOnsetForAllLanes(double afterBeat, const ChartClip& clip, double outBeats[kLaneCount])
-{
-    double span = clip.spanBeats;
-
-    double candidates[kLaneCount];
-    long long minCycle = 0;
-    long long maxCycle = 0;
-    bool sawLaneWithNotes = false;
-
     for (int lane = 0; lane < kLaneCount; ++lane)
     {
-        candidates[lane] = NextOnsetAfter(afterBeat, clip, lane);
-        if (clip.laneNotes[lane].empty())
-        {
-            continue; // no real note on this lane to constrain the cycle check with
-        }
-
-        long long cycle = (span > 0.0) ? static_cast<long long>(std::floor(candidates[lane] / span)) : 0;
-        if (!sawLaneWithNotes)
-        {
-            minCycle = maxCycle = cycle;
-            sawLaneWithNotes = true;
-        }
-        else
-        {
-            minCycle = std::min(minCycle, cycle);
-            maxCycle = std::max(maxCycle, cycle);
-        }
-    }
-
-    if (sawLaneWithNotes && minCycle == maxCycle)
-    {
-        // Every lane's own next reachable note falls within the same
-        // cycle - no lane is being asked to skip ahead of another, so
-        // using them directly can't corrupt any authored relative timing.
-        for (int lane = 0; lane < kLaneCount; ++lane)
-        {
-            outBeats[lane] = candidates[lane];
-        }
-        return;
-    }
-
-    for (int lane = 0; lane < kLaneCount; ++lane)
-    {
-        outBeats[lane] = FirstReachableOnset(afterBeat, clip, lane);
+        const std::vector<LaneNote>& notes = clip.laneNotes[lane];
+        double firstOffset = notes.empty() ? clip.spanBeats : notes.front().startBeat;
+        outBeats[lane] = originBeat + firstOffset;
     }
 }
 
-double ComputeLoopFloorSeconds(double loopStartSeconds, double stemDuration, int loopCount)
+double ComputeLoopFloorSeconds(double originSeconds, double loopStartSeconds, double stemDuration, int loopCount)
 {
     if (stemDuration <= 0.0)
     {
         return loopStartSeconds;
     }
     int minLoops = std::max(loopCount, 1);
-    return std::ceil(loopStartSeconds / stemDuration) * stemDuration + (minLoops - 1) * stemDuration;
+    double localLoopStart = loopStartSeconds - originSeconds;
+    return originSeconds + std::ceil(localLoopStart / stemDuration) * stemDuration + (minLoops - 1) * stemDuration;
 }
 
 void ExpandLaneNotesToFillClip(ChartClip& clip, double stemDurationSeconds, double bpm)
@@ -152,22 +103,23 @@ void ExpandLaneNotesToFillClip(ChartClip& clip, double stemDurationSeconds, doub
     clip.spanBeats = clipBeats;
 }
 
-double ComputeLearnAdvanceSeconds(double sectionStartSeconds, double loopStartSeconds, double stemDuration,
-                                   int loopCount, double tFallSeconds)
+double ComputeLearnAdvanceSeconds(double originSeconds, double sectionStartSeconds, double loopStartSeconds,
+                                   double stemDuration, int loopCount, double tFallSeconds)
 {
     if (stemDuration <= 0.0)
     {
         return sectionStartSeconds;
     }
 
-    double naturalAdvance = std::ceil(sectionStartSeconds / stemDuration) * stemDuration;
+    double localSectionStart = sectionStartSeconds - originSeconds;
+    double naturalAdvance = originSeconds + std::ceil(localSectionStart / stemDuration) * stemDuration;
 
     // loop_count sets a floor measured from when this clip's loop actually
     // started - not necessarily this section's own start, if the same clip
     // was already playing from an earlier, still-open section.
     // loop_count=1 (the default) always resolves to <= naturalAdvance,
     // since a clip can't have started playing after its own section began.
-    double minimumAdvance = ComputeLoopFloorSeconds(loopStartSeconds, stemDuration, loopCount);
+    double minimumAdvance = ComputeLoopFloorSeconds(originSeconds, loopStartSeconds, stemDuration, loopCount);
 
     double advanceSeconds = std::max(naturalAdvance, minimumAdvance);
 
@@ -190,8 +142,8 @@ bool ClipFitsOneLoop(const ChartClip& clip, double stemDurationSeconds, double b
     return clipBeats >= clip.spanBeats - toleranceBeats;
 }
 
-BreakAdvance ComputeBreakAdvance(double loopStartSeconds, double stemDuration, int requestedLoopCount,
-                                  double tFallSeconds)
+BreakAdvance ComputeBreakAdvance(double originSeconds, double loopStartSeconds, double stemDuration,
+                                  int requestedLoopCount, double tFallSeconds)
 {
     BreakAdvance result;
     result.loopCount = std::max(requestedLoopCount, 1);
@@ -202,17 +154,18 @@ BreakAdvance ComputeBreakAdvance(double loopStartSeconds, double stemDuration, i
     // extend the loop count itself (not just the wait) until it is, or the
     // voice would self-stop early and leave real silence for whatever's
     // left of the wait instead of playing audio the whole time.
-    while (stemDuration > 0.0 &&
-           ComputeLoopFloorSeconds(loopStartSeconds, stemDuration, result.loopCount) - loopStartSeconds < tFallSeconds)
+    while (stemDuration > 0.0 && ComputeLoopFloorSeconds(originSeconds, loopStartSeconds, stemDuration,
+                                                           result.loopCount) - loopStartSeconds < tFallSeconds)
     {
         ++result.loopCount;
     }
 
-    result.advanceSeconds = ComputeLoopFloorSeconds(loopStartSeconds, stemDuration, result.loopCount);
+    result.advanceSeconds = ComputeLoopFloorSeconds(originSeconds, loopStartSeconds, stemDuration, result.loopCount);
     return result;
 }
 
-double ComputeClipPhaseSeconds(double nowSeconds, const ChartClip& clip, double stemDuration, double bpm)
+double ComputeClipPhaseSeconds(double originSeconds, double nowSeconds, const ChartClip& clip, double stemDuration,
+                                double bpm)
 {
     double cycleDuration = stemDuration;
     if (clip.hasMidi && clip.spanBeats > 0.0 && bpm > 0.0)
@@ -224,7 +177,7 @@ double ComputeClipPhaseSeconds(double nowSeconds, const ChartClip& clip, double 
         return 0.0;
     }
 
-    double phase = std::fmod(nowSeconds, cycleDuration);
+    double phase = std::fmod(nowSeconds - originSeconds, cycleDuration);
     if (phase < 0.0)
     {
         phase += cycleDuration;

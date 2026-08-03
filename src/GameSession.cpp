@@ -120,7 +120,8 @@ bool GameSession::LoadChart(const std::wstring& chartFilePath, bool easyMode, st
     m_easyGraceAvailable = false;
     m_clipIsPlaying.assign(m_song.clips.size(), false);
     m_clipLoopStartSeconds.assign(m_song.clips.size(), 0.0);
-    m_clipPatternAnchored.assign(m_song.clips.size(), false);
+    m_clipOriginEstablished.assign(m_song.clips.size(), false);
+    m_clipOriginSeconds.assign(m_song.clips.size(), 0.0);
     m_queuedBackground = QueuedBackground{};
     m_hasPendingAdvance = false;
     m_lockedIn = false;
@@ -153,7 +154,7 @@ void GameSession::Start()
     m_consecutiveMisses = 0;
     m_easyGraceAvailable = false;
     std::fill(m_clipIsPlaying.begin(), m_clipIsPlaying.end(), false);
-    std::fill(m_clipPatternAnchored.begin(), m_clipPatternAnchored.end(), false);
+    std::fill(m_clipOriginEstablished.begin(), m_clipOriginEstablished.end(), false);
     m_queuedBackground = QueuedBackground{};
     m_hasPendingAdvance = false;
     m_lockedIn = false;
@@ -411,8 +412,8 @@ void GameSession::Update()
         // construction - unlike the old fixed wall-clock duration, it can't
         // land in the middle of the first section's pattern, so there's
         // nothing here to protect against tolerance-wise: whatever
-        // FirstReachableOnsetForAllLanes anchors to at this boundary always
-        // has its full start-tolerance window still ahead of it.
+        // FreshOnsetForAllLanes anchors to at this boundary always has its
+        // full start-tolerance window still ahead of it.
         CatchUpCountIn();
         return;
     }
@@ -666,19 +667,22 @@ double GameSession::PreviewFirstOnsetBeatForLane(int lane) const
     double transitionBeat = transitionSeconds / secondsPerBeat;
 
     // Must mirror BeginSection's own Learn-case anchoring choice exactly
-    // (see m_clipPatternAnchored) - a clip previewed here before it has
-    // ever actually been anchored (its first appearance, whether that's
-    // the count-in or any later point in the song) needs
-    // FirstReachableOnsetForAllLanes, same as BeginSection will use once
-    // this section actually goes live - otherwise the notes shown here
-    // would silently disagree with what ends up judged.
-    if (!m_clipPatternAnchored[clipIndex])
+    // (see m_clipOriginEstablished) - a clip previewed here before it has
+    // ever actually been started (its first appearance, whether that's the
+    // count-in or any later point in the song) needs FreshOnsetForAllLanes,
+    // same as BeginSection will use once this section actually goes live -
+    // otherwise the notes shown here would silently disagree with what ends
+    // up judged. transitionBeat is exactly the beat BeginSection will use as
+    // scheduledBeat (and therefore as the fresh origin) once this section
+    // actually begins - see BeginSection's own doc comment.
+    if (!m_clipOriginEstablished[clipIndex])
     {
         double allLanes[kLaneCount];
-        ChartTiming::FirstReachableOnsetForAllLanes(transitionBeat - 1e-6, preview, allLanes);
+        ChartTiming::FreshOnsetForAllLanes(transitionBeat, preview, allLanes);
         return allLanes[lane];
     }
-    return ChartTiming::NextOnsetAfter(transitionBeat - 1e-6, preview, lane);
+    double originBeat = m_clipOriginSeconds[clipIndex] / secondsPerBeat;
+    return ChartTiming::NextOnsetAfter(originBeat, transitionBeat - 1e-6, preview, lane);
 }
 
 // Returns and clears the most recent judgement (Hit/Miss/None).
@@ -808,8 +812,15 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
             double stemDuration = m_audioEngine.GetStemDurationSeconds(m_stemHandles[section.clipIndex]);
             double nowSeconds = m_clock.ElapsedSeconds();
 
+            // Established here, ahead of ComputeBreakAdvance below, which
+            // needs it right away - StartClipLoop's own establishment
+            // (moments later) is then just a no-op confirming the same
+            // value. See EnsureClipOriginEstablished's own comment.
+            EnsureClipOriginEstablished(section.clipIndex, nowSeconds);
+            double originSeconds = m_clipOriginSeconds[section.clipIndex];
+
             ChartTiming::BreakAdvance advance =
-                ChartTiming::ComputeBreakAdvance(nowSeconds, stemDuration, section.loopCount, tFallSeconds);
+                ChartTiming::ComputeBreakAdvance(originSeconds, nowSeconds, stemDuration, section.loopCount, tFallSeconds);
 
             // Unlike a learn clip (which always loops forever - it might
             // still need to keep playing past this section's own end, if
@@ -859,29 +870,44 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
         case SectionKind::Learn:
         {
             const ChartClip& clip = m_song.clips[section.clipIndex];
+            double secondsPerBeat = 60.0 / m_song.bpm;
+            // scheduledBeat, not a live clock read, so this is exactly the
+            // same instant PreviewFirstOnsetBeatForLane already predicted
+            // for a fresh origin (see its own comment) - and so this
+            // section's own origin and its sectionStartSeconds (below)
+            // agree exactly, with no tiny live-clock-read gap between them.
+            double nowSeconds = scheduledBeat * secondsPerBeat;
+
+            // Established here, ahead of the anchor computation below,
+            // which needs it right away - StartClipLoop's own
+            // establishment (moments later) is then just a no-op
+            // confirming the same value. See EnsureClipOriginEstablished's
+            // own comment.
+            bool freshOrigin = EnsureClipOriginEstablished(section.clipIndex, nowSeconds);
+            double originBeat = m_clipOriginSeconds[section.clipIndex] / secondsPerBeat;
+
             // Anchoring per clip, not per song: independent per-lane
-            // NextOnsetAfter is only safe once THIS clip has already
-            // established a phase (it's played before, so continuing its
-            // groove from wherever the shared beat grid says it'd be is
-            // the right, seamless behavior) - a clip's first-ever
-            // appearance, however far into the song that happens to be,
-            // needs the same true-beginning guarantee the song's actual
-            // first note gets, or independent per-lane anchoring can land
-            // deep into an unfamiliar pattern (confirmed: this was the
-            // root cause of a clip's first Learn block appearing to
-            // "jump to near the end" instead of starting at the top - see
-            // m_clipPatternAnchored's own comment).
-            if (m_clipPatternAnchored[section.clipIndex])
+            // NextOnsetAfter is only safe once THIS clip already has an
+            // established origin (it's played before, so continuing its
+            // groove from wherever its own beat grid says it'd be is the
+            // right, seamless behavior) - a clip's first-ever appearance
+            // instead gets FreshOnsetForAllLanes, which starts it playing
+            // (and judging) from its own true beginning right now, at
+            // scheduledBeat itself - no waiting for a pattern-cycle
+            // boundary, and no requirement that scheduledBeat line up with
+            // any other clip's own beat grid (a background clip already
+            // playing just keeps looping on its own, entirely unaffected -
+            // see m_clipOriginEstablished's own comment).
+            if (freshOrigin)
             {
-                for (int lane = 0; lane < kLaneCount; ++lane)
-                {
-                    m_nextExpectedBeat[lane] = ChartTiming::NextOnsetAfter(scheduledBeat - 1e-6, clip, lane);
-                }
+                ChartTiming::FreshOnsetForAllLanes(originBeat, clip, m_nextExpectedBeat);
             }
             else
             {
-                ChartTiming::FirstReachableOnsetForAllLanes(scheduledBeat - 1e-6, clip, m_nextExpectedBeat);
-                m_clipPatternAnchored[section.clipIndex] = true;
+                for (int lane = 0; lane < kLaneCount; ++lane)
+                {
+                    m_nextExpectedBeat[lane] = ChartTiming::NextOnsetAfter(originBeat, scheduledBeat - 1e-6, clip, lane);
+                }
             }
 
             // Starts immediately and schedules its own advance right away
@@ -891,14 +917,13 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
             // purely the glow/confetti/volume-switch treatment, and turning
             // off the "3 misses stops the loop" penalty - none of it
             // affects this timing, which is already decided).
-            double secondsPerBeat = 60.0 / m_song.bpm;
             double tFallSeconds = kNoteFallBeats * secondsPerBeat;
-            double nowSeconds = m_clock.ElapsedSeconds();
             double stemDuration = m_audioEngine.GetStemDurationSeconds(m_stemHandles[section.clipIndex]);
 
             StartClipLoop(section.clipIndex, clip.initVolume);
             m_pendingAdvanceAtSeconds = ChartTiming::ComputeLearnAdvanceSeconds(
-                nowSeconds, m_clipLoopStartSeconds[section.clipIndex], stemDuration, section.loopCount, tFallSeconds);
+                m_clipOriginSeconds[section.clipIndex], nowSeconds, m_clipLoopStartSeconds[section.clipIndex],
+                stemDuration, section.loopCount, tFallSeconds);
             m_hasPendingAdvance = true;
             return;
         }
@@ -954,17 +979,40 @@ void GameSession::StartClipLoop(int clipIndex, double volume, int finiteLoopCoun
     StemHandle handle = m_stemHandles[clipIndex];
     double stemDuration = m_audioEngine.GetStemDurationSeconds(handle);
     double nowSeconds = m_clock.ElapsedSeconds();
+    // A safety net for any caller that starts a clip without going through
+    // BeginSection's Learn/Break cases (which each establish the origin
+    // explicitly, ahead of their own origin-dependent computations) - a
+    // no-op here whenever that's already happened. Background clips (and
+    // any other direct StartClipLoop call) rely on this to establish their
+    // own origin fresh, right here.
+    EnsureClipOriginEstablished(clipIndex, nowSeconds);
+    double originSeconds = m_clipOriginSeconds[clipIndex];
     // ChartTiming::ComputeClipPhaseSeconds, not a raw fmod against
     // stemDuration - see its own doc comment for why: the audio needs to
-    // phase-align to the judged notes' own beat grid (clip.spanBeats), not
-    // the audio file's own measured length, or the two drift apart over
-    // many loops and a clip reached late in a song can start audibly
-    // partway through (even near the end of) its own pattern.
+    // phase-align to the judged notes' own beat grid (clip.spanBeats),
+    // measured from this clip's own persistent origin, not the audio
+    // file's own measured length, or the two drift apart over many loops
+    // and a clip reached late in a song can start audibly partway through
+    // (even near the end of) its own pattern. For a first-ever start,
+    // nowSeconds == originSeconds exactly, so this is always 0 - the
+    // clip's own true beginning, immediately, with zero wait.
     double phaseSeconds =
-        ChartTiming::ComputeClipPhaseSeconds(nowSeconds, m_song.clips[clipIndex], stemDuration, m_song.bpm);
+        ChartTiming::ComputeClipPhaseSeconds(originSeconds, nowSeconds, m_song.clips[clipIndex], stemDuration, m_song.bpm);
     m_audioEngine.StartLooping(handle, phaseSeconds, static_cast<float>(volume), finiteLoopCount);
     m_clipIsPlaying[clipIndex] = true;
     m_clipLoopStartSeconds[clipIndex] = nowSeconds;
+}
+
+// See its own header comment.
+bool GameSession::EnsureClipOriginEstablished(int clipIndex, double nowSeconds)
+{
+    if (m_clipOriginEstablished[clipIndex])
+    {
+        return false;
+    }
+    m_clipOriginEstablished[clipIndex] = true;
+    m_clipOriginSeconds[clipIndex] = nowSeconds;
+    return true;
 }
 
 // Stops clipIndex's stem if it's playing.
@@ -1002,12 +1050,18 @@ void GameSession::RegisterMiss()
     }
 }
 
-// Moves this lane's next-expected-note pointer forward to the next note after it.
+// Moves this lane's next-expected-note pointer forward to the next note
+// after it, on this clip's own established origin (see
+// m_clipOriginEstablished) - always already set by the time this runs,
+// since a lane can only be judgeable mid-Learn-section, which only happens
+// after BeginSection has already anchored it.
 void GameSession::AdvanceExpectedNote(int lane)
 {
     const ChartSection& section = m_song.sections[m_currentSectionIndex];
     const ChartClip& clip = m_song.clips[section.clipIndex];
-    m_nextExpectedBeat[lane] = ChartTiming::NextOnsetAfter(m_nextExpectedBeat[lane], clip, lane);
+    double secondsPerBeat = 60.0 / m_song.bpm;
+    double originBeat = m_clipOriginSeconds[section.clipIndex] / secondsPerBeat;
+    m_nextExpectedBeat[lane] = ChartTiming::NextOnsetAfter(originBeat, m_nextExpectedBeat[lane], clip, lane);
 }
 
 // Returns the start-tolerance window (seconds) to judge a press with -

@@ -30,8 +30,8 @@ struct LaneFrontier
 // player (== the instant IsLockedIn() flips true, purely for the voice's
 // own volume-switch timing - it no longer affects the section's own
 // advance timing at all, see Build()'s own Learn case).
-double WalkOnsetsForLockIn(const ChartClip& clip, const double anchors[kLaneCount], int hitsRequired,
-                            double afterBeat)
+double WalkOnsetsForLockIn(double originBeat, const ChartClip& clip, const double anchors[kLaneCount],
+                            int hitsRequired, double afterBeat)
 {
     std::vector<LaneFrontier> frontier;
     for (int lane = 0; lane < kLaneCount; ++lane)
@@ -57,7 +57,7 @@ double WalkOnsetsForLockIn(const ChartClip& clip, const double anchors[kLaneCoun
         }
         double beat = frontier[minIdx].beat;
         lockInBeat = beat;
-        frontier[minIdx].beat = ChartTiming::NextOnsetAfter(beat, clip, frontier[minIdx].lane);
+        frontier[minIdx].beat = ChartTiming::NextOnsetAfter(originBeat, beat, clip, frontier[minIdx].lane);
     }
     return lockInBeat;
 }
@@ -79,15 +79,30 @@ Schedule Build(const ChartSong& song, const std::vector<double>& stemDurationsBy
     int queuedBackgroundClipIndex = -1;
     int queuedBackgroundSectionIndex = -1;
 
-    // Per-clip, mirroring GameSession's own m_clipPatternAnchored exactly -
-    // NOT a single whole-schedule flag. A clip's first-ever appearance
-    // needs FirstReachableOnsetForAllLanes so its pattern starts at its own
-    // true beginning, no matter how far into the song that first
-    // appearance happens to fall; a later reuse of that same clip anchors
-    // independently per lane instead, continuing its groove from wherever
-    // the shared beat grid says it'd be. See GameSession.h's own comment on
-    // m_clipPatternAnchored for why this must be keyed per clip.
-    std::vector<bool> clipPatternAnchored(song.clips.size(), false);
+    // Per-clip, mirroring GameSession's own m_clipOriginEstablished/
+    // m_clipOriginSeconds exactly - NOT a single whole-schedule flag. A
+    // clip's first-ever start establishes clipOriginSecondsByClipIndex to
+    // that exact instant, its own persistent phase reference from then on
+    // (see FreshOnsetForAllLanes) - every later reuse of that same clip
+    // anchors independently per lane instead, continuing its groove from
+    // wherever ITS OWN beat grid (not any other clip's, and not absolute
+    // beat 0) says it'd be. See GameSession.h's own comment on
+    // m_clipOriginEstablished for why this must be keyed per clip.
+    std::vector<bool> clipOriginEstablished(song.clips.size(), false);
+    std::vector<double> clipOriginSecondsByClipIndex(song.clips.size(), 0.0);
+
+    // Mirrors GameSession::EnsureClipOriginEstablished exactly - see its own
+    // comment. Returns true only when this call just established it.
+    auto ensureOriginEstablished = [&](int clipIndex, double atSeconds)
+    {
+        if (clipOriginEstablished[static_cast<size_t>(clipIndex)])
+        {
+            return false;
+        }
+        clipOriginEstablished[static_cast<size_t>(clipIndex)] = true;
+        clipOriginSecondsByClipIndex[static_cast<size_t>(clipIndex)] = atSeconds;
+        return true;
+    };
 
     // Per-clip playback state, mirroring GameSession's own
     // m_clipIsPlaying/m_clipLoopStartSeconds arrays exactly - a clip
@@ -117,8 +132,12 @@ Schedule Build(const ChartSong& song, const std::vector<double>& stemDurationsBy
 
     // Mirrors GameSession::StartClipLoop's own idempotency guard - a no-op
     // if this clip already has an open voice (from a Learn/Break/
-    // Background section reached earlier and never since stopped).
-    // Returns true only when a new VoiceWindow was actually opened.
+    // Background section reached earlier and never since stopped). Also
+    // establishes this clip's origin if it hasn't been already - mirrors
+    // StartClipLoop's own EnsureClipOriginEstablished safety-net call, so a
+    // Background voice (which never goes through Learn/Break's own explicit
+    // pre-establishment) still gets one. Returns true only when a new
+    // VoiceWindow was actually opened.
     auto startVoiceIfNeeded = [&](int clipIndex, double atSeconds, double volumeBeforeLockIn,
                                    double volumeAfterLockIn, double lockInSecondsForThisStart, int sectionIndex)
     {
@@ -126,6 +145,7 @@ Schedule Build(const ChartSong& song, const std::vector<double>& stemDurationsBy
         {
             return false;
         }
+        ensureOriginEstablished(clipIndex, atSeconds);
         VoiceWindow window;
         window.sectionIndex = sectionIndex;
         window.clipIndex = clipIndex;
@@ -134,6 +154,7 @@ Schedule Build(const ChartSong& song, const std::vector<double>& stemDurationsBy
         window.volumeBeforeLockIn = volumeBeforeLockIn;
         window.volumeAfterLockIn = volumeAfterLockIn;
         window.lockInSeconds = lockInSecondsForThisStart;
+        window.originSeconds = clipOriginSecondsByClipIndex[static_cast<size_t>(clipIndex)];
         schedule.voices.push_back(window);
         voiceIndexByClipIndex[static_cast<size_t>(clipIndex)] = static_cast<int>(schedule.voices.size()) - 1;
         loopStartSecondsByClipIndex[static_cast<size_t>(clipIndex)] = atSeconds;
@@ -177,17 +198,25 @@ Schedule Build(const ChartSong& song, const std::vector<double>& stemDurationsBy
                 const ChartClip& clip = song.clips[static_cast<size_t>(section.clipIndex)];
                 double stemDuration = stemDurationsByClipIndex[static_cast<size_t>(section.clipIndex)];
 
+                // Established here, ahead of ComputeBreakAdvance below,
+                // which needs it right away - startVoiceIfNeeded's own
+                // establishment (moments later) is then just a no-op
+                // confirming the same value.
+                ensureOriginEstablished(section.clipIndex, t);
+                double originSeconds = clipOriginSecondsByClipIndex[static_cast<size_t>(section.clipIndex)];
+
                 Entry entry;
                 entry.sectionIndex = static_cast<int>(i);
                 entry.kind = SectionKind::Break;
                 entry.clipIndex = section.clipIndex;
                 entry.sectionStartSeconds = t;
                 entry.audioStartSeconds = t;
+                entry.originSeconds = originSeconds;
                 entry.lockInSeconds = -1.0;
                 entry.loopSeconds = stemDuration;
 
                 ChartTiming::BreakAdvance advance =
-                    ChartTiming::ComputeBreakAdvance(t, stemDuration, section.loopCount, tFallSeconds);
+                    ChartTiming::ComputeBreakAdvance(originSeconds, t, stemDuration, section.loopCount, tFallSeconds);
                 entry.loopCount = advance.loopCount;
                 entry.endSeconds = advance.advanceSeconds;
 
@@ -214,18 +243,25 @@ Schedule Build(const ChartSong& song, const std::vector<double>& stemDurationsBy
                 double stemDuration = stemDurationsByClipIndex[static_cast<size_t>(section.clipIndex)];
                 double afterBeat = t / secondsPerBeat - 1e-6;
 
+                // Established here, ahead of the anchor computation below,
+                // which needs it right away - startVoiceIfNeeded's own
+                // establishment (moments later) is then just a no-op
+                // confirming the same value.
+                bool freshOrigin = ensureOriginEstablished(section.clipIndex, t);
+                double originSeconds = clipOriginSecondsByClipIndex[static_cast<size_t>(section.clipIndex)];
+                double originBeat = originSeconds / secondsPerBeat;
+
                 double anchors[kLaneCount];
-                if (clipPatternAnchored[static_cast<size_t>(section.clipIndex)])
+                if (freshOrigin)
                 {
-                    for (int lane = 0; lane < kLaneCount; ++lane)
-                    {
-                        anchors[lane] = ChartTiming::NextOnsetAfter(afterBeat, clip, lane);
-                    }
+                    ChartTiming::FreshOnsetForAllLanes(originBeat, clip, anchors);
                 }
                 else
                 {
-                    ChartTiming::FirstReachableOnsetForAllLanes(afterBeat, clip, anchors);
-                    clipPatternAnchored[static_cast<size_t>(section.clipIndex)] = true;
+                    for (int lane = 0; lane < kLaneCount; ++lane)
+                    {
+                        anchors[lane] = ChartTiming::NextOnsetAfter(originBeat, afterBeat, clip, lane);
+                    }
                 }
 
                 // Starts immediately and its own advance is scheduled right
@@ -233,7 +269,7 @@ Schedule Build(const ChartSong& song, const std::vector<double>& stemDurationsBy
                 // GameSession::BeginSection's Learn case exactly, which no
                 // longer waits for any hits_required-th onset at all.
                 double audioStartSeconds = t;
-                double lockInBeat = WalkOnsetsForLockIn(clip, anchors, clip.hitsRequired, afterBeat);
+                double lockInBeat = WalkOnsetsForLockIn(originBeat, clip, anchors, clip.hitsRequired, afterBeat);
                 double lockInSeconds = lockInBeat * secondsPerBeat;
 
                 Entry entry;
@@ -242,6 +278,7 @@ Schedule Build(const ChartSong& song, const std::vector<double>& stemDurationsBy
                 entry.clipIndex = section.clipIndex;
                 entry.sectionStartSeconds = t;
                 entry.audioStartSeconds = audioStartSeconds;
+                entry.originSeconds = originSeconds;
                 entry.lockInSeconds = lockInSeconds;
                 entry.loopSeconds = stemDuration;
 
@@ -258,7 +295,7 @@ Schedule Build(const ChartSong& song, const std::vector<double>& stemDurationsBy
                 double effectiveLoopStartSeconds = loopStartSecondsByClipIndex[static_cast<size_t>(section.clipIndex)];
 
                 entry.endSeconds = ChartTiming::ComputeLearnAdvanceSeconds(
-                    t, effectiveLoopStartSeconds, stemDuration, section.loopCount, tFallSeconds);
+                    originSeconds, t, effectiveLoopStartSeconds, stemDuration, section.loopCount, tFallSeconds);
 
                 // Mirrors GameSession::Update's own finishedSection
                 // handling: a perfect player who still wouldn't reach
@@ -355,15 +392,16 @@ SeekResult Seek(const Schedule& schedule, double elapsedSeconds)
             // phaseSeconds is deliberately independent of the underlying
             // audio voice's absolute-time-aligned phase. But pass 1 is the
             // one exception: the real voice was phase-seeked to
-            // fmod(audioStartSeconds, loopSeconds) when it started (see
-            // ChartTiming::ComputeClipPhaseSeconds/GameSession::StartClipLoop),
-            // so its own first buffer-wrap - and therefore the real end of
-            // pass 1 - lands loopSeconds - startPhase real seconds later,
-            // not a full loopSeconds later. (ComputeLearnAdvanceSeconds/
+            // fmod(audioStartSeconds - originSeconds, loopSeconds) when it
+            // started (see ChartTiming::ComputeClipPhaseSeconds/
+            // GameSession::StartClipLoop), so its own first buffer-wrap -
+            // and therefore the real end of pass 1 - lands
+            // loopSeconds - startPhase real seconds later, not a full
+            // loopSeconds later. (ComputeLearnAdvanceSeconds/
             // ComputeBreakAdvance's advance targets are themselves always
-            // exact multiples of loopSeconds measured from t=0 - i.e.
-            // exactly where the real, phase-seeked voice actually wraps -
-            // so this is not an approximation: passes 2+ always land
+            // exact multiples of loopSeconds measured from originSeconds -
+            // i.e. exactly where the real, phase-seeked voice actually
+            // wraps - so this is not an approximation: passes 2+ always land
             // perfectly full-length once pass 1's own real length is
             // accounted for.) Skipping this would make pass 1's rendered
             // sweep run at the wrong rate: reaching only
@@ -374,7 +412,7 @@ SeekResult Seek(const Schedule& schedule, double elapsedSeconds)
             // after a loop boundary (see BlockSchedule.cpp's own diagnostic
             // history for a confirmed real repro: a single-pass block that
             // only ever reached ~73% of its own width).
-            double startPhase = std::fmod(entry.audioStartSeconds, entry.loopSeconds);
+            double startPhase = std::fmod(entry.audioStartSeconds - entry.originSeconds, entry.loopSeconds);
             double firstPassSeconds = entry.loopSeconds - startPhase;
             if (firstPassSeconds <= 1e-9)
             {
@@ -407,7 +445,7 @@ SeekResult Seek(const Schedule& schedule, double elapsedSeconds)
             double volume = (window.lockInSeconds >= 0.0 && elapsedSeconds < window.lockInSeconds)
                                  ? window.volumeBeforeLockIn
                                  : window.volumeAfterLockIn;
-            result.activeVoices.push_back({window.clipIndex, volume});
+            result.activeVoices.push_back({window.clipIndex, volume, window.originSeconds});
         }
     }
 

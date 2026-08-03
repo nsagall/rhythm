@@ -278,7 +278,10 @@ void BlockPlayer::ApplyAudioForPosition()
             // own real-game phase-seek exactly - see its doc comment for
             // why this must use the clip's beat-based pattern length
             // (spanBeats), not the audio file's own raw measured duration.
-            double phase = ChartTiming::ComputeClipPhaseSeconds(m_positionSeconds, clip, stemDuration, m_song.bpm);
+            // voice.originSeconds (not 0) is this clip's own persistent
+            // phase reference - see BlockSchedule::VoiceWindow::originSeconds.
+            double phase = ChartTiming::ComputeClipPhaseSeconds(voice.originSeconds, m_positionSeconds, clip,
+                                                                  stemDuration, m_song.bpm);
             m_audioEngine.StartLooping(stem, phase, static_cast<float>(voice.volume), 0);
         }
         else

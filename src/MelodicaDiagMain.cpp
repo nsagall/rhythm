@@ -132,7 +132,17 @@ int main(int argc, char** argv)
                    PhaseName(phase), sectionIndex, static_cast<int>(kind), clip ? clip->name.c_str() : L"-");
             if (clip && phase == GamePhase::Learning && kind == SectionKind::Learn)
             {
-                printf("  spanBeats=%.4f\n", clip->spanBeats);
+                // sectionStartBeat approximates this clip's own origin (see
+                // GameSession::m_clipOriginEstablished) - exact for a
+                // first-ever appearance (established at this same instant),
+                // and a live-clock read (not scheduledBeat-derived) so it's
+                // only ever a hair later than the true origin for a
+                // continuing/reused clip, which is fine for eyeballing here.
+                double sectionStartBeat = session.Clock().BeatPosition();
+                StemHandle stem = session.DebugStemHandle(session.Song().sections[sectionIndex].clipIndex);
+                printf("  spanBeats=%.4f sectionStartBeat=%.4f audioPhaseSeconds=%.4f (should be ~0 for a "
+                       "first-ever appearance)\n",
+                       clip->spanBeats, sectionStartBeat, engine.GetPositionSeconds(stem));
                 for (int lane = 0; lane < kLaneCount; ++lane)
                 {
                     if (clip->laneNotes[lane].empty())
@@ -140,13 +150,10 @@ int main(int argc, char** argv)
                         continue;
                     }
                     double anchor = session.NextExpectedBeatForLane(lane);
-                    double phaseWithinSpan = std::fmod(anchor, clip->spanBeats);
-                    if (phaseWithinSpan < 0.0)
-                    {
-                        phaseWithinSpan += clip->spanBeats;
-                    }
-                    printf("  lane %d anchor=%.4f (phase within pattern: %.4f / %.4f = %.1f%%)\n", lane, anchor,
-                           phaseWithinSpan, clip->spanBeats, 100.0 * phaseWithinSpan / clip->spanBeats);
+                    double beatsAfterSectionStart = anchor - sectionStartBeat;
+                    printf("  lane %d anchor=%.4f (%.4f beats after this section began, %.1f%% of one pattern "
+                           "span)\n",
+                           lane, anchor, beatsAfterSectionStart, 100.0 * beatsAfterSectionStart / clip->spanBeats);
                 }
                 if (clip->name == targetClipName)
                 {

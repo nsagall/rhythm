@@ -39,6 +39,14 @@ struct Entry
     // clipLoopStartSeconds), where it does not necessarily mean the
     // underlying audio voice re-seeks its phase at this instant.
     double audioStartSeconds = 0.0;
+    // This clip's own persistent phase reference - the wall-clock second it
+    // was first ever started at, whether that was this entry or an earlier
+    // one (see Build()'s clipOriginEstablished) - not necessarily ==
+    // audioStartSeconds. Every phase/loop-boundary computation for this
+    // entry's clip is measured relative to this, not absolute second 0, so
+    // Seek() can correctly reproduce where the real, phase-seeked audio
+    // voice actually is.
+    double originSeconds = 0.0;
     // Learn only: the hits_required-th onset in chronological order across
     // all lanes, for a perfect player - i.e. the instant IsLockedIn() would
     // flip true (see GameSession::RegisterHit). Purely informational now:
@@ -79,6 +87,9 @@ struct VoiceWindow
     double volumeBeforeLockIn = 1.0;
     double volumeAfterLockIn = 1.0;
     double lockInSeconds = -1.0;
+    // This clip's own persistent phase reference - see Entry::originSeconds
+    // for what this is and why it's not necessarily == startSeconds.
+    double originSeconds = 0.0;
 };
 
 struct Schedule
@@ -105,6 +116,10 @@ struct ActiveVoice
 {
     int clipIndex = -1;
     double volume = 1.0;
+    // This clip's own persistent phase reference - see
+    // VoiceWindow::originSeconds - needed by BlockPlayer::ApplyAudioForPosition
+    // to phase-seek a newly-active voice exactly like the real game would.
+    double originSeconds = 0.0;
 };
 
 struct SeekResult

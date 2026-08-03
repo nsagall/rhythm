@@ -39,9 +39,12 @@ enum class JudgementResult
 //     streak/consecutive-miss counters, so a chart author can require
 //     simultaneous presses across lanes just by placing simultaneous notes
 //     in the MIDI file, with no special "chord" bookkeeping anywhere in
-//     here. The clip's loop starts playing (phase-aligned, at init_volume)
-//     the instant the section begins - not gated on any press - and the
-//     section advances on a fixed schedule computed that same instant
+//     here. The clip's loop starts playing (at init_volume) the instant the
+//     section begins - not gated on any press, and (if this is the clip's
+//     very first start, ever) always at its own true pattern beginning, no
+//     matter where in the song's overall beat grid that happens to fall -
+//     see m_clipOriginEstablished. The section advances on a fixed schedule
+//     computed that same instant
 //     (loop_count full loops, floored the same way a break section's own
 //     wait is, via ChartTiming::ComputeLearnAdvanceSeconds), independent of
 //     whether the player ever plays a single note. Hitting hits_required
@@ -236,20 +239,35 @@ private:
     // lock-in value) - they no longer drive anything at that point.
     void RegisterHit();
 
-    // Starts clipIndex's stem looping now (phase-aligned to the beat grid,
-    // at the given volume) if it isn't already playing, and records the
-    // start time in m_clipLoopStartSeconds[clipIndex] for loop_count to
-    // measure from. Idempotent per clip - safe to call on a clip that's
-    // already playing (e.g. already running as a background layer).
-    // finiteLoopCount == 0 (the default) loops forever, for a clip whose
-    // eventual stop time isn't known yet (learn/background). A positive
-    // value is for a clip whose total loop_count is already known right
-    // now (a break section) - it's handed straight to AudioEngine so the
-    // voice stops itself naturally and sample-accurately, rather than
+    // Starts clipIndex's stem looping now (phase-aligned to its own
+    // persistent origin - see EnsureClipOriginEstablished/
+    // m_clipOriginEstablished - at the given volume) if it isn't already
+    // playing, and records the start time in m_clipLoopStartSeconds[clipIndex]
+    // for loop_count to measure from. Idempotent per clip - safe to call on
+    // a clip that's already playing (e.g. already running as a background
+    // layer). finiteLoopCount == 0 (the default) loops forever, for a clip
+    // whose eventual stop time isn't known yet (learn/background). A
+    // positive value is for a clip whose total loop_count is already known
+    // right now (a break section) - it's handed straight to AudioEngine so
+    // the voice stops itself naturally and sample-accurately, rather than
     // relying on a later polled StopClipLoop() call to catch the exact
     // instant (which can let a fraction of a second of the loop's
     // beginning bleed through first).
     void StartClipLoop(int clipIndex, double volume, int finiteLoopCount = 0);
+
+    // Ensures clipIndex has a persistent pattern origin - the wall-clock
+    // second its own audio and (for a Learn clip) judged-note timeline are
+    // measured relative to - establishing it to nowSeconds the first time
+    // this is ever called for that clip and leaving it untouched on every
+    // later call. Called explicitly, ahead of any origin-dependent
+    // computation, by BeginSection's Learn and Break cases (each needs the
+    // origin before StartClipLoop itself would otherwise establish it);
+    // StartClipLoop also calls it as a safety net, covering Background and
+    // any other path that starts a clip without going through Learn/Break.
+    // Returns true only when this call just established it - the caller
+    // needs to know, since a fresh origin calls for
+    // ChartTiming::FreshOnsetForAllLanes instead of plain NextOnsetAfter.
+    bool EnsureClipOriginEstablished(int clipIndex, double nowSeconds);
 
     // Stops clipIndex's stem if it's playing.
     void StopClipLoop(int clipIndex);
@@ -279,9 +297,9 @@ private:
     // instead of an arbitrary wall-clock duration.
     double CountInSeconds() const;
 
-    // NextOnsetAfter/FirstReachableOnset/FirstReachableOnsetForAllLanes
-    // moved to ChartTiming.h (shared with the editor's analytical block
-    // scheduler) - see that header for their doc comments.
+    // NextOnsetAfter/FreshOnsetForAllLanes moved to ChartTiming.h (shared
+    // with the editor's analytical block scheduler) - see that header for
+    // their doc comments.
 
     // Returns the lane note whose phase-within-span matches
     // absoluteStartBeat's phase, or nullptr if none does (shouldn't happen
@@ -297,7 +315,7 @@ private:
     // are currently previewing, or -1 if nothing is being previewed right
     // now - the shared logic both of those built on top of, factored out
     // so PreviewFirstOnsetBeatForLane() can look up the previewed clip's
-    // own index (needed for the m_clipPatternAnchored check) without
+    // own index (needed for the m_clipOriginEstablished check) without
     // duplicating PreviewClip()'s own section-walking logic.
     int PreviewSectionIndex() const;
 
@@ -412,40 +430,30 @@ private:
     // m_streak/m_consecutiveMisses; always false for a break section.
     bool m_lockedIn = false;
 
-    // Per clip index: false until that clip's pattern has been anchored for
-    // judging for the first time (at the first learn section that uses it -
-    // possibly after a leading break/reset/background section, and
-    // possibly long after other clips have already started the song off).
-    // Sized/reset alongside m_clipIsPlaying. While false for a given clip,
-    // BeginSection's Learn case anchors it via FirstReachableOnsetForAllLanes
-    // instead of plain NextOnsetAfter, searching every lane against the SAME
-    // pattern cycle instead of each lane independently: scheduledBeat at
-    // that moment is not generally aligned with wherever the pattern's own
-    // notes actually start within a bar (at the very start of a song it
-    // comes from CountInSeconds(), always a whole number of bars but not
-    // bar-aligned to the pattern's own notes; later in the song it comes
-    // from wherever the previous section happened to end). Searching lanes
-    // independently there can land different lanes on different pattern
-    // cycles - e.g. one lane's true opening note gets skipped while another
-    // lane's doesn't, corrupting notes that are meant to land together (or
-    // apart) exactly as authored (this is exactly what produced a real
-    // reported bug: a clip whose file starts with one note then a two-note
-    // beat instead played its two-note beat first). Once a given clip's
-    // pattern has been anchored once, NextOnsetAfter's normal per-lane
-    // "pick up wherever the loop naturally is" is exactly the right
-    // behavior for that clip - it keeps a returning clip's groove
-    // continuous with the shared beat grid instead of restarting it.
-    // Keyed per clip (not a single whole-song flag, which this used to be):
-    // a *different* clip's first appearance can happen at any point in the
-    // song, long after some other clip has already started the song off -
-    // each one still needs its own true-beginning anchor the first time,
-    // independent of whether some other clip got there first. (This was a
-    // real reported bug when it was still a single whole-song flag: a
-    // clip's first-ever appearance elsewhere in the song could land 70%+
-    // into its own pattern instead of at its start, since by then every
-    // OTHER clip had already flipped the single flag true - both the
-    // judged notes and, downstream via StartClipLoop's phase-seek off the
-    // same beat grid, the audible audio landed deep in the pattern instead
-    // of at its beginning.)
-    std::vector<bool> m_clipPatternAnchored;
+    // Per clip index: false until that clip has been started for the very
+    // first time (Learn, Break, or Background alike - possibly long after
+    // other clips have already started the song off). Sized/reset alongside
+    // m_clipIsPlaying. While false for a given clip, StartClipLoop (and, for
+    // a Learn/Break section, EnsureClipOriginEstablished called ahead of it)
+    // establishes m_clipOriginSeconds[clipIndex] to that exact instant - the
+    // clip's own persistent phase reference from then on, used by every
+    // later ChartTiming call against it (NextOnsetAfter, ComputeClipPhaseSeconds,
+    // ComputeLearnAdvanceSeconds, ComputeBreakAdvance) instead of absolute
+    // beat/second 0. This is what makes a clip always start playing (audibly
+    // and visually) from its own true beginning the instant it starts,
+    // whatever arbitrary point in the song's overall beat grid that happens
+    // to be - a different clip playing in the background is entirely
+    // unaffected, and simply keeps looping on its own already-established
+    // origin (see GameSession.cpp's ComputeLearnAdvanceSeconds callsite
+    // comment for why this was needed: two clips' first appearances
+    // genuinely don't need to share a beat grid with each other). Once a
+    // given clip has been started once, every later restart (a 3-miss
+    // recovery, or a later section reusing the same clip) keeps using that
+    // SAME established origin, keeping its groove internally continuous
+    // instead of restarting it from scratch each time. Keyed per clip (not a
+    // single whole-song flag): a *different* clip's first start can happen
+    // at any point in the song, independent of whether some other clip
+    // already established its own origin first.
+    std::vector<bool> m_clipOriginEstablished;
+    std::vector<double> m_clipOriginSeconds;
 };
