@@ -866,53 +866,34 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
     m_prevLockedIn = nowLockedIn;
     m_prevNotesHandoff = nextClipShowing;
 
-    // While the player can't act yet (count-in, a clip's intro, a
-    // break/reset/background section, or the wait before the next clip joins),
-    // start showing the upcoming clip's notes from each lane's own actual
-    // first required note onward - so each one scrolls in from the top
-    // edge one at a time, exactly like live play, instead of a whole batch
-    // of already-partially-scrolled-in notes popping in together once
-    // revealed.
-    const ChartClip* dotsClip = nullptr;
-    if (isLiveJudging)
+    // Draws one clip's notes into the lane, either as the live, judged
+    // section (judged=true: colors reflect held/hit/miss, tracks
+    // IsLockedIn()'s glow) or as an unjudged preview (judged=false: every
+    // note stays its plain lane color, no held/hit/miss coloring, no glow -
+    // nothing has actually started yet). A note only ever actually appears
+    // once its own position lands within the visible window (the yBottom/
+    // yTop check below), so a preview pass naturally does nothing until its
+    // notes are close enough to be worth showing - no separate "is it time
+    // yet" gating needed at the call site.
+    auto drawClipDots = [&](const ChartClip* drawClip, bool judged, double upperBoundBeat)
     {
-        dotsClip = clip;
-    }
-    else
-    {
-        dotsClip = session.PreviewClip();
-    }
+        if (!drawClip)
+        {
+            return;
+        }
+        // Once a track has locked in (only possible for the judged pass -
+        // still live-judging through its extended post-lock-in run - see
+        // isLiveJudging/nextClipShowing above), every one of its notes gets
+        // a glowing green outline added on top of its usual color - held/
+        // hit/miss/upcoming all keep reading exactly as they normally
+        // would, the glow is purely an additional "this track has already
+        // locked in" cue, not a replacement for the note's own color.
+        bool glow = judged && session.IsLockedIn();
 
-    // Once a track has locked in (still live-judging through its extended
-    // post-lock-in run - see isLiveJudging/nextClipShowing above), every
-    // one of its notes gets a glowing green outline added on top of its
-    // usual color - held/hit/miss/upcoming all keep reading exactly as
-    // they normally would, the glow is purely an additional "this track
-    // has already locked in" cue, not a replacement for the note's own
-    // color.
-    bool lockedIn = isLiveJudging && session.IsLockedIn();
-
-    // A note's bar is drawn from its start (bottom edge) to its start+
-    // duration (top edge) - the moment it first becomes visible, its start
-    // sits exactly at the top of the lane, so its top edge necessarily
-    // extends *above* that by its own duration. The visibility check just
-    // below only tests a note's bottom edge against the lane's top (there's
-    // deliberately no equivalent check on the top edge, since a note is
-    // still meant to be at least partly visible then), so without clipping
-    // that excess draws straight onto whatever's above the lane - visible
-    // as a static-looking block for any lane with a note on every beat,
-    // since a new one is always mid-spawn. Scoped to just the note-drawing
-    // loop (not the whole function) so it doesn't also clip the confetti
-    // burst below, which deliberately spawns above the lane and falls in.
-    int savedClipState = SaveDC(hdc);
-    IntersectClipRect(hdc, m_laneRect.left, m_laneRect.top, m_laneRect.right, m_laneRect.bottom);
-
-    if (dotsClip)
-    {
         for (int lane = 0; lane < kLaneCount; ++lane)
         {
             double dotsFromBeat;
-            if (isLiveJudging)
+            if (judged)
             {
                 dotsFromBeat = nowBeat - kBeatsBehind;
             }
@@ -927,7 +908,7 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
 
             int laneX = laneCenterX(lane);
             for (const VisibleNote& note :
-                 NotesInRange(dotsFromBeat, notesUpperBoundBeat, dotsClip->laneNotes[lane], dotsClip->spanBeats))
+                 NotesInRange(dotsFromBeat, upperBoundBeat, drawClip->laneNotes[lane], drawClip->spanBeats))
             {
                 double beatsFromStart = note.startBeat - nowBeat;
                 double beatsFromEnd = beatsFromStart + note.durationBeats;
@@ -946,18 +927,18 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
                 // the rest of the note's time on screen, all the way until
                 // it scrolls off the bottom, matching the real outcome
                 // rather than fading back to a neutral color. Unaffected by
-                // lockedIn - see its own comment above for what that adds instead.
+                // glow - see its own comment above for what that adds instead.
                 COLORREF color = kLaneColors[lane];
                 bool isHeldNote = false;
                 bool isJudgedNote = false;
                 bool skip = false;
-                if (isLiveJudging && session.IsLaneHeld(lane) &&
+                if (judged && session.IsLaneHeld(lane) &&
                     std::abs(session.LaneHoldStartBeat(lane) - note.startBeat) < 1e-6)
                 {
                     color = kNoteColorHit;
                     isHeldNote = true;
                 }
-                else if (isLiveJudging)
+                else if (judged)
                 {
                     JudgementResult result = session.OnsetJudgement(note.startBeat, lane);
                     if (result == JudgementResult::Hit)
@@ -987,13 +968,52 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
                     continue;
                 }
 
-                DrawNoteBar(hdc, laneX, yTop, yBottom, barHalfWidth, color, lockedIn);
+                DrawNoteBar(hdc, laneX, yTop, yBottom, barHalfWidth, color, glow);
                 // Judged hit/miss notes get the same glow halo as a held
                 // note - a plain color swap was too easy to miss at a
                 // glance, so the glow makes the pass/fail moment pop.
-                DrawNoteGlyph(hdc, laneX, yBottom, color, isHeldNote || isJudgedNote, lockedIn);
+                DrawNoteGlyph(hdc, laneX, yBottom, color, isHeldNote || isJudgedNote, glow);
             }
         }
+    };
+
+    // A note's bar is drawn from its start (bottom edge) to its start+
+    // duration (top edge) - the moment it first becomes visible, its start
+    // sits exactly at the top of the lane, so its top edge necessarily
+    // extends *above* that by its own duration. The visibility check just
+    // below only tests a note's bottom edge against the lane's top (there's
+    // deliberately no equivalent check on the top edge, since a note is
+    // still meant to be at least partly visible then), so without clipping
+    // that excess draws straight onto whatever's above the lane - visible
+    // as a static-looking block for any lane with a note on every beat,
+    // since a new one is always mid-spawn. Scoped to just the note-drawing
+    // loop (not the whole function) so it doesn't also clip the confetti
+    // burst below, which deliberately spawns above the lane and falls in.
+    int savedClipState = SaveDC(hdc);
+    IntersectClipRect(hdc, m_laneRect.left, m_laneRect.top, m_laneRect.right, m_laneRect.bottom);
+
+    // While the player can't act yet (count-in, a break/reset/background
+    // section, or the brief tail once nextClipShowing flips true), the only
+    // thing to draw is the upcoming clip's own preview, from each lane's own
+    // actual first required note onward - so each one scrolls in from the
+    // top edge one at a time, exactly like live play, instead of a whole
+    // batch of already-partially-scrolled-in notes popping in together once
+    // revealed.
+    drawClipDots(isLiveJudging ? clip : session.PreviewClip(), isLiveJudging, notesUpperBoundBeat);
+
+    // Early look-ahead: since a Learn section's advance is scheduled the
+    // instant it begins (see BeginSection), the moment the *next* clip's own
+    // earliest notes are due to enter the visible window - up to kBeatsAhead
+    // before the advance itself - they should already be scrolling in, not
+    // waiting to pop in only once the handoff actually happens. Drawn as a
+    // second, unjudged pass layered on top of the still-live current clip
+    // (rather than replacing it, unlike the primary pass above) - the
+    // visibility check inside drawClipDots naturally does the rest, since
+    // each note's own y-position already accounts for how far away its
+    // onset still is, so nothing appears before it's actually due.
+    if (isLiveJudging)
+    {
+        drawClipDots(session.PreviewClip(), /*judged=*/false, nowBeat + kBeatsAhead);
     }
 
     RestoreDC(hdc, savedClipState);
