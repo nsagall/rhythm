@@ -15,6 +15,16 @@ using ColorUtil::Lighten;
 namespace
 {
 
+// GLOBAL SWITCH: when true, a section's dots hand off early to the next
+// clip's preview - as soon as its own notes are due to become visible -
+// which is what makes the current section's notes disappear before that
+// next section actually starts. Set to false (the current setting) to
+// disable that early handoff entirely: a section's own dots and judging
+// now stay live for its whole duration, right up until the literal
+// scheduled advance, instead of giving way in anticipation of it. See
+// nextClipShowing's own computation in Draw() for where this is read.
+constexpr bool kPreviewNextClipBeforeHandoff = false;
+
 constexpr UINT_PTR kFrameTimerId = 400;
 constexpr UINT kFrameIntervalMs = 16;
 constexpr int kVisibilityMarginPx = 12;
@@ -697,18 +707,21 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
     // actually start scrolling in at the top of the lane - i.e. until the
     // earliest of its lanes' first notes (PreviewFirstOnsetBeatForLane)
     // crosses within kBeatsAhead of now, the same visibility threshold any
-    // note uses. That earliest onset is always at or after the scheduled
-    // advance beat (it's found by searching forward from there), so it can
-    // land anywhere from "already at the advance beat" (common - explodes
-    // right as the handoff happens) to several beats past it (a sparser
-    // clip) - waiting on it directly is what makes this "only explode when
-    // something is actually arriving," not a fixed time-based guess. The
-    // one thing that can't be allowed is waiting on it *past* the advance
-    // beat itself - falls back to the advance beat itself in that case (and
-    // whenever there's nothing to preview at all - end of chart, the next
-    // section is a break/reset, or the next learn section hides its own
-    // dots behind an intro), matching the old, simpler "explode right at
-    // the handoff" behavior.
+    // note uses (only while kPreviewNextClipBeforeHandoff is true - see its
+    // own comment; currently false, so this section stays live right up to
+    // the scheduled advance instead, same as the "nothing to preview"
+    // branch below always did). That earliest onset is always at or after
+    // the scheduled advance beat (it's found by searching forward from
+    // there), so it can land anywhere from "already at the advance beat"
+    // (common - explodes right as the handoff happens) to several beats
+    // past it (a sparser clip) - waiting on it directly is what makes this
+    // "only explode when something is actually arriving," not a fixed
+    // time-based guess. The one thing that can't be allowed is waiting on
+    // it *past* the advance beat itself - falls back to the advance beat
+    // itself in that case (and whenever there's nothing to preview at all -
+    // end of chart, the next section is a break/reset, or the next learn
+    // section hides its own dots behind an intro), matching the old,
+    // simpler "explode right at the handoff" behavior.
     bool isLearnSection =
         clip && session.Phase() == GamePhase::Learning && session.CurrentSectionKind() == SectionKind::Learn;
     bool nextClipShowing = false;
@@ -729,7 +742,7 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
         double secondsPerBeat = 60.0 / session.Song().bpm;
         double advanceAtBeat = session.PendingAdvanceAtSeconds() / secondsPerBeat;
 
-        if (session.PreviewClip() == nullptr)
+        if (!kPreviewNextClipBeforeHandoff || session.PreviewClip() == nullptr)
         {
             // Nothing to hand off to (end of chart, the next section is a
             // break/reset, or the next learn section hides its own dots
@@ -741,7 +754,10 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
             // *entire* wait until the real advance, which could be many
             // seconds with loop_count > 1: every note still due kept
             // getting judged (Update() doesn't care what's drawn) but
-            // simply stopped being drawn at all.
+            // simply stopped being drawn at all. Also always taken (skipping
+            // the early-handoff branch below entirely) while
+            // kPreviewNextClipBeforeHandoff is false, regardless of whether
+            // there's a real preview to show.
             nextClipShowing = (nowBeat >= advanceAtBeat);
             notesUpperBoundBeat = std::min(notesUpperBoundBeat, advanceAtBeat);
         }
