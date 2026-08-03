@@ -112,7 +112,16 @@ bool BlockPropertiesPanel::Draw(EditorDocument& doc, int selectedBlockId, BlockP
         ImGui::Text("Duration: %.2fs per loop x %d loop(s)", entry->loopSeconds, entry->loopCount);
         if (entry->kind == SectionKind::Learn)
         {
-            ImGui::Text("Locks in at %.2fs into this block's audio", entry->lockInSeconds - entry->sectionStartSeconds);
+            if (entry->lockInSeconds >= 0.0)
+            {
+                ImGui::Text("Locks in at %.2fs into this block's audio (glow/confetti/volume-switch only - the",
+                             entry->lockInSeconds - entry->sectionStartSeconds);
+                ImGui::Text("block's own duration above doesn't depend on it)");
+            }
+            else
+            {
+                ImGui::TextDisabled("Never locks in a perfect player's hits_required before this block ends");
+            }
         }
         ImGui::Text("Total: %.2fs", entry->endSeconds - entry->sectionStartSeconds);
     }

@@ -123,6 +123,7 @@ bool GameSession::LoadChart(const std::wstring& chartFilePath, bool easyMode, st
     m_clipPatternAnchored.assign(m_song.clips.size(), false);
     m_queuedBackground = QueuedBackground{};
     m_hasPendingAdvance = false;
+    m_lockedIn = false;
     m_lastJudgement = JudgementResult::None;
     m_judgedNotes.clear();
     for (int lane = 0; lane < kLaneCount; ++lane)
@@ -155,6 +156,7 @@ void GameSession::Start()
     std::fill(m_clipPatternAnchored.begin(), m_clipPatternAnchored.end(), false);
     m_queuedBackground = QueuedBackground{};
     m_hasPendingAdvance = false;
+    m_lockedIn = false;
     m_lastJudgement = JudgementResult::None;
     m_judgedNotes.clear();
     for (int lane = 0; lane < kLaneCount; ++lane)
@@ -178,6 +180,7 @@ void GameSession::Stop()
     std::fill(m_clipIsPlaying.begin(), m_clipIsPlaying.end(), false);
     m_queuedBackground = QueuedBackground{};
     m_hasPendingAdvance = false;
+    m_lockedIn = false;
     m_lastJudgement = JudgementResult::None;
     for (int lane = 0; lane < kLaneCount; ++lane)
     {
@@ -260,10 +263,6 @@ void GameSession::OnPress(int lane)
             RegisterHit();
             m_lastJudgement = JudgementResult::Hit;
             RecordOnsetJudgement(startBeat, lane, JudgementResult::Hit);
-            if (m_streak >= clip.hitsRequired && !m_hasPendingAdvance)
-            {
-                SchedulePendingAdvance();
-            }
         }
         else
         {
@@ -322,10 +321,6 @@ void GameSession::OnRelease(int lane)
         RegisterHit();
         m_lastJudgement = JudgementResult::Hit;
         RecordOnsetJudgement(startBeat, lane, JudgementResult::Hit);
-        if (m_streak >= clip.hitsRequired && !m_hasPendingAdvance)
-        {
-            SchedulePendingAdvance();
-        }
     }
     else
     {
@@ -431,11 +426,16 @@ void GameSession::Update()
             const ChartSection& finishedSection = m_song.sections[m_currentSectionIndex];
             if (finishedSection.kind == SectionKind::Learn)
             {
-                // Only a learn section's clip switches init_volume ->
-                // volume; a break clip already plays at `volume`
-                // throughout (there's no lock-in event to switch on).
-                m_audioEngine.SetVolume(m_stemHandles[finishedSection.clipIndex],
-                                         static_cast<float>(m_song.clips[finishedSection.clipIndex].volume));
+                // A locked-in clip already switched from init_volume to
+                // volume back in RegisterHit, and keeps playing by design
+                // (to build up the arrangement) - nothing left to do here.
+                // One that never locked in didn't prove itself, so it
+                // doesn't join the arrangement: stop it here, exactly like
+                // a break's own clip below.
+                if (!m_lockedIn)
+                {
+                    StopClipLoop(finishedSection.clipIndex);
+                }
             }
             else if (finishedSection.kind == SectionKind::Break)
             {
@@ -565,6 +565,11 @@ const SongClock& GameSession::Clock() const
 bool GameSession::IsAwaitingAdvance() const
 {
     return m_hasPendingAdvance;
+}
+
+bool GameSession::IsLockedIn() const
+{
+    return m_lockedIn;
 }
 
 double GameSession::PendingAdvanceAtSeconds() const
@@ -737,6 +742,7 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
     m_consecutiveMisses = 0;
     m_easyGraceAvailable = true;
     m_hasPendingAdvance = false;
+    m_lockedIn = false;
     m_phase = GamePhase::Learning;
     m_judgedNotes.clear();
     for (int lane = 0; lane < kLaneCount; ++lane)
@@ -787,9 +793,9 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
             m_audioEngine.StopAll();
             std::fill(m_clipIsPlaying.begin(), m_clipIsPlaying.end(), false);
 
-            // Same kNoteFallBeats guarantee SchedulePendingAdvance gives a
-            // locked-in learn section: without it, a short break can hand
-            // off to the next learn section with its first note's
+            // Same kNoteFallBeats guarantee a learn section's own advance
+            // gives (see the Learn case below): without it, a short break
+            // can hand off to the next learn section with its first note's
             // scheduled beat only an instant away, so the note lane's
             // preview lands it already at (or past) the judge line instead
             // of spawning at the top edge with its full travel time. See
@@ -805,11 +811,12 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
             ChartTiming::BreakAdvance advance =
                 ChartTiming::ComputeBreakAdvance(nowSeconds, stemDuration, section.loopCount, tFallSeconds);
 
-            // A break's loop_count is already known right now (unlike a
-            // learn clip, whose eventual stop time depends on future
-            // player input), so it's handed straight to StartClipLoop: the
-            // voice stops itself naturally and sample-accurately once its
-            // (possibly loop-count-extended) loops are done, instead of
+            // Unlike a learn clip (which always loops forever - it might
+            // still need to keep playing past this section's own end, if
+            // locked in), a break clip never outlives its own section, so
+            // its now-known loop count is handed straight to StartClipLoop:
+            // the voice stops itself naturally and sample-accurately once
+            // its (possibly loop-count-extended) loops are done, instead of
             // relying solely on the polled StopClipLoop() call below to
             // catch the exact instant - which could otherwise let a
             // fraction of a second of the loop's beginning bleed through
@@ -817,10 +824,9 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
             // nothing else is left playing to mask it.
             StartClipLoop(section.clipIndex, clip.volume, advance.loopCount);
             // Measured from nowSeconds (captured just above, the same
-            // instant StartClipLoop records into
-            // m_clipLoopStartSeconds), not a later clock read - matches
-            // how SchedulePendingAdvance already does this for a learn
-            // section's lock-in floor.
+            // instant StartClipLoop records into m_clipLoopStartSeconds),
+            // not a later clock read - matches how the Learn case below
+            // does this for its own advance floor.
             m_pendingAdvanceAtSeconds = advance.advanceSeconds;
 
             m_hasPendingAdvance = true;
@@ -877,38 +883,54 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
                 ChartTiming::FirstReachableOnsetForAllLanes(scheduledBeat - 1e-6, clip, m_nextExpectedBeat);
                 m_clipPatternAnchored[section.clipIndex] = true;
             }
+
+            // Starts immediately and schedules its own advance right away
+            // too, exactly like Break above - the section advances on this
+            // fixed schedule whether or not the player ever locks in (see
+            // RegisterHit/RegisterMiss for what locking in still does:
+            // purely the glow/confetti/volume-switch treatment, and turning
+            // off the "3 misses stops the loop" penalty - none of it
+            // affects this timing, which is already decided).
+            double secondsPerBeat = 60.0 / m_song.bpm;
+            double tFallSeconds = kNoteFallBeats * secondsPerBeat;
+            double nowSeconds = m_clock.ElapsedSeconds();
+            double stemDuration = m_audioEngine.GetStemDurationSeconds(m_stemHandles[section.clipIndex]);
+
+            StartClipLoop(section.clipIndex, clip.initVolume);
+            m_pendingAdvanceAtSeconds = ChartTiming::ComputeLearnAdvanceSeconds(
+                nowSeconds, m_clipLoopStartSeconds[section.clipIndex], stemDuration, section.loopCount, tFallSeconds);
+            m_hasPendingAdvance = true;
             return;
         }
     }
 }
 
-// Called once the shared streak meets the current learn section's clip
-// requirement: schedules the advance to the next section (or Complete),
-// via ChartTiming::ComputeLearnAdvanceSeconds (shared with the editor's
-// analytical block scheduler) - see that function for the formula.
-void GameSession::SchedulePendingAdvance()
-{
-    const ChartSection& section = m_song.sections[m_currentSectionIndex];
-    double stemDuration = m_audioEngine.GetStemDurationSeconds(m_stemHandles[section.clipIndex]);
-    double nowSeconds = m_clock.ElapsedSeconds();
-    double secondsPerBeat = 60.0 / m_song.bpm;
-    double tFallSeconds = kNoteFallBeats * secondsPerBeat;
-
-    m_pendingAdvanceAtSeconds = ChartTiming::ComputeLearnAdvanceSeconds(
-        nowSeconds, m_clipLoopStartSeconds[section.clipIndex], stemDuration, section.loopCount, tFallSeconds);
-    m_hasPendingAdvance = true;
-}
-
-// Records a hit: advances the shared streak, resets the shared miss counter, and starts the current section's clip loop (phase-aligned) if it isn't already playing. Once already awaiting advance, the streak/miss counters are left alone (frozen at their lock-in value) since they no longer drive anything.
+// Records a hit: advances the shared streak, resets the shared miss
+// counter, and (re)starts the current section's clip loop if it isn't
+// already playing - only actually needed to recover a clip StopClipLoop
+// silenced after 3 consecutive misses, since BeginSection already started
+// it once. Once the streak reaches the clip's hits_required, locks the
+// section in: IsLockedIn() flips true and the clip's volume switches from
+// init_volume to volume - purely a reward/feedback treatment, since the
+// section's own advance timing was already decided in BeginSection and
+// doesn't change either way. Once already locked in, the streak/miss
+// counters are left alone (frozen at their lock-in value) since they no
+// longer drive anything.
 void GameSession::RegisterHit()
 {
-    if (!m_hasPendingAdvance)
+    const ChartSection& section = m_song.sections[m_currentSectionIndex];
+    const ChartClip& clip = m_song.clips[section.clipIndex];
+
+    if (!m_lockedIn)
     {
         m_streak++;
         m_consecutiveMisses = 0;
+        if (m_streak >= clip.hitsRequired)
+        {
+            m_lockedIn = true;
+            m_audioEngine.SetVolume(m_stemHandles[section.clipIndex], static_cast<float>(clip.volume));
+        }
     }
-    const ChartSection& section = m_song.sections[m_currentSectionIndex];
-    const ChartClip& clip = m_song.clips[section.clipIndex];
     StartClipLoop(section.clipIndex, clip.initVolume);
 }
 
@@ -956,10 +978,10 @@ void GameSession::StopClipLoop(int clipIndex)
     m_clipIsPlaying[clipIndex] = false;
 }
 
-// Records a miss: resets the shared streak, and stops the current section's clip loop after 3 in a row. A no-op once already awaiting advance - the track has already locked in, so further misses shouldn't stop it or unfreeze the streak display. In easy mode, the first miss each section is instead fully forgiven (see m_easyGraceAvailable) - streak and consecutive-miss count both left untouched, as if it never happened.
+// Records a miss: resets the shared streak, and stops the current section's clip loop after 3 in a row. A no-op once already locked in - further misses shouldn't stop the clip or unfreeze the streak display once it's proven itself, though the section's own advance timing was never affected by any of this either way. In easy mode, the first miss each section is instead fully forgiven (see m_easyGraceAvailable) - streak and consecutive-miss count both left untouched, as if it never happened.
 void GameSession::RegisterMiss()
 {
-    if (m_hasPendingAdvance)
+    if (m_lockedIn)
     {
         return;
     }

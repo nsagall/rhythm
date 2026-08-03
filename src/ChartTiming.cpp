@@ -152,29 +152,30 @@ void ExpandLaneNotesToFillClip(ChartClip& clip, double stemDurationSeconds, doub
     clip.spanBeats = clipBeats;
 }
 
-double ComputeLearnAdvanceSeconds(double lockInSeconds, double loopStartSeconds, double stemDuration, int loopCount,
-                                   double tFallSeconds)
+double ComputeLearnAdvanceSeconds(double sectionStartSeconds, double loopStartSeconds, double stemDuration,
+                                   int loopCount, double tFallSeconds)
 {
     if (stemDuration <= 0.0)
     {
-        return lockInSeconds;
+        return sectionStartSeconds;
     }
 
-    double naturalAdvance = std::ceil(lockInSeconds / stemDuration) * stemDuration;
+    double naturalAdvance = std::ceil(sectionStartSeconds / stemDuration) * stemDuration;
 
     // loop_count sets a floor measured from when this clip's loop actually
-    // started, independent of how fast the player locked in. loop_count=1
-    // (the default) always resolves to <= naturalAdvance, since locking in
-    // can't happen before the loop starts.
+    // started - not necessarily this section's own start, if the same clip
+    // was already playing from an earlier, still-open section.
+    // loop_count=1 (the default) always resolves to <= naturalAdvance,
+    // since a clip can't have started playing after its own section began.
     double minimumAdvance = ComputeLoopFloorSeconds(loopStartSeconds, stemDuration, loopCount);
 
     double advanceSeconds = std::max(naturalAdvance, minimumAdvance);
 
-    // Guarantee at least a full tFallSeconds of real time between locking
-    // in and the next section actually starting, extended by whole extra
-    // loops rather than an arbitrary pause, so the current clip's audio
-    // never gets cut mid-loop.
-    while (advanceSeconds - lockInSeconds < tFallSeconds)
+    // Guarantee at least a full tFallSeconds of real time between the
+    // section starting and the next one actually starting, extended by
+    // whole extra loops rather than an arbitrary pause, so the current
+    // clip's audio never gets cut mid-loop.
+    while (advanceSeconds - sectionStartSeconds < tFallSeconds)
     {
         advanceSeconds += stemDuration;
     }

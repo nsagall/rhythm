@@ -40,19 +40,18 @@ enum class JudgementResult
 //     simultaneous presses across lanes just by placing simultaneous notes
 //     in the MIDI file, with no special "chord" bookkeeping anywhere in
 //     here. The clip's loop starts playing (phase-aligned, at init_volume)
-//     on the player's first correct press on any lane, stops after 3
-//     consecutive misses, and once the shared streak reaches the clip's
-//     hits_required, it locks in - dots keep coming and keep being judged
-//     for a while longer (the loop just keeps playing, switching
-//     init_volume -> volume once the section actually advances), but
-//     misses no longer stop the loop or affect timing once locked in,
-//     since there's nothing left to lose. A chart-declared loop_count (on
-//     the section, default 1) sets a floor under this: the clip must
-//     complete at least that many full loops (counted from when it first
-//     started playing) before advancing, even if the player locks in well
-//     before the first loop finishes - loop_count=1 never changes
-//     anything, since the natural "wait for the next loop boundary"
-//     behavior already guarantees at least one full loop.
+//     the instant the section begins - not gated on any press - and the
+//     section advances on a fixed schedule computed that same instant
+//     (loop_count full loops, floored the same way a break section's own
+//     wait is, via ChartTiming::ComputeLearnAdvanceSeconds), independent of
+//     whether the player ever plays a single note. Hitting hits_required
+//     worth of the shared streak locks the clip in - IsLockedIn() flips
+//     true, its volume switches from init_volume to volume, and misses stop
+//     mattering (no more stopping the loop after 3 in a row) - but none of
+//     that touches the section's own advance timing at all, which was
+//     already decided. If the section's own advance arrives before the
+//     player ever locks in, the clip simply stops (it never proved itself,
+//     so it doesn't join the arrangement) instead of continuing to play.
 //   - Break ([break]): stops every clip currently playing, starts this
 //     section's clip looping, and blocks advancing until loop_count full
 //     loops complete - no judging happens. Advancing is also floored at
@@ -170,17 +169,24 @@ public:
     // meaningful when IsLaneHeld(lane) is true.
     double LaneHoldStartBeat(int lane) const;
 
-    // True once the current section has locked in (learn) or finished
-    // starting its clip (break) and is just waiting for the scheduled time
-    // before the next section begins. Reset can never be the current
-    // section here - it advances immediately, with no waiting period of
-    // its own. For a break section, no judging happens either way. For a
-    // learn section, presses keep being judged
-    // as normal throughout this window - dots keep coming and keep turning
-    // red/green - but misses stop affecting anything (the streak display
-    // freezes and the clip loop no longer stops from consecutive misses),
-    // since the section's fate is already sealed.
+    // True whenever the current section (learn or break) has a scheduled
+    // advance at all - which is to say, true for essentially the entire
+    // time either kind is current, since both schedule their own advance
+    // the instant they begin, independent of the player. Reset can never be
+    // the current section here - it advances immediately, with no waiting
+    // period of its own.
     bool IsAwaitingAdvance() const;
+
+    // True once the current learn section's shared streak has met its
+    // clip's hits_required - always false for a break section (nothing to
+    // lock in). Purely a visual/audio-treatment signal now (the glowing
+    // note outline, the confetti burst, the init_volume -> volume switch,
+    // and misses no longer stopping the clip's loop) - it has no effect on
+    // when the section actually advances, which was already decided the
+    // instant the section began. If this is still false when the section's
+    // own advance arrives, the clip simply stops rather than continuing to
+    // play into later sections.
+    bool IsLockedIn() const;
 
     // Returns the wall-clock second at which the current section's
     // already-scheduled advance will actually happen, or a negative value
@@ -326,18 +332,6 @@ private:
     // ComputeLoopFloorSeconds moved to ChartTiming.h (shared with the
     // editor's analytical block scheduler).
 
-    // Called once the shared streak meets a learn section's clip
-    // requirement: schedules the advance to the next section (or
-    // Complete), and the switch from init_volume to volume, for the next
-    // time the clip's stem wraps back to the start of a playthrough - or
-    // later still, if the section's loop_count demands more full loops
-    // than have played since the clip started, or if that isn't already at
-    // least kNoteFallBeats of real time away (so the next section's notes
-    // always get their full on-screen travel time to preview before they
-    // must be played, even if the player locks in right before a loop
-    // boundary).
-    void SchedulePendingAdvance();
-
     // Records a judgement for a specific lane note, for OnsetJudgement() to
     // look up later. Trims old entries so this can't grow unbounded.
     void RecordOnsetJudgement(double startBeat, int lane, JudgementResult result);
@@ -404,13 +398,19 @@ private:
     LaneHold m_laneHolds[kLaneCount];
     JudgementResult m_lastJudgement = JudgementResult::None;
 
-    // Set once a learn section's shared streak meets its clip's
-    // requirement, or immediately on entering a break section; new
-    // presses stop being judged and the session advances at m_pendingAdvanceAtSeconds.
-    // (Reset never sets this - it advances immediately, within the same
-    // BeginSection call, with nothing left to await.)
+    // Set immediately on entering a learn or break section - both schedule
+    // their own advance to m_pendingAdvanceAtSeconds the instant they
+    // begin, regardless of the player. (Reset never sets this - it
+    // advances immediately, within the same BeginSection call, with
+    // nothing left to await.)
     bool m_hasPendingAdvance = false;
     double m_pendingAdvanceAtSeconds = 0.0;
+
+    // True once the current learn section's shared streak has met its
+    // clip's hits_required - see IsLockedIn()'s own comment for what this
+    // does and doesn't affect. Reset to false in BeginSection alongside
+    // m_streak/m_consecutiveMisses; always false for a break section.
+    bool m_lockedIn = false;
 
     // Per clip index: false until that clip's pattern has been anchored for
     // judging for the first time (at the first learn section that uses it -

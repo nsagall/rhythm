@@ -24,14 +24,14 @@ struct LaneFrontier
 
 // Walks the merged, chronologically-sorted onsets across every lane with
 // notes, starting from each lane's own anchor, for exactly hitsRequired
-// pops - mirrors GameSession::RegisterHit's shared streak incrementing
-// once per judged hit, in chronological order across all lanes, until it
-// meets hits_required. Returns the beat of the very first pop (== when the
-// clip's loop would start sounding if it isn't already playing) via
-// outFirstOnsetBeat, and the beat of the hitsRequired-th pop (== the
-// lock-in instant) via outLockInBeat.
-void WalkOnsetsForLockIn(const ChartClip& clip, const double anchors[kLaneCount], int hitsRequired,
-                          double afterBeat, double& outFirstOnsetBeat, double& outLockInBeat)
+// pops - mirrors GameSession::RegisterHit's shared streak incrementing once
+// per judged hit, in chronological order across all lanes, until it meets
+// hits_required. Returns the beat of the hitsRequired-th pop for a perfect
+// player (== the instant IsLockedIn() flips true, purely for the voice's
+// own volume-switch timing - it no longer affects the section's own
+// advance timing at all, see Build()'s own Learn case).
+double WalkOnsetsForLockIn(const ChartClip& clip, const double anchors[kLaneCount], int hitsRequired,
+                            double afterBeat)
 {
     std::vector<LaneFrontier> frontier;
     for (int lane = 0; lane < kLaneCount; ++lane)
@@ -42,8 +42,7 @@ void WalkOnsetsForLockIn(const ChartClip& clip, const double anchors[kLaneCount]
         }
     }
 
-    outFirstOnsetBeat = afterBeat;
-    outLockInBeat = afterBeat;
+    double lockInBeat = afterBeat;
 
     int hits = std::max(hitsRequired, 1);
     for (int hit = 0; hit < hits && !frontier.empty(); ++hit)
@@ -57,13 +56,10 @@ void WalkOnsetsForLockIn(const ChartClip& clip, const double anchors[kLaneCount]
             }
         }
         double beat = frontier[minIdx].beat;
-        if (hit == 0)
-        {
-            outFirstOnsetBeat = beat;
-        }
-        outLockInBeat = beat;
+        lockInBeat = beat;
         frontier[minIdx].beat = ChartTiming::NextOnsetAfter(beat, clip, frontier[minIdx].lane);
     }
+    return lockInBeat;
 }
 
 } // namespace
@@ -232,11 +228,12 @@ Schedule Build(const ChartSong& song, const std::vector<double>& stemDurationsBy
                     clipPatternAnchored[static_cast<size_t>(section.clipIndex)] = true;
                 }
 
-                double firstOnsetBeat;
-                double lockInBeat;
-                WalkOnsetsForLockIn(clip, anchors, clip.hitsRequired, afterBeat, firstOnsetBeat, lockInBeat);
-
-                double audioStartSeconds = firstOnsetBeat * secondsPerBeat;
+                // Starts immediately and its own advance is scheduled right
+                // away too, exactly like Break - mirrors
+                // GameSession::BeginSection's Learn case exactly, which no
+                // longer waits for any hits_required-th onset at all.
+                double audioStartSeconds = t;
+                double lockInBeat = WalkOnsetsForLockIn(clip, anchors, clip.hitsRequired, afterBeat);
                 double lockInSeconds = lockInBeat * secondsPerBeat;
 
                 Entry entry;
@@ -253,15 +250,46 @@ Schedule Build(const ChartSong& song, const std::vector<double>& stemDurationsBy
                 // no-op and loopStartSecondsByClipIndex keeps its
                 // ORIGINAL value - exactly mirroring how the real
                 // StartClipLoop's guard leaves m_clipLoopStartSeconds
-                // untouched in that case, so this section's own
-                // lock-in-floor math is computed relative to when the
-                // clip truly started, not this section's own onset.
-                startVoiceIfNeeded(section.clipIndex, audioStartSeconds, clip.initVolume, clip.volume, lockInSeconds,
-                                    static_cast<int>(i));
+                // untouched in that case, so this section's own advance
+                // floor is computed relative to when the clip truly
+                // started, not this section's own start.
+                bool openedFresh = startVoiceIfNeeded(section.clipIndex, audioStartSeconds, clip.initVolume,
+                                                       clip.volume, lockInSeconds, static_cast<int>(i));
                 double effectiveLoopStartSeconds = loopStartSecondsByClipIndex[static_cast<size_t>(section.clipIndex)];
 
                 entry.endSeconds = ChartTiming::ComputeLearnAdvanceSeconds(
-                    lockInSeconds, effectiveLoopStartSeconds, stemDuration, section.loopCount, tFallSeconds);
+                    t, effectiveLoopStartSeconds, stemDuration, section.loopCount, tFallSeconds);
+
+                // Mirrors GameSession::Update's own finishedSection
+                // handling: a perfect player who still wouldn't reach
+                // hits_required before the section's own advance (rare -
+                // only when hits_required exceeds however many onsets the
+                // pattern actually offers in that span) never locks in, so
+                // the clip doesn't join the arrangement - close its voice
+                // here instead of leaving it open forever. Only reachable
+                // for a voice this section itself opened fresh: a voice
+                // reused from an earlier, already-locked-in section keeps
+                // its own true lockInSeconds (in the past, so Seek() already
+                // resolves it to volumeAfterLockIn throughout) - untouched
+                // by whether *this* section's own walk locks in again.
+                if (openedFresh && lockInSeconds >= entry.endSeconds)
+                {
+                    int voiceIdx = voiceIndexByClipIndex[static_cast<size_t>(section.clipIndex)];
+                    VoiceWindow& voice = schedule.voices[static_cast<size_t>(voiceIdx)];
+                    voice.stopSeconds = entry.endSeconds;
+                    // Never actually reached lockInSeconds, so the voice
+                    // should read as init_volume for its whole (now-closed)
+                    // life - Seek()'s ternary only takes the
+                    // volumeBeforeLockIn branch while elapsedSeconds is
+                    // still short of a *valid* lockInSeconds, so clearing it
+                    // to -1 alone would wrongly fall through to
+                    // volumeAfterLockIn instead; setting both fields equal
+                    // sidesteps the split entirely.
+                    voice.volumeAfterLockIn = clip.initVolume;
+                    voice.lockInSeconds = -1.0;
+                    voiceIndexByClipIndex[static_cast<size_t>(section.clipIndex)] = -1;
+                    entry.lockInSeconds = -1.0;
+                }
 
                 // Informational only - the total number of passes spanning
                 // [audioStartSeconds, endSeconds), each exactly stemDuration

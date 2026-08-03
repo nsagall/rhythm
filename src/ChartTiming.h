@@ -34,8 +34,8 @@ void FirstReachableOnsetForAllLanes(double afterBeat, const ChartClip& clip, dou
 
 // Computes the wall-clock second at which loopCount full loops have
 // completed, counted from loopStartSeconds, given a stem of stemDuration
-// seconds. Shared by a learn section's lock-in floor, a break section's
-// unconditional wait, and a background layer's self-stop time.
+// seconds. Shared by a learn section's own advance floor and a break
+// section's unconditional wait.
 double ComputeLoopFloorSeconds(double loopStartSeconds, double stemDuration, int loopCount);
 
 // If clip's declared spanBeats is shorter than one full loop of its actual
@@ -61,17 +61,19 @@ void ExpandLaneNotesToFillClip(ChartClip& clip, double stemDurationSeconds, doub
 // anything else with its notes.
 bool ClipFitsOneLoop(const ChartClip& clip, double stemDurationSeconds, double bpm);
 
-// Mirrors GameSession::SchedulePendingAdvance's formula exactly: given a
-// learn section's lock-in instant (the wall-clock second its shared streak
-// met hits_required), the clip's actual loop-start instant, its measured
-// stem duration, its declared loop_count, and the required preview lead
-// time (tFallSeconds, == kNoteFallBeats worth of seconds), returns the
-// second at which the section should hand off to the next one - the next
-// loop boundary at/after lock-in, floored by loop_count's own minimum, and
-// extended by whole loops until at least tFallSeconds separates lock-in
-// from the hand-off.
-double ComputeLearnAdvanceSeconds(double lockInSeconds, double loopStartSeconds, double stemDuration, int loopCount,
-                                   double tFallSeconds);
+// Mirrors GameSession::BeginSection's Learn-case formula exactly: given the
+// wall-clock second the section itself began (a Learn section now starts
+// its clip and schedules its own advance immediately, exactly like Break -
+// whether the player ever meets hits_required doesn't affect this at all,
+// only the glow/volume-switch treatment does), the clip's actual loop-start
+// instant, its measured stem duration, its declared loop_count, and the
+// required preview lead time (tFallSeconds, == kNoteFallBeats worth of
+// seconds), returns the second at which the section should hand off to the
+// next one - the next loop boundary at/after the section's own start,
+// floored by loop_count's own minimum, and extended by whole loops until at
+// least tFallSeconds separates the section's start from the hand-off.
+double ComputeLearnAdvanceSeconds(double sectionStartSeconds, double loopStartSeconds, double stemDuration,
+                                   int loopCount, double tFallSeconds);
 
 // Mirrors GameSession::BeginSection's Break-case formula: a break's
 // loop_count is already known when it starts (unlike a learn clip's, which

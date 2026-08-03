@@ -105,10 +105,10 @@ private:
     JudgementResult m_flashResult[kLaneCount] = {};
     DWORD m_flashUntilMs[kLaneCount] = {};
 
-    // Tracks the current Learn section's GameSession::IsAwaitingAdvance()
-    // from the previous frame, so the moment it flips false->true (the
-    // instant a track locks in) can be caught exactly once, to trigger a
-    // confetti burst right then.
+    // Tracks the current Learn section's GameSession::IsLockedIn() from the
+    // previous frame, so the moment it flips false->true (the instant a
+    // track locks in) can be caught exactly once, to trigger a confetti
+    // burst right then.
     bool m_prevLockedIn = false;
 
     // Tracks Draw()'s locally-computed nextClipShowing (the moment a

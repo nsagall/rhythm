@@ -692,8 +692,8 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
 
     const ChartClip* clip = session.CurrentClip();
 
-    // Once a learn section locks in, its dots don't vanish right away - they
-    // keep coming (and keep being judged) until the *next* clip's own dots
+    // A learn section's dots don't vanish the instant it ends - they keep
+    // coming (and keep being judged) until the *next* clip's own dots
     // actually start scrolling in at the top of the lane - i.e. until the
     // earliest of its lanes' first notes (PreviewFirstOnsetBeatForLane)
     // crosses within kBeatsAhead of now, the same visibility threshold any
@@ -704,14 +704,13 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
     // clip) - waiting on it directly is what makes this "only explode when
     // something is actually arriving," not a fixed time-based guess. The
     // one thing that can't be allowed is waiting on it *past* the advance
-    // beat itself: GameSession flips IsAwaitingAdvance() off there (Update()
-    // runs before Draw() each frame), so this would silently never trigger
-    // - falls back to the advance beat itself in that case (and whenever
-    // there's nothing to preview at all - end of chart, the next section is
-    // a break/reset, or the next learn section hides its own dots behind an
-    // intro), matching the old, simpler "explode right at the handoff" behavior.
-    bool learnAwaitingAdvance = clip && session.Phase() == GamePhase::Learning &&
-                                 session.CurrentSectionKind() == SectionKind::Learn && session.IsAwaitingAdvance();
+    // beat itself - falls back to the advance beat itself in that case (and
+    // whenever there's nothing to preview at all - end of chart, the next
+    // section is a break/reset, or the next learn section hides its own
+    // dots behind an intro), matching the old, simpler "explode right at
+    // the handoff" behavior.
+    bool isLearnSection =
+        clip && session.Phase() == GamePhase::Learning && session.CurrentSectionKind() == SectionKind::Learn;
     bool nextClipShowing = false;
 
     // Caps how far into the future the live note-drawing loop below tiles
@@ -725,7 +724,7 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
     // before that repeat would ever play).
     double notesUpperBoundBeat = nowBeat + kBeatsAhead;
 
-    if (learnAwaitingAdvance)
+    if (isLearnSection)
     {
         double secondsPerBeat = 60.0 / session.Song().bpm;
         double advanceAtBeat = session.PendingAdvanceAtSeconds() / secondsPerBeat;
@@ -764,8 +763,7 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
         }
     }
 
-    bool isLiveJudging = clip && session.Phase() == GamePhase::Learning && session.CurrentSectionKind() == SectionKind::Learn &&
-                          !nextClipShowing;
+    bool isLiveJudging = isLearnSection && !nextClipShowing;
 
     // Judge-line receptors: one glowing ring per lane, dim by default,
     // glowing while a note is held, and popping brightly for a moment when
@@ -786,12 +784,14 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
         DrawReceptor(hdc, x, lineY, kLaneColors[lane], held, flashing, flashColor, flashProgress);
     }
 
-    // The instant a track locks in (learnAwaitingAdvance flips
-    // false->true), burst a confetti celebration across the full width of
-    // the lane. Positions/velocities/colors are all generated here from
+    // The instant a track locks in (its streak reaches the clip's own
+    // hits_required - session.IsLockedIn() flips false->true), burst a
+    // confetti celebration across the full width of the lane.
+    // Positions/velocities/colors are all generated here from
     // PseudoRandom() (same stable-scatter trick the background sparkles
     // use) and simulated purely from elapsed time in DrawConfetti.
-    bool justLockedIn = learnAwaitingAdvance && !m_prevLockedIn;
+    bool nowLockedIn = isLearnSection && session.IsLockedIn();
+    bool justLockedIn = nowLockedIn && !m_prevLockedIn;
     if (justLockedIn)
     {
         m_confetti.clear();
@@ -847,7 +847,7 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
         }
         m_explosionStartMs = GetTickCount();
     }
-    m_prevLockedIn = learnAwaitingAdvance;
+    m_prevLockedIn = nowLockedIn;
     m_prevNotesHandoff = nextClipShowing;
 
     // While the player can't act yet (count-in, a clip's intro, a
@@ -874,7 +874,7 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
     // they normally would, the glow is purely an additional "this track
     // has already locked in" cue, not a replacement for the note's own
     // color.
-    bool lockedIn = isLiveJudging && session.IsAwaitingAdvance();
+    bool lockedIn = isLiveJudging && session.IsLockedIn();
 
     // A note's bar is drawn from its start (bottom edge) to its start+
     // duration (top edge) - the moment it first becomes visible, its start

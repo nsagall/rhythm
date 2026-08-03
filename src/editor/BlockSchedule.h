@@ -32,19 +32,22 @@ struct Entry
     int clipIndex = -1; // index into ChartSong::clips
 
     double sectionStartSeconds = 0.0; // == previous entry's endSeconds (0 for the first)
-    // Break: == sectionStartSeconds (starts immediately, no press gate).
-    // Learn: the first note onset across every lane with notes (mirrors
-    // GameSession::StartClipLoop only acting on a Learn section's first
-    // hit) - this is when THIS section's own judging conceptually begins,
-    // even on the rare chart where the same clip was already playing from
-    // an earlier, still-open Learn section (see Build()'s comment on
-    // clipLoopStartSeconds) - it does not necessarily mean the underlying
-    // audio voice re-seeks its phase at this instant.
+    // Learn and Break alike: == sectionStartSeconds. Both start their clip
+    // immediately when the section begins - no press gate, no lock-in wait
+    // - even on the rare chart where the same clip was already playing
+    // from an earlier, still-open section (see Build()'s comment on
+    // clipLoopStartSeconds), where it does not necessarily mean the
+    // underlying audio voice re-seeks its phase at this instant.
     double audioStartSeconds = 0.0;
     // Learn only: the hits_required-th onset in chronological order across
-    // all lanes (== GameSession::SchedulePendingAdvance's nowSeconds for a
-    // perfect player). -1 for Break (no lock-in event - loop_count is
-    // already known up front).
+    // all lanes, for a perfect player - i.e. the instant IsLockedIn() would
+    // flip true (see GameSession::RegisterHit). Purely informational now:
+    // it drives nothing about entry.endSeconds, only the matching
+    // VoiceWindow's own volume-switch timing - and is -1 here too if even
+    // a perfect player wouldn't reach hits_required before entry.endSeconds
+    // (see Build()'s own Learn case), matching the live game leaving that
+    // clip's voice to close rather than join the arrangement. Always -1 for
+    // Break (no lock-in event - loop_count is already known up front).
     double lockInSeconds = -1.0;
     double loopSeconds = 0.0; // one stem loop's duration - the timeline "block width" unit
     int loopCount = 1;        // informational: total passes spanning [audioStartSeconds, endSeconds) - see Build()
