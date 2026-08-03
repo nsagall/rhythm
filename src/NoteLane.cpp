@@ -84,19 +84,35 @@ constexpr COLORREF kBorderColor = RGB(120, 90, 190);
 constexpr COLORREF kTextColor = RGB(255, 250, 240);
 constexpr COLORREF kStreakColor = RGB(255, 205, 70); // still used as one of the confetti burst's colors
 
-// One accent color per lane - a small curated "candy" palette (magenta,
-// electric cyan, gold, violet) rather than a literal rainbow, so the lane
-// colors read as a matched set instead of clashing. Deliberately avoids red
-// and green altogether so no lane's own color can be mistaken for a
-// kNoteColorHit/kNoteColorMiss pass/fail flash - lane 0 in particular is
-// pushed toward magenta (hue ~307 deg) rather than a pinker, redder hue, so
-// it doesn't read as a near-miss of kNoteColorMiss's red at a glance.
-constexpr COLORREF kLaneColors[kLaneCount] = {
-    RGB(255, 70, 235),
-    RGB(56, 219, 255),
-    RGB(255, 205, 70),
-    RGB(190, 140, 255),
+// One accent color per *instrument* (clip), not per lane - a small curated
+// "candy" palette (magenta, electric cyan, gold, violet, azure, hot pink,
+// amber, periwinkle) rather than a literal rainbow, so the set reads as
+// matched instead of clashing. Deliberately avoids red and green altogether
+// so a clip's own color can never be mistaken for a kNoteColorHit/
+// kNoteColorMiss pass/fail flash - entry 0 in particular is pushed toward
+// magenta (hue ~307 deg) rather than a pinker, redder hue, so it doesn't
+// read as a near-miss of kNoteColorMiss's red at a glance. Indexed by a
+// clip's own position in ChartSong::clips (see ColorForClip) - cycles if a
+// chart has more distinct clips than colors here, which is an acceptable
+// rare collision rather than a reason to keep growing this list forever.
+constexpr COLORREF kInstrumentPalette[] = {
+    RGB(255, 70, 235),  // magenta
+    RGB(56, 219, 255),  // electric cyan
+    RGB(255, 205, 70),  // gold
+    RGB(190, 140, 255), // violet
+    RGB(70, 140, 255),  // azure
+    RGB(255, 90, 170),  // hot pink
+    RGB(255, 170, 40),  // amber
+    RGB(130, 110, 255), // periwinkle
 };
+constexpr int kInstrumentPaletteSize = sizeof(kInstrumentPalette) / sizeof(kInstrumentPalette[0]);
+
+// Shown for the rails/receptors whenever there's no current or preview clip
+// to color them by (Idle before a chart's loaded, or Complete) - a dim,
+// desaturated neutral rather than any real instrument's own color, so an
+// empty lane reads as "nothing playing" rather than implying a specific
+// instrument that isn't actually there.
+constexpr COLORREF kNeutralClipColor = RGB(150, 150, 170);
 
 // Pass/fail feedback: saturated, high-contrast green/red, pushed toward
 // each color's most vivid extreme (rather than a softer pastel) so the
@@ -108,13 +124,34 @@ constexpr COLORREF kLaneColors[kLaneCount] = {
 constexpr COLORREF kNoteColorHit = RGB(40, 235, 80);
 constexpr COLORREF kNoteColorMiss = RGB(255, 30, 30);
 
-// Palette confetti pieces are drawn from at lock-in - the lane palette plus
-// a couple of neutral accents, so the burst reads as "party colors" without
-// introducing any new color meaning of its own.
+// Palette confetti pieces are drawn from at lock-in - a small fixed set of
+// "party colors" of its own, deliberately independent of any instrument's
+// color (this is a generic celebration, not an identity cue).
 constexpr COLORREF kConfettiPalette[] = {
-    kLaneColors[0], kLaneColors[1], kLaneColors[2], kLaneColors[3], kStreakColor, RGB(255, 255, 255),
+    RGB(255, 70, 235), RGB(56, 219, 255), RGB(255, 205, 70), RGB(190, 140, 255), kStreakColor, RGB(255, 255, 255),
 };
 constexpr int kConfettiPaletteSize = sizeof(kConfettiPalette) / sizeof(kConfettiPalette[0]);
+
+// Every falling note, rail, and receptor belonging to clip is drawn in the
+// same color - one color per *instrument*, not per lane - so a new
+// instrument reads as a new color the instant it starts (and, thanks to the
+// early-preview pass, the *next* instrument already shows up in its own
+// distinct color before the handoff even happens). Indexed by clip's own
+// position in ChartSong::clips, found via pointer arithmetic against
+// session.Song().clips (clip is always either that vector's own data, or
+// nullptr) - stable for the whole session, since m_song is only ever
+// reassigned wholesale by LoadChart, never mutated element-by-element
+// in place. Returns kNeutralClipColor for nullptr (nothing to color by).
+COLORREF ColorForClip(const GameSession& session, const ChartClip* clip)
+{
+    if (clip == nullptr)
+    {
+        return kNeutralClipColor;
+    }
+    const ChartClip* base = session.Song().clips.data();
+    size_t index = static_cast<size_t>(clip - base);
+    return kInstrumentPalette[index % kInstrumentPaletteSize];
+}
 
 // One note visible on screen for a single lane: where it starts and how long it lasts, both in beats.
 struct VisibleNote
@@ -700,16 +737,25 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
         }
     }
 
-    // A faint glowing rail down each column, in that lane's color, so every
-    // lane has a visible identity even where no notes are currently on screen.
+    const ChartClip* clip = session.CurrentClip();
+
+    // Whichever clip is most relevant right now - the actively-playing one
+    // if there is one (Learn or Break alike; CurrentClip() is non-null for
+    // both), otherwise whatever's about to start (the count-in, or a
+    // Reset's own zero-time gap) - colors the rails/receptors below, so
+    // every lane reads as "this instrument" even before/between its own
+    // judged notes actually appear.
+    COLORREF primaryColor = ColorForClip(session, clip ? clip : session.PreviewClip());
+
+    // A faint glowing rail down each column, in the current/upcoming
+    // instrument's own color, so every lane has a visible identity even
+    // where no notes are currently on screen.
     for (int lane = 0; lane < kLaneCount; ++lane)
     {
         int x = laneCenterX(lane);
         RECT railRect{x - 2, m_laneRect.top + 10, x + 2, lineY};
-        DrawAlphaRoundRect(hdc, railRect, 2, kLaneColors[lane], 26);
+        DrawAlphaRoundRect(hdc, railRect, 2, primaryColor, 26);
     }
-
-    const ChartClip* clip = session.CurrentClip();
 
     // A learn section's dots don't vanish the instant it ends - they keep
     // coming (and keep being judged) until the *next* clip's own dots
@@ -806,7 +852,7 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
             flashProgress = 1.0 - (static_cast<double>(remaining) / kFlashDurationMs);
             flashColor = (m_flashResult[lane] == JudgementResult::Hit) ? kNoteColorHit : kNoteColorMiss;
         }
-        DrawReceptor(hdc, x, lineY, kLaneColors[lane], held, flashing, flashColor, flashProgress);
+        DrawReceptor(hdc, x, lineY, primaryColor, held, flashing, flashColor, flashProgress);
     }
 
     // The instant a track locks in (its streak reaches the clip's own
@@ -849,6 +895,7 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
     {
         m_explosion.clear();
         int particleSeed = 0;
+        COLORREF explosionColor = ColorForClip(session, clip);
         for (int lane = 0; lane < kLaneCount; ++lane)
         {
             int laneX = laneCenterX(lane);
@@ -866,7 +913,7 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
                     double speed = kExplosionMinSpeedPxPerSec +
                                    PseudoRandom(particleSeed++) * (kExplosionMaxSpeedPxPerSec - kExplosionMinSpeedPxPerSec);
                     m_explosion.push_back({static_cast<double>(laneX), static_cast<double>(noteY),
-                                            std::cos(angle) * speed, std::sin(angle) * speed, kLaneColors[lane]});
+                                            std::cos(angle) * speed, std::sin(angle) * speed, explosionColor});
                 }
             }
         }
@@ -903,6 +950,11 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
         // beat 0 anymore. Matches whichever of GameSession's two origin
         // accessors this pass's dotsFromBeat (just below) itself came from.
         double originBeat = judged ? session.CurrentClipOriginBeat() : session.PreviewClipOriginBeat();
+        // Every note in this pass belongs to the same clip - one color per
+        // instrument, not per lane (see ColorForClip) - so an upcoming
+        // preview pass naturally shows up in a different color than the
+        // still-live current clip right next to it.
+        COLORREF clipColor = ColorForClip(session, drawClip);
 
         for (int lane = 0; lane < kLaneCount; ++lane)
         {
@@ -933,7 +985,7 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
                     continue;
                 }
 
-                // Upcoming notes stay that lane's own color. The instant a
+                // Upcoming notes stay this clip's own color. The instant a
                 // press starts it correctly (within tolerance), it turns
                 // green and stays green through the hold; a release that's
                 // too early or too late (or a press-window timeout with no
@@ -942,7 +994,7 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
                 // it scrolls off the bottom, matching the real outcome
                 // rather than fading back to a neutral color. Unaffected by
                 // glow - see its own comment above for what that adds instead.
-                COLORREF color = kLaneColors[lane];
+                COLORREF color = clipColor;
                 bool isHeldNote = false;
                 bool isJudgedNote = false;
                 bool skip = false;
