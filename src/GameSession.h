@@ -43,18 +43,19 @@ enum class JudgementResult
 //     section begins - not gated on any press, and (if this is the clip's
 //     very first start, ever) always at its own true pattern beginning, no
 //     matter where in the song's overall beat grid that happens to fall -
-//     see m_clipOriginEstablished. The section advances on a fixed schedule
-//     computed that same instant
-//     (loop_count full loops, floored the same way a break section's own
-//     wait is, via ChartTiming::ComputeLearnAdvanceSeconds), independent of
-//     whether the player ever plays a single note. Hitting hits_required
-//     worth of the shared streak locks the clip in - IsLockedIn() flips
-//     true, its volume switches from init_volume to volume, and misses stop
-//     mattering (no more stopping the loop after 3 in a row) - but none of
-//     that touches the section's own advance timing at all, which was
-//     already decided. If the section's own advance arrives before the
-//     player ever locks in, the clip simply stops (it never proved itself,
-//     so it doesn't join the arrangement) instead of continuing to play.
+//     see m_clipOriginEstablished. The section's first candidate advance is
+//     computed that same instant (loop_count full loops, floored the same
+//     way a break section's own wait is, via
+//     ChartTiming::ComputeLearnAdvanceSeconds). Hitting hits_required worth
+//     of the shared streak locks the clip in - IsLockedIn() flips true, its
+//     volume switches from init_volume to volume, and misses stop mattering
+//     (no more stopping the loop after 3 in a row). The section only
+//     actually advances once BOTH the current candidate advance arrives AND
+//     the clip is locked in by then - if it isn't, the clip's loop simply
+//     repeats (the candidate advance pushes back by one more full loop) and
+//     the same check happens again at that new instant, however many times
+//     it takes. A clip that's never proving itself just keeps looping
+//     forever rather than being abandoned - see Update()'s own comment.
 //   - Break ([break]): stops every clip currently playing, starts this
 //     section's clip looping, and blocks advancing until loop_count full
 //     loops complete - no judging happens. Advancing is also floored at
@@ -190,20 +191,25 @@ public:
 
     // True once the current learn section's shared streak has met its
     // clip's hits_required - always false for a break section (nothing to
-    // lock in). Purely a visual/audio-treatment signal now (the glowing
-    // note outline, the confetti burst, the init_volume -> volume switch,
-    // and misses no longer stopping the clip's loop) - it has no effect on
-    // when the section actually advances, which was already decided the
-    // instant the section began. If this is still false when the section's
-    // own advance arrives, the clip simply stops rather than continuing to
-    // play into later sections.
+    // lock in). Drives the glowing note outline, the confetti burst, and
+    // the init_volume -> volume switch, same as always - but now also
+    // gates the section's own advance directly: while this is false, the
+    // section's candidate advance (PendingAdvanceAtSeconds()) keeps pushing
+    // back by a full loop every time it's reached, instead of ever actually
+    // firing. See BeginSection's/Update()'s own Learn-case comments.
     bool IsLockedIn() const;
 
-    // Returns the wall-clock second at which the current section's
-    // already-scheduled advance will actually happen, or a negative value
-    // if nothing is pending. Lets the note lane derive a guaranteed-to-fire
-    // deadline for a locked-in clip's explosion, independent of whether (or
-    // when) the next clip's own notes become visible.
+    // Returns the wall-clock second the current section is *currently*
+    // scheduled to advance at, or a negative value if nothing is pending.
+    // For a break section (or an already-locked-in learn section) this is
+    // final. For a learn section not yet locked in, it's only provisional -
+    // every time this instant is reached without IsLockedIn() having gone
+    // true, it pushes back by one more full loop (see Update()'s own
+    // comment) - so a caller polling this every frame will see it hold
+    // steady, then jump forward a whole loop, however many times it takes.
+    // Lets the note lane derive a guaranteed-to-fire deadline for a
+    // locked-in clip's explosion, independent of whether (or when) the next
+    // clip's own notes become visible.
     double PendingAdvanceAtSeconds() const;
 
     // Returns the clip whose dots should be shown as an early preview while
@@ -215,8 +221,13 @@ public:
     // real screen time - both collapse instantly and never delay
     // anything), but does NOT skip over an intervening Break section,
     // since that section's own screen time hasn't happened yet and is
-    // itself the right moment to preview what comes after it. Returns
-    // nullptr if there's nothing to preview right now.
+    // itself the right moment to preview what comes after it. Also
+    // returns nullptr the whole time the current section is a not-yet-
+    // locked-in learn section: it doesn't yet know whether it's about to
+    // advance or repeat itself another loop, so there's nothing legitimate
+    // to preview - the clip's own notes simply keep scrolling by
+    // themselves in that case (see CurrentClip()), no preview needed.
+    // Returns nullptr if there's nothing to preview right now.
     const ChartClip* PreviewClip() const;
 
     // Returns the beat position of the first note on this lane that
@@ -252,8 +263,8 @@ private:
     // Records a hit: advances the shared streak, resets the shared miss
     // counter, and starts the current section's clip loop (phase-aligned,
     // at init_volume) if it isn't already playing. The streak/miss counters
-    // are left alone once already awaiting advance (frozen at their
-    // lock-in value) - they no longer drive anything at that point.
+    // are left alone once already locked in (frozen at their lock-in
+    // value) - they no longer drive anything at that point.
     void RegisterHit();
 
     // Starts clipIndex's stem looping now (phase-aligned to its own
@@ -291,9 +302,13 @@ private:
 
 
     // Records a miss: resets the shared streak, and stops the current
-    // section's clip loop after 3 in a row. A no-op once already awaiting
-    // advance - the track has already locked in, so further misses
-    // shouldn't stop it or unfreeze the streak display.
+    // section's clip loop after 3 in a row. A no-op once already locked
+    // in - further misses shouldn't stop the clip or unfreeze the streak
+    // display once it's proven itself. Before lock-in, a miss's only
+    // effect on the section's own advance timing is indirect: resetting
+    // the streak makes lock-in (and therefore advancing) take longer to
+    // reach, possibly costing the clip another full loop's repeat - see
+    // Update()'s own comment.
     void RegisterMiss();
 
     // Moves this lane's next-expected-note pointer forward to the next note after it.
@@ -437,10 +452,13 @@ private:
     JudgementResult m_lastJudgement = JudgementResult::None;
 
     // Set immediately on entering a learn or break section - both schedule
-    // their own advance to m_pendingAdvanceAtSeconds the instant they
-    // begin, regardless of the player. (Reset never sets this - it
-    // advances immediately, within the same BeginSection call, with
-    // nothing left to await.)
+    // their own first candidate advance to m_pendingAdvanceAtSeconds the
+    // instant they begin, regardless of the player. For a learn section,
+    // this stays true (and m_pendingAdvanceAtSeconds keeps pushing back a
+    // full loop at a time) until it's actually locked in when reached -
+    // see Update()'s own comment. (Reset never sets this - it advances
+    // immediately, within the same BeginSection call, with nothing left to
+    // await.)
     bool m_hasPendingAdvance = false;
     double m_pendingAdvanceAtSeconds = 0.0;
 

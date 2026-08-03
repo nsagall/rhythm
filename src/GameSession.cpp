@@ -424,23 +424,36 @@ void GameSession::Update()
     {
         if (m_hasPendingAdvance && now >= m_pendingAdvanceAtSeconds)
         {
+            const ChartSection& finishedSection = m_song.sections[m_currentSectionIndex];
+
+            // A learn section that's reached its own candidate advance
+            // without locking in doesn't get abandoned - it hasn't proven
+            // itself yet, so it just repeats: push the candidate advance
+            // back by exactly one more full loop (mirrors
+            // ChartTiming::ComputeLearnAdvanceSeconds/ComputeBreakAdvance's
+            // own "extend by whole loops" logic, just applied reactively
+            // here instead of decided once up front, since whether it's
+            // needed at all depends on the player) and check again next
+            // time this same instant is reached. The clip's own audio was
+            // already looping continuously the whole time (StartClipLoop's
+            // finiteLoopCount==0 for a learn clip), so nothing about
+            // playback itself needs to restart - only the section's own
+            // "am I allowed to leave yet" decision repeats.
+            if (finishedSection.kind == SectionKind::Learn && !m_lockedIn)
+            {
+                double stemDuration = m_audioEngine.GetStemDurationSeconds(m_stemHandles[finishedSection.clipIndex]);
+                m_pendingAdvanceAtSeconds += stemDuration;
+                return;
+            }
+
             m_hasPendingAdvance = false;
 
-            const ChartSection& finishedSection = m_song.sections[m_currentSectionIndex];
-            if (finishedSection.kind == SectionKind::Learn)
-            {
-                // A locked-in clip already switched from init_volume to
-                // volume back in RegisterHit, and keeps playing by design
-                // (to build up the arrangement) - nothing left to do here.
-                // One that never locked in didn't prove itself, so it
-                // doesn't join the arrangement: stop it here, exactly like
-                // a break's own clip below.
-                if (!m_lockedIn)
-                {
-                    StopClipLoop(finishedSection.clipIndex);
-                }
-            }
-            else if (finishedSection.kind == SectionKind::Break)
+            // A learn section reaching here is always locked in (see
+            // above) - its clip already switched from init_volume to
+            // volume back in RegisterHit, and keeps playing by design (to
+            // build up the arrangement), so there's nothing to do for it
+            // here, unlike break below.
+            if (finishedSection.kind == SectionKind::Break)
             {
                 // Unlike a locked-in learn clip (which keeps playing by
                 // design, to build up the arrangement), a break section
@@ -626,6 +639,22 @@ int GameSession::PreviewSectionIndex() const
         return idx;
     }
     if (m_phase != GamePhase::Learning || m_currentSectionIndex < 0)
+    {
+        return -1;
+    }
+
+    // A learn section that hasn't locked in yet doesn't know when it'll
+    // really advance - it might repeat any number of further loops first
+    // (see Update()'s own comment) - so there's nothing legitimate to
+    // preview yet: showing the *real* next clip's notes here would just
+    // have to be retracted the moment the section turns out to repeat
+    // instead of advancing. The clip's own notes simply keep scrolling by
+    // themselves in the meantime (see CurrentClip()), no preview needed. A
+    // break section always knows its own advance exactly up front
+    // (loop_count is fixed, not gated on any player performance), so it
+    // isn't held back by this at all.
+    const ChartSection& current = m_song.sections[m_currentSectionIndex];
+    if (current.kind == SectionKind::Learn && !m_lockedIn)
     {
         return -1;
     }
