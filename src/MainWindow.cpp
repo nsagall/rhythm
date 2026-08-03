@@ -365,6 +365,14 @@ void MainWindow::OnKeyDown(WPARAM key, LPARAM flags)
 
     if (m_screen == UiScreen::SongSelect)
     {
+        if (static_cast<int>(key) == VK_ESCAPE)
+        {
+            // Checked before the empty-list early-return below, so Escape
+            // still quits even when there's nothing to select.
+            DestroyWindow(m_hwnd);
+            return;
+        }
+
         if (m_songs.empty())
         {
             return;
