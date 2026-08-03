@@ -482,7 +482,7 @@ void MainWindow::RegisterPress(int lane)
     JudgementResult result = m_gameSession.ConsumeLastJudgement();
     if (result != JudgementResult::None)
     {
-        m_noteLane.ShowJudgement(result, lane, m_gameSession.IsAwaitingAdvance());
+        m_noteLane.ShowJudgement(result, lane, m_gameSession.IsLockedIn());
     }
 }
 
@@ -493,7 +493,7 @@ void MainWindow::RegisterRelease(int lane)
     JudgementResult result = m_gameSession.ConsumeLastJudgement();
     if (result != JudgementResult::None)
     {
-        m_noteLane.ShowJudgement(result, lane, m_gameSession.IsAwaitingAdvance());
+        m_noteLane.ShowJudgement(result, lane, m_gameSession.IsLockedIn());
     }
 }
 
