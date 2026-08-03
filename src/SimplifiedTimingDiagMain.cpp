@@ -7,19 +7,20 @@
 #include "GameSession.h"
 
 // Standalone diagnostic (not part of the normal build): verifies the
-// simplified timing model - a Learn section now always advances on a fixed
-// schedule known from the instant it begins, regardless of whether the
-// player ever locks it in. Drives two back-to-back Learn sections against a
-// tiny synthetic chart:
-//   - Section 0: press nothing at all. Expect the section to still advance
-//     on schedule (not hang forever waiting for a press), and the clip to
-//     have stopped playing by the time it does (never proved itself, so it
-//     doesn't join the arrangement).
-//   - Section 1: play perfectly. Expect IsLockedIn() to flip true partway
-//     through (well before the section's own scheduled advance, which
-//     should be unaffected by exactly when that happens), and the clip to
-//     still be playing once the section actually advances (proving it into
-//     the arrangement).
+// still-current parts of the "always advance" timing model after learn
+// sections gained the ability to repeat until locked in (see
+// RepeatUntilLockedInDiagMain.cpp for that behavior specifically - this
+// file no longer covers it, since a never-pressed learn section now
+// repeats forever instead of ever advancing). Plays every learn section
+// perfectly (so none of them need to repeat), and specifically watches:
+//   - A learn section (section 0, kick Snare): locks in and advances
+//     within a single loop when played well, exactly as ever - the
+//     "advance only once locked in" gate is a no-op for a player who's
+//     already locking in comfortably within the first loop.
+//   - A break section (the first [break] in Cool Boy.chart, "break"):
+//     advances strictly on its own loop_count schedule regardless of the
+//     player - break was never affected by today's learn-specific change,
+//     and still can't be judged/interacted with at all.
 
 namespace
 {
@@ -85,14 +86,12 @@ int main(int argc, char** argv)
     GamePhase lastPhase = GamePhase::Idle;
     int lastSection = -2;
     bool section0Seen = false;
+    bool section0LockedInEver = false;
     bool section0StillPlayingAtAdvance = false;
     bool section0AdvanceObserved = false;
-    bool section1Seen = false;
-    bool section1LockedInEver = false;
-    bool section1StillPlayingAtAdvance = false;
-    bool section1AdvanceObserved = false;
     int section0ClipIndex = -1;
-    int section1ClipIndex = -1;
+    int breakSectionIndex = -1;
+    bool breakAdvanceObserved = false;
 
     bool heldByUs[kLaneCount] = {};
     double releaseAtSeconds[kLaneCount] = {};
@@ -101,6 +100,16 @@ int main(int argc, char** argv)
     {
         lastPressedBeat[lane] = -1.0;
     }
+
+    for (size_t i = 0; i < session.Song().sections.size(); ++i)
+    {
+        if (session.Song().sections[i].kind == SectionKind::Break)
+        {
+            breakSectionIndex = static_cast<int>(i);
+            break;
+        }
+    }
+    printf("First break section is index %d\n", breakSectionIndex);
 
     DWORD startTick = GetTickCount();
 
@@ -116,9 +125,6 @@ int main(int argc, char** argv)
         bool sectionChangedThisTick = (phase != lastPhase || sectionIndex != lastSection);
         if (sectionChangedThisTick)
         {
-            // A section is ending right now if we were previously sitting
-            // in section 0 or 1 - check whether its clip is still playing
-            // at exactly this moment of advance.
             if (lastSection == 0 && section0ClipIndex >= 0)
             {
                 section0AdvanceObserved = true;
@@ -126,42 +132,29 @@ int main(int argc, char** argv)
                 printf("[t=%.3fs] section 0 ADVANCED - clip still playing: %s\n", session.Clock().ElapsedSeconds(),
                        section0StillPlayingAtAdvance ? "true" : "false");
             }
-            if (lastSection == 1 && section1ClipIndex >= 0)
+            if (lastSection == breakSectionIndex && breakSectionIndex >= 0)
             {
-                section1AdvanceObserved = true;
-                section1StillPlayingAtAdvance = engine.IsPlaying(session.DebugStemHandle(section1ClipIndex));
-                printf("[t=%.3fs] section 1 ADVANCED - clip still playing: %s\n", session.Clock().ElapsedSeconds(),
-                       section1StillPlayingAtAdvance ? "true" : "false");
+                breakAdvanceObserved = true;
+                printf("[t=%.3fs] break section ADVANCED\n", session.Clock().ElapsedSeconds());
             }
 
             lastPhase = phase;
             lastSection = sectionIndex;
             const ChartClip* clip = session.CurrentClip();
-            printf("[t=%.3fs] phase=%ls section=%d clip=(%ls)\n", session.Clock().ElapsedSeconds(), PhaseName(phase),
-                   sectionIndex, clip ? clip->name.c_str() : L"-");
-            if (phase == GamePhase::Learning && kind == SectionKind::Learn)
+            printf("[t=%.3fs] phase=%ls section=%d kind=%d clip=(%ls)\n", session.Clock().ElapsedSeconds(),
+                   PhaseName(phase), sectionIndex, static_cast<int>(kind), clip ? clip->name.c_str() : L"-");
+            if (phase == GamePhase::Learning && kind == SectionKind::Learn && sectionIndex == 0 && !section0Seen)
             {
-                if (sectionIndex == 0 && !section0Seen)
-                {
-                    section0Seen = true;
-                    section0ClipIndex = session.Song().sections[0].clipIndex;
-                }
-                else if (sectionIndex == 1 && !section1Seen)
-                {
-                    section1Seen = true;
-                    section1ClipIndex = session.Song().sections[1].clipIndex;
-                }
+                section0Seen = true;
+                section0ClipIndex = session.Song().sections[0].clipIndex;
             }
         }
 
-        if (session.IsLockedIn() && sectionIndex == 1)
+        if (session.IsLockedIn() && sectionIndex == 0 && !section0LockedInEver)
         {
-            if (!section1LockedInEver)
-            {
-                printf("[t=%.3fs] section 1 LOCKED IN (streak=%d)\n", session.Clock().ElapsedSeconds(),
-                       session.CurrentStreak());
-            }
-            section1LockedInEver = true;
+            section0LockedInEver = true;
+            printf("[t=%.3fs] section 0 LOCKED IN (streak=%d)\n", session.Clock().ElapsedSeconds(),
+                   session.CurrentStreak());
         }
 
         for (int lane = 0; lane < kLaneCount; ++lane)
@@ -174,10 +167,11 @@ int main(int argc, char** argv)
             }
         }
 
-        // Only press notes during section 1 - section 0 is left completely
-        // untouched on purpose, to prove the game doesn't hang waiting for
-        // a press that never comes.
-        bool judgingLive = phase == GamePhase::Learning && kind == SectionKind::Learn && sectionIndex == 1;
+        // Play every learn section perfectly, so none of them ever need to
+        // repeat - this diagnostic is about the "advances promptly when
+        // played well" and "break still advances on its own" cases, not
+        // the repeat behavior itself.
+        bool judgingLive = phase == GamePhase::Learning && kind == SectionKind::Learn;
         if (judgingLive)
         {
             const ChartClip& clip = session.Song().clips[session.Song().sections[sectionIndex].clipIndex];
@@ -210,9 +204,9 @@ int main(int argc, char** argv)
             }
         }
 
-        if (section0AdvanceObserved && section1AdvanceObserved)
+        if (section0AdvanceObserved && breakAdvanceObserved)
         {
-            printf("Both sections observed advancing - stopping early.\n");
+            printf("Both observed advancing - stopping early.\n");
             break;
         }
 
@@ -226,15 +220,13 @@ int main(int argc, char** argv)
     }
 
     printf("\n=== RESULTS ===\n");
-    printf("Section 0 (never pressed): advanced=%s%s clipStillPlayingAtAdvance=%s%s\n",
+    printf("Section 0 (played perfectly): lockedIn=%s%s advanced=%s%s clipStillPlayingAtAdvance=%s%s\n",
+           section0LockedInEver ? "true" : "false", section0LockedInEver ? "" : " ** MISMATCH - expected true **",
            section0AdvanceObserved ? "true" : "false", section0AdvanceObserved ? "" : " ** MISMATCH - expected true **",
            section0StillPlayingAtAdvance ? "true" : "false",
-           section0StillPlayingAtAdvance ? " ** MISMATCH - expected false (never locked in) **" : "");
-    printf("Section 1 (played perfectly): lockedIn=%s%s advanced=%s%s clipStillPlayingAtAdvance=%s%s\n",
-           section1LockedInEver ? "true" : "false", section1LockedInEver ? "" : " ** MISMATCH - expected true **",
-           section1AdvanceObserved ? "true" : "false", section1AdvanceObserved ? "" : " ** MISMATCH - expected true **",
-           section1StillPlayingAtAdvance ? "true" : "false",
-           section1StillPlayingAtAdvance ? "" : " ** MISMATCH - expected true (locked in) **");
+           section0StillPlayingAtAdvance ? "" : " ** MISMATCH - expected true (locked in) **");
+    printf("Break section (never touched): advanced=%s%s\n", breakAdvanceObserved ? "true" : "false",
+           breakAdvanceObserved ? "" : " ** MISMATCH - expected true **");
 
     session.Stop();
     engine.Shutdown();
