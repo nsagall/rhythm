@@ -42,10 +42,10 @@ const wchar_t* JudgementName(JudgementResult result)
     return L"?";
 }
 
-double DurationForLaneNote(const ChartClip& clip, int lane, double absoluteStartBeat)
+double DurationForLaneNote(const ChartClip& clip, int lane, double originBeat, double absoluteStartBeat)
 {
     double span = clip.spanBeats;
-    double phase = std::fmod(absoluteStartBeat, span);
+    double phase = std::fmod(absoluteStartBeat - originBeat, span);
     if (phase < 0.0)
     {
         phase += span;
@@ -119,7 +119,6 @@ int main(int argc, char** argv)
         GamePhase phase = session.Phase();
         int sectionIndex = session.CurrentSectionIndex();
         SectionKind kind = session.CurrentSectionKind();
-        bool awaitingAdvance = session.IsAwaitingAdvance();
         double secondsPerBeat = 60.0 / session.Song().bpm;
 
         bool sectionChangedThisTick = (phase != lastPhase || sectionIndex != lastSection);
@@ -184,7 +183,10 @@ int main(int argc, char** argv)
             }
         }
 
-        bool judgingLive = phase == GamePhase::Learning && kind == SectionKind::Learn && !awaitingAdvance;
+        // Sections now always advance on a fixed schedule regardless of
+        // lock-in (no more "awaiting advance" gate) - live for a Learn
+        // section's whole duration.
+        bool judgingLive = phase == GamePhase::Learning && kind == SectionKind::Learn;
         if (judgingLive)
         {
             const ChartClip& clip = session.Song().clips[session.Song().sections[sectionIndex].clipIndex];
@@ -220,7 +222,7 @@ int main(int argc, char** argv)
                 }
                 if (result == JudgementResult::None || result == JudgementResult::Hit)
                 {
-                    double durationBeats = DurationForLaneNote(clip, lane, nextBeat);
+                    double durationBeats = DurationForLaneNote(clip, lane, session.CurrentClipOriginBeat(), nextBeat);
                     releaseAtSeconds[lane] = (nextBeat + durationBeats) * secondsPerBeat;
                     heldByUs[lane] = true;
                 }

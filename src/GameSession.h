@@ -319,10 +319,13 @@ private:
     // their doc comments.
 
     // Returns the lane note whose phase-within-span matches
-    // absoluteStartBeat's phase, or nullptr if none does (shouldn't happen
-    // for a beat that came from NextOnsetAfter against the same clip/lane)
-    // - used to look up a note's duration once its press has been judged correct.
-    const LaneNote* FindLaneNote(const ChartClip& clip, int lane, double absoluteStartBeat) const;
+    // absoluteStartBeat's phase (measured relative to originBeat - this
+    // clip's own persistent phase reference, see m_clipOriginEstablished -
+    // not absolute beat 0), or nullptr if none does (shouldn't happen for a
+    // beat that came from NextOnsetAfter/FreshOnsetForAllLanes against the
+    // same clip/lane/origin) - used to look up a note's duration once its
+    // press has been judged correct.
+    const LaneNote* FindLaneNote(const ChartClip& clip, int lane, double originBeat, double absoluteStartBeat) const;
 
     // Returns the wall-clock seconds at which PreviewClip() will actually
     // go live, or a negative value if there's nothing to preview.

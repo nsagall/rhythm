@@ -248,7 +248,8 @@ void GameSession::OnPress(int lane)
 
     if (std::abs(nowSeconds - startSeconds) <= toleranceSeconds)
     {
-        const LaneNote* note = FindLaneNote(clip, lane, startBeat);
+        double originBeat = m_clipOriginSeconds[section.clipIndex] / secondsPerBeat;
+        const LaneNote* note = FindLaneNote(clip, lane, originBeat, startBeat);
         double durationBeats = note ? note->durationBeats : 0.0;
 
         StartClipLoop(section.clipIndex, clip.initVolume);
@@ -1194,10 +1195,11 @@ void GameSession::ApplyEasyModeTransform(ChartClip& clip)
 }
 
 // Returns the lane note whose phase-within-span matches absoluteStartBeat's phase, or nullptr if none does.
-const LaneNote* GameSession::FindLaneNote(const ChartClip& clip, int lane, double absoluteStartBeat) const
+const LaneNote* GameSession::FindLaneNote(const ChartClip& clip, int lane, double originBeat,
+                                           double absoluteStartBeat) const
 {
     double span = clip.spanBeats;
-    double phase = std::fmod(absoluteStartBeat, span);
+    double phase = std::fmod(absoluteStartBeat - originBeat, span);
     if (phase < 0.0)
     {
         phase += span;

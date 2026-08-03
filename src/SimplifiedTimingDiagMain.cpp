@@ -36,10 +36,10 @@ const wchar_t* PhaseName(GamePhase phase)
     return L"?";
 }
 
-double DurationForLaneNote(const ChartClip& clip, int lane, double absoluteStartBeat)
+double DurationForLaneNote(const ChartClip& clip, int lane, double originBeat, double absoluteStartBeat)
 {
     double span = clip.spanBeats;
-    double phase = std::fmod(absoluteStartBeat, span);
+    double phase = std::fmod(absoluteStartBeat - originBeat, span);
     if (phase < 0.0)
     {
         phase += span;
@@ -203,7 +203,7 @@ int main(int argc, char** argv)
                 JudgementResult result = session.ConsumeLastJudgement();
                 if (result == JudgementResult::None || result == JudgementResult::Hit)
                 {
-                    double durationBeats = DurationForLaneNote(clip, lane, nextBeat);
+                    double durationBeats = DurationForLaneNote(clip, lane, session.CurrentClipOriginBeat(), nextBeat);
                     releaseAtSeconds[lane] = (nextBeat + durationBeats) * secondsPerBeat;
                     heldByUs[lane] = true;
                 }

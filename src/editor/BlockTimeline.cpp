@@ -328,7 +328,10 @@ double BlockTimeline::LayoutXToSeconds(float x, const std::vector<BlockLayout>& 
             // click near the right edge could land past this entry's own
             // end, in whatever the next entry happens to be.
             double loopSeconds = block.entry->loopSeconds;
-            double startPhase = loopSeconds > 0.0 ? std::fmod(block.entry->audioStartSeconds, loopSeconds) : 0.0;
+            double startPhase =
+                loopSeconds > 0.0
+                    ? std::fmod(block.entry->audioStartSeconds - block.entry->originSeconds, loopSeconds)
+                    : 0.0;
             double firstPassSeconds = loopSeconds - startPhase;
             if (firstPassSeconds <= 1e-9)
             {
