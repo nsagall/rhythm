@@ -809,15 +809,20 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
         clip && session.Phase() == GamePhase::Learning && session.CurrentSectionKind() == SectionKind::Learn;
     bool nextClipShowing = false;
 
-    // Caps how far into the future the live note-drawing loop below tiles
-    // this clip's own repeating pattern - nowBeat + kBeatsAhead by default,
-    // same as always. Only ever tightened, and only in the "nothing to
-    // hand off to" branch just below: past the scheduled advance, this
-    // clip's pattern would otherwise keep tiling forward as if it loops
-    // again, since NotesInRange has no idea the section is actually about
-    // to end there - drawing a phantom repeat of notes that will never be
-    // reached (the section advances to a break/reset, or the chart ends,
-    // before that repeat would ever play).
+    // Caps how far into the future the live *judged* note-drawing pass
+    // below tiles this clip's own repeating pattern - nowBeat + kBeatsAhead
+    // by default, same as always. Only ever tightened, and only in the
+    // "nothing to hand off to" branch just below: this clip's own judged
+    // notes shouldn't be drawn (or judged) past its section's own current
+    // candidate advance - not because that repeat can never happen (it
+    // often does now - see GameSession::Update's own comment), but because
+    // it isn't confirmed yet: the section might lock in right at that
+    // boundary instead of repeating, in which case a note judged past it
+    // would belong to a repeat that never actually plays. The gap this
+    // otherwise leaves right before every such boundary is filled back in
+    // separately, unjudged, by whichever of the self-repeat/next-instrument
+    // preview passes is correct for the current lock-in state - see their
+    // own comment, further below.
     double notesUpperBoundBeat = nowBeat + kBeatsAhead;
 
     if (isLearnSection)
@@ -919,32 +924,57 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
     // loop below uses, since these are exactly the notes that loop would
     // have drawn one frame earlier (isLiveJudging just flipped false).
     bool justHandedOff = nextClipShowing && !m_prevNotesHandoff;
-    if (justHandedOff && clip)
+
+    // The instant a track locks in, the self-repeat preview (further
+    // below, in the note-drawing loop) stops being drawn - replaced by the
+    // real next-instrument preview instead, now that the section is
+    // confirmed to actually end at its current advance point rather than
+    // repeating again. Whatever notes that self-repeat preview was still
+    // showing, right up through this very frame, burst apart too, exactly
+    // like a handoff's own outgoing notes just above - an abrupt,
+    // no-transition swap otherwise, since nothing drawn here persists
+    // frame to frame on its own.
+    if ((justHandedOff || justLockedIn) && clip)
     {
         m_explosion.clear();
         int particleSeed = 0;
         COLORREF explosionColor = ColorForClip(session, clip);
-        for (int lane = 0; lane < kLaneCount; ++lane)
+
+        auto explodeRange = [&](double fromBeat, double toBeat)
         {
-            int laneX = laneCenterX(lane);
-            for (const VisibleNote& note : NotesInRange(session.CurrentClipOriginBeat(), nowBeat - kBeatsBehind,
-                                                          notesUpperBoundBeat, clip->laneNotes[lane], clip->spanBeats))
+            for (int lane = 0; lane < kLaneCount; ++lane)
             {
-                int noteY = yForBeatsFromNow(note.startBeat - nowBeat);
-                if (noteY < m_laneRect.top - kVisibilityMarginPx || noteY > m_laneRect.bottom + kVisibilityMarginPx)
+                int laneX = laneCenterX(lane);
+                for (const VisibleNote& note : NotesInRange(session.CurrentClipOriginBeat(), fromBeat, toBeat,
+                                                              clip->laneNotes[lane], clip->spanBeats))
                 {
-                    continue;
-                }
-                for (int p = 0; p < kExplosionParticlesPerNote; ++p)
-                {
-                    double angle = PseudoRandom(particleSeed++) * 6.283185307;
-                    double speed = kExplosionMinSpeedPxPerSec +
-                                   PseudoRandom(particleSeed++) * (kExplosionMaxSpeedPxPerSec - kExplosionMinSpeedPxPerSec);
-                    m_explosion.push_back({static_cast<double>(laneX), static_cast<double>(noteY),
-                                            std::cos(angle) * speed, std::sin(angle) * speed, explosionColor});
+                    int noteY = yForBeatsFromNow(note.startBeat - nowBeat);
+                    if (noteY < m_laneRect.top - kVisibilityMarginPx || noteY > m_laneRect.bottom + kVisibilityMarginPx)
+                    {
+                        continue;
+                    }
+                    for (int p = 0; p < kExplosionParticlesPerNote; ++p)
+                    {
+                        double angle = PseudoRandom(particleSeed++) * 6.283185307;
+                        double speed = kExplosionMinSpeedPxPerSec + PseudoRandom(particleSeed++) *
+                                                                         (kExplosionMaxSpeedPxPerSec -
+                                                                          kExplosionMinSpeedPxPerSec);
+                        m_explosion.push_back({static_cast<double>(laneX), static_cast<double>(noteY),
+                                                std::cos(angle) * speed, std::sin(angle) * speed, explosionColor});
+                    }
                 }
             }
+        };
+
+        if (justHandedOff)
+        {
+            explodeRange(nowBeat - kBeatsBehind, notesUpperBoundBeat);
         }
+        if (justLockedIn)
+        {
+            explodeRange(notesUpperBoundBeat, nowBeat + kBeatsAhead);
+        }
+
         m_explosionStartMs = GetTickCount();
     }
     m_prevLockedIn = nowLockedIn;
@@ -954,12 +984,23 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
     // section (judged=true: colors reflect held/hit/miss, tracks
     // IsLockedIn()'s glow) or as an unjudged preview (judged=false: every
     // note stays its plain lane color, no held/hit/miss coloring, no glow -
-    // nothing has actually started yet). A note only ever actually appears
-    // once its own position lands within the visible window (the yBottom/
-    // yTop check below), so a preview pass naturally does nothing until its
-    // notes are close enough to be worth showing - no separate "is it time
-    // yet" gating needed at the call site.
-    auto drawClipDots = [&](const ChartClip* drawClip, bool judged, double upperBoundBeat)
+    // nothing has actually started yet). originBeat is drawClip's own
+    // persistent phase origin (GameSession::CurrentClipOriginBeat() for
+    // drawClip==clip, PreviewClipOriginBeat() for drawClip==
+    // session.PreviewClip() - see NotesInRange's own comment for why this
+    // can't just be absolute beat 0). fromBeat is where each lane starts
+    // looking for notes - a single shared value for every lane, EXCEPT a
+    // negative sentinel, which instead means "each lane's own actual first
+    // required note, wherever PreviewFirstOnsetBeatForLane(lane) says
+    // that'll be" - only meaningful (and only ever passed) for a genuinely
+    // different, not-yet-started clip, so each of its lanes scrolls in one
+    // at a time instead of a whole batch of already-partially-scrolled-in
+    // notes popping in together once revealed. A note only ever actually
+    // appears once its own position lands within the visible window (the
+    // yBottom/yTop check below), so a preview pass naturally does nothing
+    // until its notes are close enough to be worth showing.
+    auto drawClipDots = [&](const ChartClip* drawClip, double originBeat, bool judged, double fromBeat,
+                             double upperBoundBeat)
     {
         if (!drawClip)
         {
@@ -973,11 +1014,6 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
         // would, the glow is purely an additional "this track has already
         // locked in" cue, not a replacement for the note's own color.
         bool glow = judged && session.IsLockedIn();
-        // The origin this pass's clip's pattern actually repeats from - see
-        // NotesInRange's own comment for why this can't just be absolute
-        // beat 0 anymore. Matches whichever of GameSession's two origin
-        // accessors this pass's dotsFromBeat (just below) itself came from.
-        double originBeat = judged ? session.CurrentClipOriginBeat() : session.PreviewClipOriginBeat();
         // Every note in this pass belongs to the same clip - one color per
         // instrument, not per lane (see ColorForClip) - so an upcoming
         // preview pass naturally shows up in a different color than the
@@ -986,12 +1022,8 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
 
         for (int lane = 0; lane < kLaneCount; ++lane)
         {
-            double dotsFromBeat;
-            if (judged)
-            {
-                dotsFromBeat = nowBeat - kBeatsBehind;
-            }
-            else
+            double dotsFromBeat = fromBeat;
+            if (dotsFromBeat < 0.0)
             {
                 dotsFromBeat = session.PreviewFirstOnsetBeatForLane(lane);
                 if (dotsFromBeat < 0.0)
@@ -1116,21 +1148,42 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
     // top edge one at a time, exactly like live play, instead of a whole
     // batch of already-partially-scrolled-in notes popping in together once
     // revealed.
-    drawClipDots(isLiveJudging ? clip : session.PreviewClip(), isLiveJudging, notesUpperBoundBeat);
-
-    // Early look-ahead: since a Learn section's advance is scheduled the
-    // instant it begins (see BeginSection), the moment the *next* clip's own
-    // earliest notes are due to enter the visible window - up to kBeatsAhead
-    // before the advance itself - they should already be scrolling in, not
-    // waiting to pop in only once the handoff actually happens. Drawn as a
-    // second, unjudged pass layered on top of the still-live current clip
-    // (rather than replacing it, unlike the primary pass above) - the
-    // visibility check inside drawClipDots naturally does the rest, since
-    // each note's own y-position already accounts for how far away its
-    // onset still is, so nothing appears before it's actually due.
     if (isLiveJudging)
     {
-        drawClipDots(session.PreviewClip(), /*judged=*/false, nowBeat + kBeatsAhead);
+        drawClipDots(clip, session.CurrentClipOriginBeat(), /*judged=*/true, nowBeat - kBeatsBehind,
+                     notesUpperBoundBeat);
+    }
+    else
+    {
+        drawClipDots(session.PreviewClip(), session.PreviewClipOriginBeat(), /*judged=*/false, -1.0,
+                     notesUpperBoundBeat);
+    }
+
+    // The judged pass above never tiles past notesUpperBoundBeat (its own
+    // section's current candidate advance - see that variable's own
+    // comment), so on its own it would leave a growing gap right before
+    // every such boundary, showing nothing at all for the last stretch
+    // before it - exactly the moment the player most needs to see what's
+    // coming. Fill it with whichever of the two things is actually true
+    // right now: not locked in yet, so this clip's own loop is going to
+    // repeat (see GameSession::Update's own comment) - preview more of its
+    // own pattern continuing past the boundary, picking up exactly where
+    // the judged pass's own cap left off; or locked in, so the section is
+    // truly about to advance - preview the real next clip instead, exactly
+    // like the count-in/break-hold case above already does. Both previews
+    // are unjudged (judged=false) and layered on top of the still-live
+    // judged pass, not a replacement for it - the visibility check inside
+    // drawClipDots does the rest, since each note's own y-position already
+    // accounts for how far away its onset still is.
+    if (isLiveJudging && !session.IsLockedIn())
+    {
+        drawClipDots(clip, session.CurrentClipOriginBeat(), /*judged=*/false, notesUpperBoundBeat,
+                     nowBeat + kBeatsAhead);
+    }
+    else if (isLiveJudging)
+    {
+        drawClipDots(session.PreviewClip(), session.PreviewClipOriginBeat(), /*judged=*/false, -1.0,
+                     nowBeat + kBeatsAhead);
     }
 
     RestoreDC(hdc, savedClipState);
