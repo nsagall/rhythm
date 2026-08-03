@@ -210,7 +210,19 @@ std::vector<VisibleNote> NotesInRange(double originBeat, double fromBeat, double
         {
             double absoluteStart = originBeat + bar * spanBeats + note.startBeat;
             double absoluteEnd = absoluteStart + note.durationBeats;
-            if (absoluteEnd >= fromBeat && absoluteStart <= toBeat)
+            // toBeat is exclusive: for the live-judged pass, it's the
+            // clip's own scheduled advance beat - and since that advance
+            // is always chosen as a whole-loop boundary from this clip's
+            // origin (ChartTiming::ComputeLearnAdvanceSeconds/
+            // ComputeBreakAdvance), a note starting at local offset 0 has a
+            // bar-tiled candidate landing exactly on toBeat every time,
+            // representing the *next* repetition - one that never actually
+            // plays, since the section hands off to the next clip at that
+            // exact instant. An inclusive check here synthesized a phantom
+            // copy of that note right at the boundary: a confirmed real
+            // repro was bass's own first note (lane 1) appearing to draw a
+            // second time, right where the drums section begins.
+            if (absoluteEnd >= fromBeat && absoluteStart < toBeat)
             {
                 result.push_back({absoluteStart, note.durationBeats});
             }
@@ -989,8 +1001,31 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
             }
 
             int laneX = laneCenterX(lane);
-            for (const VisibleNote& note : NotesInRange(originBeat, dotsFromBeat, upperBoundBeat,
-                                                          drawClip->laneNotes[lane], drawClip->spanBeats))
+            auto visibleNotes = NotesInRange(originBeat, dotsFromBeat, upperBoundBeat, drawClip->laneNotes[lane],
+                                              drawClip->spanBeats);
+            // Build with -DRHYTHM_DEBUG_RENDER (add to the Rhythm target's
+            // own target_compile_definitions in CMakeLists.txt, not left on
+            // by default) to trace exactly what NotesInRange is tiling for
+            // each lane/pass, every frame it returns anything - the only
+            // way to catch a phantom/duplicate-note rendering bug from
+            // outside the game itself (a headless GameSession diagnostic
+            // never renders anything to inspect). Redirect stderr to a file
+            // (e.g. via PowerShell's Start-Process -RedirectStandardError)
+            // and let the game free-run - it advances on a fixed schedule
+            // regardless of player input, so no interaction is needed.
+#ifdef RHYTHM_DEBUG_RENDER
+            if (!visibleNotes.empty())
+            {
+                fwprintf(stderr, L"[Draw] nowBeat=%.4f judged=%d clip=%ls lane=%d origin=%.4f from=%.4f to=%.4f:",
+                          nowBeat, judged ? 1 : 0, drawClip->name.c_str(), lane, originBeat, dotsFromBeat, upperBoundBeat);
+                for (const VisibleNote& n : visibleNotes)
+                {
+                    fwprintf(stderr, L" [%.4f+%.4f]", n.startBeat, n.durationBeats);
+                }
+                fwprintf(stderr, L"\n");
+            }
+#endif
+            for (const VisibleNote& note : visibleNotes)
             {
                 double beatsFromStart = note.startBeat - nowBeat;
                 double beatsFromEnd = beatsFromStart + note.durationBeats;
