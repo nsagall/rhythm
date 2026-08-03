@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <set>
 
 #include "ChartTiming.h"
@@ -766,6 +767,11 @@ double GameSession::LaneHoldStartBeat(int lane) const
 // Records a judgement for a specific lane note, for OnsetJudgement() to look up later. Trims old entries so this can't grow unbounded.
 void GameSession::RecordOnsetJudgement(double startBeat, int lane, JudgementResult result)
 {
+#ifdef RHYTHM_DEBUG_JUDGEMENTS
+    std::fprintf(stderr, "[RecordOnsetJudgement] t=%.4f beat=%.4f lane=%d result=%d section=%d clip=%d\n",
+                 m_clock.ElapsedSeconds(), startBeat, lane, static_cast<int>(result), m_currentSectionIndex,
+                 m_currentSectionIndex >= 0 ? m_song.sections[m_currentSectionIndex].clipIndex : -1);
+#endif
     m_judgedNotes.push_back({startBeat, lane, result});
 
     constexpr size_t kMaxTracked = 32;

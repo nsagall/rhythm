@@ -8,13 +8,18 @@
 #include "GameSession.h"
 
 // Standalone diagnostic (not part of the normal build): drives GameSession
-// headlessly through a chart's Learn sections in order, auto-pressing every
-// lane's notes at the right moment, and prints each Learn section's clip
-// name, computed anchor beat per lane (mod the clip's own spanBeats - "how
-// far into its own pattern is this anchor"), and IsAwaitingAdvance/streak
-// info - written to chase a reported bug where Melodius.chart's "melodica"
-// clip specifically (not melodica_2/3/4) starts audibly partway through its
-// own pattern instead of at the top.
+// headlessly through an entire chart's Learn sections in order (from the
+// count-in to GamePhase::Complete), auto-pressing every lane's note exactly
+// on time, and prints each Learn section's clip name, each lane's anchor
+// beat (and how far that lands into its own pattern - "how far into its own
+// pattern is this anchor"), and every press/release judgement. Pass a
+// second argv for a clip name to focus the per-press/release print lines on
+// (still plays the whole song either way) - useful for isolating a specific
+// clip's occurrence(s) when a chart reuses the same clip in multiple
+// sections. Build with -DRHYTHM_DEBUG_JUDGEMENTS (see
+// GameSession::RecordOnsetJudgement) to also see every judgement recorded
+// internally, including ones from Update()'s own timeout paths that never
+// go through an explicit press/release here.
 
 namespace
 {
@@ -99,16 +104,12 @@ int main(int argc, char** argv)
         lastPressedBeat[lane] = -1.0;
     }
 
-    // Stop once we've seen the target clip's section fully begin and had a
-    // moment to observe its StartClipLoop - no need to play the whole song.
     const wchar_t* targetClipName = argc > 2 ? [&]() {
         static std::wstring t;
         std::string arg = argv[2];
         t.assign(arg.begin(), arg.end());
         return t.c_str();
     }() : L"melodica";
-    bool targetSeen = false;
-    DWORD targetSeenAtTick = 0;
 
     DWORD startTick = GetTickCount();
 
@@ -153,11 +154,6 @@ int main(int argc, char** argv)
                     printf("  lane %d anchor=%.4f (%.4f beats after this section began, %.1f%% of one pattern "
                            "span)\n",
                            lane, anchor, beatsAfterSectionStart, 100.0 * beatsAfterSectionStart / clip->spanBeats);
-                }
-                if (clip->name == targetClipName)
-                {
-                    targetSeen = true;
-                    targetSeenAtTick = GetTickCount();
                 }
             }
         }
@@ -229,15 +225,9 @@ int main(int argc, char** argv)
             }
         }
 
-        if (targetSeen && GetTickCount() - targetSeenAtTick > 6000)
+        if (GetTickCount() - startTick > 500000)
         {
-            printf("Stopping - target clip's section observed for 6s.\n");
-            break;
-        }
-
-        if (GetTickCount() - startTick > 120000)
-        {
-            printf("TIMEOUT after 120s, aborting\n");
+            printf("TIMEOUT after 500s, aborting\n");
             break;
         }
 
