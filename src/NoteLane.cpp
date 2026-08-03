@@ -186,6 +186,22 @@ std::vector<VisibleNote> NotesInRange(double originBeat, double fromBeat, double
     double localFromBeat = fromBeat - originBeat;
     double localToBeat = toBeat - originBeat;
     long long firstBar = static_cast<long long>(std::floor(localFromBeat / spanBeats)) - 1;
+    // Never tile a bar before the clip's own origin - bar 0 is this clip's
+    // very first-ever repetition, and there is categorically no earlier
+    // content to show (unlike the old global-zero design, where every
+    // clip's pattern was treated as looping forever both forward and
+    // backward through absolute time). Without this clamp, a fromBeat that
+    // lands just before originBeat - which happens routinely right when a
+    // fresh clip's live-judged pass starts, since it always looks
+    // kBeatsBehind behind "now" regardless of how close "now" is to the
+    // clip's own beginning - synthesizes a phantom copy of whichever of
+    // this clip's own notes sits near the *end* of its pattern, one full
+    // spanBeats too early: a confirmed real repro was an extra note
+    // appearing right at the start of a fresh clip's very first section.
+    if (firstBar < 0)
+    {
+        firstBar = 0;
+    }
     long long lastBar = static_cast<long long>(std::floor(localToBeat / spanBeats)) + 1;
 
     for (long long bar = firstBar; bar <= lastBar; ++bar)
