@@ -28,7 +28,23 @@ double NextOnsetAfter(double originBeat, double afterBeat, const ChartClip& clip
 
     double span = clip.spanBeats;
     double localAfterBeat = afterBeat - originBeat;
-    long long barIndex = static_cast<long long>(std::floor(localAfterBeat / span));
+    // The +1e-9 here (not just on the "candidate > localAfterBeat" check
+    // below) matters: afterBeat is usually itself a previous call's own
+    // returned value (originBeat + someBarIndex * span + note.startBeat),
+    // fed straight back in as the next call's afterBeat - so
+    // localAfterBeat is meant to land exactly on a bar boundary here more
+    // often than not, not just close to one. Ordinary floating-point
+    // roundoff in that addition/subtraction round trip can leave it a few
+    // ULPs *below* the boundary instead of exactly on it - and an
+    // unguarded floor() rounds that down into the *previous* bar, handing
+    // back the exact same beat this call was given in the first place
+    // (confirmed real repro: NextOnsetAfter looping forever on one beat,
+    // every call returning its own input unchanged, once local drift
+    // pushed a boundary-exact value a hair under). Nudging up first before
+    // flooring is safe - real beat differences are never anywhere close to
+    // 1e-9 - and keeps this in the same bar the unguarded "candidate >
+    // localAfterBeat + 1e-9" comparison below already treats it as being in.
+    long long barIndex = static_cast<long long>(std::floor((localAfterBeat + 1e-9) / span));
 
     for (const LaneNote& note : notes)
     {

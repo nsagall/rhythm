@@ -1135,7 +1135,15 @@ void GameSession::AdvanceExpectedNote(int lane)
     const ChartClip& clip = m_song.clips[section.clipIndex];
     double secondsPerBeat = 60.0 / m_song.bpm;
     double originBeat = m_clipOriginSeconds[section.clipIndex] / secondsPerBeat;
+#ifdef RHYTHM_DEBUG_JUDGEMENTS
+    double before = m_nextExpectedBeat[lane];
+#endif
     m_nextExpectedBeat[lane] = ChartTiming::NextOnsetAfter(originBeat, m_nextExpectedBeat[lane], clip, lane);
+#ifdef RHYTHM_DEBUG_JUDGEMENTS
+    std::fprintf(stderr, "[AdvanceExpectedNote] t=%.4f lane=%d section=%d clip=%d origin=%.4f before=%.4f after=%.4f\n",
+                 m_clock.ElapsedSeconds(), lane, m_currentSectionIndex, section.clipIndex, originBeat, before,
+                 m_nextExpectedBeat[lane]);
+#endif
 }
 
 // Returns the start-tolerance window (seconds) to judge a press with -
