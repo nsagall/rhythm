@@ -18,12 +18,11 @@ hits_required = 12
 [clip]
 display_name = Bass
 name = bass
-hits_required = 17
+hits_required = 14
 
 [clip]
 display_name = Piano
 name = piano
-hits_required = 16
 
 [clip]
 display_name = Bridge
@@ -46,25 +45,37 @@ name = background_2
 display_name = Drums
 name = drums_2
 
+[clip]
+display_name = Background 3
+name = background_3
+
+[clip]
+display_name = Melodica 3
+name = melodica_3
+hits_required = 4
+
+[clip]
+display_name = Piano 2
+name = piano_2
+
+[clip]
+display_name = Melodica 4
+name = melodica_4
+
 [learn]
 clip = organ
-loop_count = 2
 
 [learn]
 clip = bass
-loop_count = 1
 
 [learn]
 clip = drums
-loop_count = 1
 
 [learn]
 clip = piano
-loop_count = 1
 
 [learn]
 clip = melodica
-loop_count = 2
 
 [break]
 clip = bridge
@@ -78,6 +89,9 @@ clip = melodica_2
 [reset]
 
 [background]
+clip = bass
+
+[background]
 clip = drums
 
 [background]
@@ -85,7 +99,6 @@ clip = piano
 
 [learn]
 clip = organ
-loop_count = 2
 
 [reset]
 
@@ -94,4 +107,46 @@ clip = drums_2
 
 [learn]
 clip = piano
+
+[background]
+clip = background_3
+
+[learn]
+clip = melodica_3
+
+[reset]
+
+[background]
+clip = drums
+
+[background]
+clip = bass
+
+[learn]
+clip = piano
+
+[reset]
+
+[background]
+clip = piano_2
+
+[learn]
+clip = bass
+
+[reset]
+
+[background]
+clip = piano
+
+[background]
+clip = bass
+
+[background]
+clip = drums
+
+[learn]
+clip = organ
+
+[learn]
+clip = melodica_4
 
