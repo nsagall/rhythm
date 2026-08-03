@@ -558,6 +558,23 @@ double GameSession::NextExpectedBeatForLane(int lane) const
     return m_nextExpectedBeat[lane];
 }
 
+// See its own header comment.
+double GameSession::CurrentClipOriginBeat() const
+{
+    const ChartClip* clip = CurrentClip();
+    if (clip == nullptr || m_currentSectionIndex < 0)
+    {
+        return 0.0;
+    }
+    int clipIndex = m_song.sections[m_currentSectionIndex].clipIndex;
+    if (clipIndex < 0 || !m_clipOriginEstablished[clipIndex])
+    {
+        return 0.0;
+    }
+    double secondsPerBeat = 60.0 / m_song.bpm;
+    return m_clipOriginSeconds[clipIndex] / secondsPerBeat;
+}
+
 const SongClock& GameSession::Clock() const
 {
     return m_clock;
@@ -683,6 +700,27 @@ double GameSession::PreviewFirstOnsetBeatForLane(int lane) const
     }
     double originBeat = m_clipOriginSeconds[clipIndex] / secondsPerBeat;
     return ChartTiming::NextOnsetAfter(originBeat, transitionBeat - 1e-6, preview, lane);
+}
+
+// See its own header comment.
+double GameSession::PreviewClipOriginBeat() const
+{
+    int idx = PreviewSectionIndex();
+    if (idx < 0)
+    {
+        return -1.0;
+    }
+    int clipIndex = m_song.sections[idx].clipIndex;
+
+    double secondsPerBeat = 60.0 / m_song.bpm;
+    if (!m_clipOriginEstablished[clipIndex])
+    {
+        // Mirrors PreviewFirstOnsetBeatForLane's own not-yet-established
+        // branch exactly - transitionBeat is what BeginSection will
+        // actually use as the fresh origin once this section goes live.
+        return PreviewTransitionSeconds() / secondsPerBeat;
+    }
+    return m_clipOriginSeconds[clipIndex] / secondsPerBeat;
 }
 
 // Returns and clears the most recent judgement (Hit/Miss/None).

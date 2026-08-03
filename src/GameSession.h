@@ -150,6 +150,14 @@ public:
     // Returns the beat of the next note this lane is awaiting a press for.
     double NextExpectedBeatForLane(int lane) const;
 
+    // Returns the current section's clip's own persistent phase origin, in
+    // beats (see m_clipOriginEstablished) - the note lane needs this to
+    // tile CurrentClip()'s pattern into absolute beat-space (NotesInRange)
+    // exactly the way it's actually judged, since a clip's cycle boundaries
+    // are no longer at multiples of spanBeats from absolute beat 0. 0 if
+    // there's no current clip (harmless default, never read in that case).
+    double CurrentClipOriginBeat() const;
+
     const SongClock& Clock() const;
 
     // Returns the audio engine stem handle for a clip, for debugging.
@@ -220,6 +228,15 @@ public:
     // becomes visible. Returns a negative value if there's nothing to
     // preview right now.
     double PreviewFirstOnsetBeatForLane(int lane) const;
+
+    // Returns PreviewClip()'s own persistent phase origin, in beats -
+    // mirrors PreviewFirstOnsetBeatForLane's own anchoring choice exactly
+    // (a not-yet-established clip's predicted origin is the same
+    // transition beat PreviewFirstOnsetBeatForLane already uses), so the
+    // note lane can tile PreviewClip()'s pattern into the same
+    // absolute-beat-space its onsets are computed in (NotesInRange).
+    // Returns a negative value if there's nothing to preview right now.
+    double PreviewClipOriginBeat() const;
 
 private:
     // Begins (or resumes) the section at the given index, dispatching on

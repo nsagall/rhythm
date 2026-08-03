@@ -129,9 +129,16 @@ struct VisibleNote
 // fromBeat but whose duration carries its tail past fromBeat is still
 // (partly) on screen and must stay visible until its tail actually
 // scrolls off, not disappear the instant its start alone falls behind
-// the visible window.
-std::vector<VisibleNote> NotesInRange(double fromBeat, double toBeat, const std::vector<LaneNote>& notes,
-                                       double spanBeats)
+// the visible window. originBeat is this clip's own persistent phase
+// origin (GameSession::CurrentClipOriginBeat/PreviewClipOriginBeat) - the
+// pattern repeats every spanBeats starting from THERE, not from absolute
+// beat 0, exactly matching how GameSession itself judges this clip's
+// notes (ChartTiming::NextOnsetAfter/FreshOnsetForAllLanes); getting this
+// wrong draws notes at the wrong absolute beats entirely once a clip's
+// origin isn't a multiple of its own spanBeats - which is now the normal
+// case, not a rare coincidence.
+std::vector<VisibleNote> NotesInRange(double originBeat, double fromBeat, double toBeat,
+                                       const std::vector<LaneNote>& notes, double spanBeats)
 {
     std::vector<VisibleNote> result;
     if (notes.empty() || spanBeats <= 0.0)
@@ -139,14 +146,16 @@ std::vector<VisibleNote> NotesInRange(double fromBeat, double toBeat, const std:
         return result;
     }
 
-    long long firstBar = static_cast<long long>(std::floor(fromBeat / spanBeats)) - 1;
-    long long lastBar = static_cast<long long>(std::floor(toBeat / spanBeats)) + 1;
+    double localFromBeat = fromBeat - originBeat;
+    double localToBeat = toBeat - originBeat;
+    long long firstBar = static_cast<long long>(std::floor(localFromBeat / spanBeats)) - 1;
+    long long lastBar = static_cast<long long>(std::floor(localToBeat / spanBeats)) + 1;
 
     for (long long bar = firstBar; bar <= lastBar; ++bar)
     {
         for (const LaneNote& note : notes)
         {
-            double absoluteStart = bar * spanBeats + note.startBeat;
+            double absoluteStart = originBeat + bar * spanBeats + note.startBeat;
             double absoluteEnd = absoluteStart + note.durationBeats;
             if (absoluteEnd >= fromBeat && absoluteStart <= toBeat)
             {
@@ -843,8 +852,8 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
         for (int lane = 0; lane < kLaneCount; ++lane)
         {
             int laneX = laneCenterX(lane);
-            for (const VisibleNote& note :
-                 NotesInRange(nowBeat - kBeatsBehind, notesUpperBoundBeat, clip->laneNotes[lane], clip->spanBeats))
+            for (const VisibleNote& note : NotesInRange(session.CurrentClipOriginBeat(), nowBeat - kBeatsBehind,
+                                                          notesUpperBoundBeat, clip->laneNotes[lane], clip->spanBeats))
             {
                 int noteY = yForBeatsFromNow(note.startBeat - nowBeat);
                 if (noteY < m_laneRect.top - kVisibilityMarginPx || noteY > m_laneRect.bottom + kVisibilityMarginPx)
@@ -889,6 +898,11 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
         // would, the glow is purely an additional "this track has already
         // locked in" cue, not a replacement for the note's own color.
         bool glow = judged && session.IsLockedIn();
+        // The origin this pass's clip's pattern actually repeats from - see
+        // NotesInRange's own comment for why this can't just be absolute
+        // beat 0 anymore. Matches whichever of GameSession's two origin
+        // accessors this pass's dotsFromBeat (just below) itself came from.
+        double originBeat = judged ? session.CurrentClipOriginBeat() : session.PreviewClipOriginBeat();
 
         for (int lane = 0; lane < kLaneCount; ++lane)
         {
@@ -907,8 +921,8 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
             }
 
             int laneX = laneCenterX(lane);
-            for (const VisibleNote& note :
-                 NotesInRange(dotsFromBeat, upperBoundBeat, drawClip->laneNotes[lane], drawClip->spanBeats))
+            for (const VisibleNote& note : NotesInRange(originBeat, dotsFromBeat, upperBoundBeat,
+                                                          drawClip->laneNotes[lane], drawClip->spanBeats))
             {
                 double beatsFromStart = note.startBeat - nowBeat;
                 double beatsFromEnd = beatsFromStart + note.durationBeats;
