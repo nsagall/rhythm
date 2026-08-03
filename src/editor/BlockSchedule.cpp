@@ -290,42 +290,29 @@ Schedule Build(const ChartSong& song, const std::vector<double>& stemDurationsBy
                 // untouched in that case, so this section's own advance
                 // floor is computed relative to when the clip truly
                 // started, not this section's own start.
-                bool openedFresh = startVoiceIfNeeded(section.clipIndex, audioStartSeconds, clip.initVolume,
-                                                       clip.volume, lockInSeconds, static_cast<int>(i));
+                startVoiceIfNeeded(section.clipIndex, audioStartSeconds, clip.initVolume, clip.volume, lockInSeconds,
+                                   static_cast<int>(i));
                 double effectiveLoopStartSeconds = loopStartSecondsByClipIndex[static_cast<size_t>(section.clipIndex)];
 
                 entry.endSeconds = ChartTiming::ComputeLearnAdvanceSeconds(
                     originSeconds, t, effectiveLoopStartSeconds, stemDuration, section.loopCount, tFallSeconds);
 
                 // Mirrors GameSession::Update's own finishedSection
-                // handling: a perfect player who still wouldn't reach
-                // hits_required before the section's own advance (rare -
-                // only when hits_required exceeds however many onsets the
-                // pattern actually offers in that span) never locks in, so
-                // the clip doesn't join the arrangement - close its voice
-                // here instead of leaving it open forever. Only reachable
-                // for a voice this section itself opened fresh: a voice
-                // reused from an earlier, already-locked-in section keeps
-                // its own true lockInSeconds (in the past, so Seek() already
-                // resolves it to volumeAfterLockIn throughout) - untouched
-                // by whether *this* section's own walk locks in again.
-                if (openedFresh && lockInSeconds >= entry.endSeconds)
+                // handling: a learn section that hasn't locked in by its
+                // own current candidate advance doesn't get abandoned - it
+                // just repeats, extended by one more full loop, however
+                // many times it takes until a perfect player's own walk
+                // (lockInSeconds, computed above) actually falls within it.
+                // hits_required exceeding however many onsets one loop of
+                // the pattern offers (rare) just means more loops, never
+                // "never locks in" - a perfect player pressing every note
+                // always eventually reaches hits_required given enough
+                // repeats, exactly like the live game's clip just keeps
+                // looping rather than being stopped.
+                if (stemDuration > 0.0 && lockInSeconds > entry.endSeconds)
                 {
-                    int voiceIdx = voiceIndexByClipIndex[static_cast<size_t>(section.clipIndex)];
-                    VoiceWindow& voice = schedule.voices[static_cast<size_t>(voiceIdx)];
-                    voice.stopSeconds = entry.endSeconds;
-                    // Never actually reached lockInSeconds, so the voice
-                    // should read as init_volume for its whole (now-closed)
-                    // life - Seek()'s ternary only takes the
-                    // volumeBeforeLockIn branch while elapsedSeconds is
-                    // still short of a *valid* lockInSeconds, so clearing it
-                    // to -1 alone would wrongly fall through to
-                    // volumeAfterLockIn instead; setting both fields equal
-                    // sidesteps the split entirely.
-                    voice.volumeAfterLockIn = clip.initVolume;
-                    voice.lockInSeconds = -1.0;
-                    voiceIndexByClipIndex[static_cast<size_t>(section.clipIndex)] = -1;
-                    entry.lockInSeconds = -1.0;
+                    double loopsNeeded = std::ceil((lockInSeconds - entry.endSeconds) / stemDuration - 1e-9);
+                    entry.endSeconds += std::max(0.0, loopsNeeded) * stemDuration;
                 }
 
                 // Informational only - the total number of passes spanning

@@ -49,13 +49,16 @@ struct Entry
     double originSeconds = 0.0;
     // Learn only: the hits_required-th onset in chronological order across
     // all lanes, for a perfect player - i.e. the instant IsLockedIn() would
-    // flip true (see GameSession::RegisterHit). Purely informational now:
-    // it drives nothing about entry.endSeconds, only the matching
-    // VoiceWindow's own volume-switch timing - and is -1 here too if even
-    // a perfect player wouldn't reach hits_required before entry.endSeconds
-    // (see Build()'s own Learn case), matching the live game leaving that
-    // clip's voice to close rather than join the arrangement. Always -1 for
-    // Break (no lock-in event - loop_count is already known up front).
+    // flip true (see GameSession::RegisterHit). Always reachable (and
+    // therefore always a real, non-negative value) for a perfect player:
+    // if hits_required exceeds however many onsets a single loop of the
+    // pattern offers, entry.endSeconds itself just extends by as many
+    // further loops as it takes (see Build()'s own Learn case) - a learn
+    // clip never gets abandoned before locking in, live game or here
+    // alike. Drives nothing about entry.endSeconds itself beyond that
+    // extension, only the matching VoiceWindow's own volume-switch timing.
+    // Always -1 for Break (no lock-in event - loop_count is already known
+    // up front).
     double lockInSeconds = -1.0;
     double loopSeconds = 0.0; // one stem loop's duration - the timeline "block width" unit
     int loopCount = 1;        // informational: total passes spanning [audioStartSeconds, endSeconds) - see Build()
