@@ -118,6 +118,21 @@ bool BlockPropertiesPanel::Draw(EditorDocument& doc, int selectedBlockId, BlockP
         }
         ImGui::Text("Total: %.2fs", entry->endSeconds - entry->sectionStartSeconds);
     }
+    else if (block->kind == SectionKind::Reset)
+    {
+        // Not a validation problem - BlockSchedule::Build() never creates an
+        // Entry for Reset (see BlockSchedule.h's own comment on Entry): it
+        // stops everything and advances instantly, contributing zero
+        // elapsed time, so there's nothing to compute.
+        ImGui::TextDisabled("Reset has no duration of its own - it stops everything instantly\nand advances immediately to the next block.");
+    }
+    else if (block->kind == SectionKind::Background)
+    {
+        // Same as Reset above - Background never gets its own Entry either,
+        // since it plays continuously alongside whichever Learn/Break is
+        // current rather than occupying its own span of the timeline.
+        ImGui::TextDisabled("Background has no timing entry of its own - it plays continuously\nunderneath whatever Learn/Break block is current, contributing no\nelapsed time to the timeline.");
+    }
     else
     {
         ImGui::TextDisabled("(unavailable - fix validation problems to see computed timing)");
