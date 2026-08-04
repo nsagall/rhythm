@@ -21,31 +21,57 @@
 constexpr double kBeatsAhead = kNoteFallBeats;
 constexpr double kBeatsBehind = 1.0;
 
+// One clip's identity and currently-relevant judged state, for rendering
+// purposes only - NOT the same object as GameSession's own private
+// per-clip playback voice (audio/timing internals a renderer has no
+// business touching). Lives in NoteLaneScene::clipInstances, one per clip
+// in the song, rebuilt fresh every frame; every SceneNote below points
+// into that same array rather than carrying its own copy of this state,
+// so every note belonging to the same clip in the same frame necessarily
+// agrees about it.
+struct ClipInstance
+{
+    // This clip's stable position in ChartSong::clips, or -1 for the
+    // "no clip" placeholder a null SceneNote::clip/NoteLaneScene::
+    // primaryClip stands in for - a renderer resolves this to an actual
+    // color via its own palette.
+    int index = -1;
+
+    // Whether the section currently judging this clip has locked in - a
+    // renderer-chosen supplementary cue (e.g. a glow outline), independent
+    // of any one note's own state/color. Only ever true for whichever
+    // clip is being live-judged right now - every other clip's instance
+    // reads false, even one locked in earlier by a since-ended section.
+    bool lockedIn = false;
+};
+
 // What a single note looks like once NoteLaneModel has resolved the
 // GameSession's judging for it.
 enum class NoteVisualState
 {
-    Normal, // not yet interacted with - a renderer colors this by clipIndex
+    Normal, // not yet interacted with - a renderer colors this by clip->index
     Held,   // press judged correct, hold in progress or just resolved
     Hit,    // judged correct
     Miss,   // judged incorrect
 };
 
-// One note to draw: where and when (beats), and what it should look like
-// (semantically - see NoteVisualState) - never a pixel position.
+// One note to draw: where and when (beats), what it should look like
+// (semantically - see NoteVisualState), and which clip it belongs to -
+// never a pixel position or a literal color.
 struct SceneNote
 {
     int lane = 0;
     double startBeat = 0.0;
     double durationBeats = 0.0;
     NoteVisualState state = NoteVisualState::Normal;
-    // This note's clip's stable position in ChartSong::clips, or -1 for
-    // none - a renderer resolves this to an actual color via its own
-    // palette, only consulted when state == Normal.
-    int clipIndex = -1;
-    // Whether this note's track has locked in - a renderer-chosen
-    // supplementary cue (e.g. a glow outline), independent of state/color.
-    bool lockedIn = false;
+
+    // Never null for a note that actually made it into NoteLaneScene::
+    // notes/explodingNotes - points into that same frame's
+    // NoteLaneScene::clipInstances, so it's only ever valid for as long as
+    // that NoteLaneScene is (see clipInstances' own comment for why that's
+    // safe despite the vector living in the very struct being returned by
+    // value).
+    const ClipInstance* clip = nullptr;
 };
 
 // One lane's judge-line receptor state, as far as game rules go - a
@@ -64,10 +90,21 @@ struct NoteLaneScene
     double nowBeat = 0.0;
     int beatsPerBar = 4;
 
-    // Rails/receptors' base color, as a clip index (see
-    // SceneNote::clipIndex) - -1 means no current/preview clip (Idle or
-    // Complete), which a renderer should show as a neutral color.
-    int primaryClipIndex = -1;
+    // One entry per clip in the song, index-for-index with ChartSong::
+    // clips - every SceneNote::clip (in notes/explodingNotes) and
+    // primaryClip below point somewhere into this array. NoteLaneModel
+    // sizes and fully populates this once, before taking any pointer into
+    // it, and never resizes it again for the rest of that BuildScene call
+    // - a std::vector's element addresses stay stable across everything
+    // except a resize, and this one never gets one after that point, so
+    // those pointers stay valid for exactly as long as this NoteLaneScene
+    // does (including surviving the move out of BuildScene's return).
+    std::vector<ClipInstance> clipInstances;
+
+    // Rails/receptors' base color/identity - nullptr means no current/
+    // preview clip (Idle or Complete), which a renderer should show as a
+    // neutral color.
+    const ClipInstance* primaryClip = nullptr;
 
     SceneReceptor receptors[kLaneCount];
     std::vector<SceneNote> notes;

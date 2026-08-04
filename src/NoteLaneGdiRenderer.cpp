@@ -63,7 +63,7 @@ constexpr COLORREF kStreakColor = RGB(255, 205, 70); // still used as one of the
 // clashing. Avoids red/green so a clip's own color is never mistaken for
 // the kNoteColorHit/kNoteColorMiss flash; entry 0 is pushed toward magenta
 // rather than a redder hue so it doesn't read as a near-miss of the
-// miss-red. Indexed by SceneNote::clipIndex; cycles if a chart has more
+// miss-red. Indexed by SceneNote::clip->index; cycles if a chart has more
 // clips than colors here.
 constexpr COLORREF kClipPalette[] = {
     RGB(255, 70, 235),  // magenta
@@ -560,8 +560,8 @@ void NoteLaneGdiRenderer::DrawReceptors(HDC hdc, RECT laneRect, const NoteLaneSc
 // color; a held/hit note in kNoteColorHit; a missed note in kNoteColorMiss
 // - both then hold for the rest of the note's time on screen, matching the
 // real outcome rather than fading back to Normal. Judged hit/miss/held
-// notes get the same glow halo as the lock-in outline (note.lockedIn) so
-// the pass/fail moment pops instead of being a flat color swap.
+// notes get the same glow halo as the lock-in outline (note.clip->lockedIn)
+// so the pass/fail moment pops instead of being a flat color swap.
 void NoteLaneGdiRenderer::DrawNotes(HDC hdc, RECT laneRect, const NoteLaneScene& scene)
 {
     double columnWidth =
@@ -580,11 +580,11 @@ void NoteLaneGdiRenderer::DrawNotes(HDC hdc, RECT laneRect, const NoteLaneScene&
             continue;
         }
 
-        COLORREF color = ColorForNote(note.state, note.clipIndex);
+        COLORREF color = ColorForNote(note.state, note.clip->index);
         bool emphasisGlow = note.state != NoteVisualState::Normal;
 
-        DrawNoteBar(hdc, laneX, yTop, yBottom, barHalfWidth, color, note.lockedIn);
-        DrawNoteGlyph(hdc, laneX, yBottom, color, emphasisGlow, note.lockedIn);
+        DrawNoteBar(hdc, laneX, yTop, yBottom, barHalfWidth, color, note.clip->lockedIn);
+        DrawNoteGlyph(hdc, laneX, yBottom, color, emphasisGlow, note.clip->lockedIn);
     }
 }
 
@@ -742,7 +742,7 @@ void NoteLaneGdiRenderer::SpawnExplosion(RECT laneRect, const NoteLaneScene& sce
         {
             continue;
         }
-        COLORREF explosionColor = ColorForClip(note.clipIndex);
+        COLORREF explosionColor = ColorForClip(note.clip->index);
         for (int p = 0; p < kExplosionParticlesPerNote; ++p)
         {
             double angle = PseudoRandom(particleSeed++) * 6.283185307;
@@ -804,7 +804,7 @@ void NoteLaneGdiRenderer::Draw(HDC hdc, RECT laneRect, const NoteLaneScene& scen
 
     DrawMeasureLines(hdc, laneRect, scene);
 
-    COLORREF primaryColor = ColorForClip(scene.primaryClipIndex);
+    COLORREF primaryColor = scene.primaryClip ? ColorForClip(scene.primaryClip->index) : kNeutralClipColor;
     DrawRails(hdc, laneRect, primaryColor);
     DrawReceptors(hdc, laneRect, scene, primaryColor);
 

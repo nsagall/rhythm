@@ -15,11 +15,10 @@ constexpr bool kPreviewNextClipBeforeHandoff = false;
 
 } // namespace
 
-std::vector<NoteLaneModel::BeatRange> NoteLaneModel::NotesInRange(double originBeat, double fromBeat, double toBeat,
-                                                                    const std::vector<LaneNote>& notes,
-                                                                    double spanBeats)
+std::vector<SceneNote> NoteLaneModel::NotesInRange(int lane, double originBeat, double fromBeat, double toBeat,
+                                                    const std::vector<LaneNote>& notes, double spanBeats)
 {
-    std::vector<BeatRange> result;
+    std::vector<SceneNote> result;
     if (notes.empty() || spanBeats <= 0.0)
     {
         return result;
@@ -56,7 +55,11 @@ std::vector<NoteLaneModel::BeatRange> NoteLaneModel::NotesInRange(double originB
             // phantom note.
             if (absoluteEnd >= fromBeat && absoluteStart < toBeat)
             {
-                result.push_back({absoluteStart, note.durationBeats});
+                SceneNote sceneNote;
+                sceneNote.lane = lane;
+                sceneNote.startBeat = absoluteStart;
+                sceneNote.durationBeats = note.durationBeats;
+                result.push_back(sceneNote);
             }
         }
     }
@@ -74,19 +77,24 @@ int NoteLaneModel::ClipIndex(const GameSession& session, const ChartClip* clip)
 }
 
 void NoteLaneModel::CollectNotes(const GameSession& session, const ChartClip* drawClip, double originBeat,
-                                  bool judged, double fromBeat, double upperBoundBeat,
-                                  std::vector<SceneNote>& outNotes) const
+                                  bool judged, double fromBeat, double upperBoundBeat, NoteLaneScene& scene) const
 {
     if (!drawClip)
     {
         return;
     }
+    size_t clipIndex = static_cast<size_t>(ClipIndex(session, drawClip));
     // Once a track has locked in (only possible for the judged pass -
-    // still live-judging through its extended post-lock-in run), every one
-    // of its notes gets a supplementary "this track has already locked in"
-    // cue stamped on, independent of state/color.
-    bool lockedIn = judged && session.IsLockedIn();
-    int clipIndex = ClipIndex(session, drawClip);
+    // still live-judging through its extended post-lock-in run), every
+    // note pointing at this clip's instance picks up a supplementary
+    // "this track has already locked in" cue, independent of state/color.
+    // Safe to overwrite unconditionally on every call: whenever the same
+    // clip is revisited within the same BuildScene (the self-repeat
+    // preview case), both calls agree this is false (only reached while
+    // !IsLockedIn()); whenever it could be true, that clip is never
+    // revisited again this frame - see BuildScene's own call sites.
+    scene.clipInstances[clipIndex].lockedIn = judged && session.IsLockedIn();
+    const ClipInstance* clip = &scene.clipInstances[clipIndex];
 
     for (int lane = 0; lane < kLaneCount; ++lane)
     {
@@ -100,8 +108,8 @@ void NoteLaneModel::CollectNotes(const GameSession& session, const ChartClip* dr
             }
         }
 
-        std::vector<BeatRange> visibleNotes =
-            NotesInRange(originBeat, dotsFromBeat, upperBoundBeat, drawClip->laneNotes[lane], drawClip->spanBeats);
+        std::vector<SceneNote> visibleNotes = NotesInRange(lane, originBeat, dotsFromBeat, upperBoundBeat,
+                                                             drawClip->laneNotes[lane], drawClip->spanBeats);
         // Build with -DRHYTHM_DEBUG_RENDER (add to the Rhythm target's own
         // target_compile_definitions in CMakeLists.txt, not left on by
         // default) to trace exactly what NotesInRange tiles for each
@@ -117,38 +125,33 @@ void NoteLaneModel::CollectNotes(const GameSession& session, const ChartClip* dr
         {
             std::fwprintf(stderr, L"[NoteLaneModel] judged=%d clip=%ls lane=%d origin=%.4f from=%.4f to=%.4f:",
                            judged ? 1 : 0, drawClip->name.c_str(), lane, originBeat, dotsFromBeat, upperBoundBeat);
-            for (const BeatRange& n : visibleNotes)
+            for (const SceneNote& n : visibleNotes)
             {
                 std::fwprintf(stderr, L" [%.4f+%.4f]", n.startBeat, n.durationBeats);
             }
             std::fwprintf(stderr, L"\n");
         }
 #endif
-        for (const BeatRange& note : visibleNotes)
+        for (SceneNote& sceneNote : visibleNotes)
         {
-            SceneNote sceneNote;
-            sceneNote.lane = lane;
-            sceneNote.startBeat = note.startBeat;
-            sceneNote.durationBeats = note.durationBeats;
-            sceneNote.clipIndex = clipIndex;
-            sceneNote.lockedIn = lockedIn;
+            sceneNote.clip = clip;
 
             // Upcoming notes stay Normal (a renderer colors that by
-            // clipIndex). The instant a press starts a note
-            // correctly (within tolerance) it becomes Held and stays that
-            // way through the hold; a release that's too early/late (or a
+            // clip->index). The instant a press starts a note correctly
+            // (within tolerance) it becomes Held and stays that way
+            // through the hold; a release that's too early/late (or a
             // press-window timeout with no press at all) resolves it to
             // Hit/Miss - both then hold for the rest of the note's time
             // on screen, matching the real outcome rather than reverting
             // to Normal.
             if (judged && session.IsLaneHeld(lane) &&
-                std::abs(session.LaneHoldStartBeat(lane) - note.startBeat) < 1e-6)
+                std::abs(session.LaneHoldStartBeat(lane) - sceneNote.startBeat) < 1e-6)
             {
                 sceneNote.state = NoteVisualState::Held;
             }
             else if (judged)
             {
-                JudgementResult result = session.OnsetJudgement(note.startBeat, lane);
+                JudgementResult result = session.OnsetJudgement(sceneNote.startBeat, lane);
                 if (result == JudgementResult::Hit)
                 {
                     sceneNote.state = NoteVisualState::Hit;
@@ -157,7 +160,7 @@ void NoteLaneModel::CollectNotes(const GameSession& session, const ChartClip* dr
                 {
                     sceneNote.state = NoteVisualState::Miss;
                 }
-                else if (note.startBeat < session.NextExpectedBeatForLane(lane) - 1e-6)
+                else if (sceneNote.startBeat < session.NextExpectedBeatForLane(lane) - 1e-6)
                 {
                     // Never held or judged - only possible for a clip's
                     // first-ever appearance, which anchors to its
@@ -168,7 +171,7 @@ void NoteLaneModel::CollectNotes(const GameSession& session, const ChartClip* dr
                 }
             }
 
-            outNotes.push_back(sceneNote);
+            scene.notes.push_back(sceneNote);
         }
     }
 }
@@ -181,13 +184,23 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
     scene.nowBeat = scene.clockRunning ? session.Clock().BeatPosition() : 0.0;
     scene.beatsPerBar = session.Song().beatsPerBar;
 
+    // Sized and fully populated before anything below takes a pointer into
+    // it - see NoteLaneScene::clipInstances' own comment for why this
+    // vector must never be resized again after this point.
+    scene.clipInstances.resize(session.Song().clips.size());
+    for (size_t i = 0; i < scene.clipInstances.size(); ++i)
+    {
+        scene.clipInstances[i].index = static_cast<int>(i);
+    }
+
     const ChartClip* clip = session.CurrentClip();
 
     // Whichever clip is most relevant right now - the actively-playing one
     // if there is one (Learn or Break alike; CurrentClip() is non-null for
     // both), otherwise whatever's about to start (the count-in, or a
     // Reset's own zero-time gap).
-    scene.primaryClipIndex = ClipIndex(session, clip ? clip : session.PreviewClip());
+    int primaryClipIndex = ClipIndex(session, clip ? clip : session.PreviewClip());
+    scene.primaryClip = primaryClipIndex >= 0 ? &scene.clipInstances[static_cast<size_t>(primaryClipIndex)] : nullptr;
 
     // A learn section's dots keep coming (and being judged) until
     // nextClipShowing flips true - either at the scheduled advance itself,
@@ -255,21 +268,17 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
 
     if ((scene.justHandedOff || scene.justLockedIn) && clip)
     {
-        int explosionClipIndex = ClipIndex(session, clip);
+        const ClipInstance* explosionClip = &scene.clipInstances[static_cast<size_t>(ClipIndex(session, clip))];
         double originBeat = session.CurrentClipOriginBeat();
 
         auto addExplodingRange = [&](double fromBeat, double toBeat)
         {
             for (int lane = 0; lane < kLaneCount; ++lane)
             {
-                for (const BeatRange& note :
-                     NotesInRange(originBeat, fromBeat, toBeat, clip->laneNotes[lane], clip->spanBeats))
+                for (SceneNote& sceneNote :
+                     NotesInRange(lane, originBeat, fromBeat, toBeat, clip->laneNotes[lane], clip->spanBeats))
                 {
-                    SceneNote sceneNote;
-                    sceneNote.lane = lane;
-                    sceneNote.startBeat = note.startBeat;
-                    sceneNote.durationBeats = note.durationBeats;
-                    sceneNote.clipIndex = explosionClipIndex;
+                    sceneNote.clip = explosionClip;
                     scene.explodingNotes.push_back(sceneNote);
                 }
             }
@@ -300,12 +309,12 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
     if (isLiveJudging)
     {
         CollectNotes(session, clip, session.CurrentClipOriginBeat(), /*judged=*/true, scene.nowBeat - kBeatsBehind,
-                     notesUpperBoundBeat, scene.notes);
+                     notesUpperBoundBeat, scene);
     }
     else
     {
         CollectNotes(session, session.PreviewClip(), session.PreviewClipOriginBeat(), /*judged=*/false, -1.0,
-                     notesUpperBoundBeat, scene.notes);
+                     notesUpperBoundBeat, scene);
     }
 
     // The judged pass never tiles past notesUpperBoundBeat, which would
@@ -318,12 +327,12 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
     if (isLiveJudging && !session.IsLockedIn())
     {
         CollectNotes(session, clip, session.CurrentClipOriginBeat(), /*judged=*/false, notesUpperBoundBeat,
-                     scene.nowBeat + kBeatsAhead, scene.notes);
+                     scene.nowBeat + kBeatsAhead, scene);
     }
     else if (isLiveJudging)
     {
         CollectNotes(session, session.PreviewClip(), session.PreviewClipOriginBeat(), /*judged=*/false, -1.0,
-                     scene.nowBeat + kBeatsAhead, scene.notes);
+                     scene.nowBeat + kBeatsAhead, scene);
     }
 
     switch (session.Phase())

@@ -22,15 +22,6 @@ public:
     NoteLaneScene BuildScene(const GameSession& session);
 
 private:
-    // One note visible on screen for a single lane: where it starts and
-    // how long it lasts, both in beats - NotesInRange's own result type,
-    // before CollectNotes resolves it into a fully-fledged SceneNote.
-    struct BeatRange
-    {
-        double startBeat = 0.0;
-        double durationBeats = 0.0;
-    };
-
     // Returns every note (from one lane's repeating pattern) whose span
     // overlaps [fromBeat, toBeat] at all, not just ones whose start falls
     // inside it - a note that started earlier but whose tail carries past
@@ -39,25 +30,29 @@ private:
     // CurrentClipOriginBeat/PreviewClipOriginBeat): the pattern repeats
     // every spanBeats starting from there, not from absolute beat 0,
     // matching how GameSession itself judges these notes (ChartTiming::
-    // NextOnsetAfter/FreshOnsetForAllLanes).
-    static std::vector<BeatRange> NotesInRange(double originBeat, double fromBeat, double toBeat,
+    // NextOnsetAfter/FreshOnsetForAllLanes). Each returned SceneNote
+    // carries lane/startBeat/durationBeats only - state stays Normal and
+    // clip stays null, since pure beat-tiling arithmetic has no way to
+    // know either; the caller fills both in.
+    static std::vector<SceneNote> NotesInRange(int lane, double originBeat, double fromBeat, double toBeat,
                                                 const std::vector<LaneNote>& notes, double spanBeats);
 
     // Returns clip's position in ChartSong::clips, or -1 for nullptr -
     // stable for the whole session, since m_song is only ever reassigned
-    // wholesale by LoadChart, never mutated element-by-element in place. A
-    // renderer resolves this to an actual color; this class never does.
+    // wholesale by LoadChart, never mutated element-by-element in place.
     static int ClipIndex(const GameSession& session, const ChartClip* clip);
 
-    // Appends drawClip's notes into outNotes, resolving each one's
+    // Appends drawClip's notes into scene.notes, resolving each one's
     // NoteVisualState from session's judging when judged is true (held/
     // hit/miss/normal), or leaving every note Normal for an unjudged
-    // preview pass. fromBeat is a shared per-lane start point, except a
+    // preview pass - and pointing each one at drawClip's own entry in
+    // scene.clipInstances (updating that entry's lockedIn flag to match
+    // this pass). fromBeat is a shared per-lane start point, except a
     // negative sentinel means "each lane's own first required note"
     // (PreviewFirstOnsetBeatForLane) - used for a not-yet-started clip, so
     // its lanes reveal one at a time instead of all at once.
     void CollectNotes(const GameSession& session, const ChartClip* drawClip, double originBeat, bool judged,
-                       double fromBeat, double upperBoundBeat, std::vector<SceneNote>& outNotes) const;
+                       double fromBeat, double upperBoundBeat, NoteLaneScene& scene) const;
 
     bool m_prevLockedIn = false;
     bool m_prevNotesHandoff = false;
