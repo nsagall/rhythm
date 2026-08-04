@@ -361,7 +361,24 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
         double secondsPerBeat = 60.0 / session.Song().bpm;
         double advanceAtBeat = session.PendingAdvanceAtSeconds() / secondsPerBeat;
 
-        if (!kPreviewNextClipBeforeHandoff || session.PreviewClip() == nullptr)
+        // DontFail mode never takes the early branch below, regardless of
+        // kPreviewNextClipBeforeHandoff/PreviewClip() - its own notes stay
+        // live (drawn AND judged) all the way to the section's actual
+        // advance, unlike Pass mode's post-lock-in handoff. GameSession's
+        // own judging (the press-phase timeout in Update()) has no idea
+        // this clip's notes are being hidden early - it keeps judging every
+        // one of them for as long as the section is current, so hiding one
+        // here would silently miss-judge something the player was never
+        // shown, which a DontFail miss then acts on (unlike Pass mode,
+        // where a miss after passing is already a no-op - see
+        // SectionInstance::RegisterMiss). The "stream next section in
+        // early while passing / show a loop repeat while failing" nuance
+        // still happens - see the gap-fill CollectNotes call below, which
+        // already blends in exactly that once notesUpperBoundBeat is
+        // capped short of nowBeat+kBeatsAhead - just without ever hiding
+        // this clip's own tail to make room for it.
+        if (!kPreviewNextClipBeforeHandoff || session.PreviewClip() == nullptr ||
+            clip->learnMode == LearnMode::DontFail)
         {
             // Nothing to hand off to yet (no preview, or early handoff is
             // disabled) - keep this clip's own dots/judging live right up
