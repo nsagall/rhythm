@@ -175,6 +175,31 @@ public:
     // Returns and clears the most recent judgement (Hit/Miss/None).
     JudgementResult ConsumeLastJudgement();
 
+    // One judgement (Hit or Miss - RegisterHit/RegisterMiss are the only
+    // producers, so None never appears here), on a specific lane, exactly as
+    // it was at the instant it happened - passing is captured then rather
+    // than left for the caller to re-query later, since IsPassing() may have
+    // already moved on (e.g. a DontFail miss flipping it) by the time this
+    // event is actually drained.
+    struct JudgementEvent
+    {
+        JudgementResult result = JudgementResult::None;
+        int lane = -1;
+        bool passing = false;
+    };
+
+    // Returns and clears every judgement RegisterHit/RegisterMiss recorded
+    // since the last call - unlike ConsumeLastJudgement (a single scalar,
+    // overwritten by whichever judgement happens to land last), this never
+    // drops one: OnPress/OnRelease produce at most one each, but Update()'s
+    // press-phase/hold timeouts can judge several lanes in a single call.
+    // The intended reader is whatever's responsible for a judgement's visual
+    // feedback (see NoteLane::ShowJudgement) - draining this after every
+    // OnPress/OnRelease/Update call makes a timeout-driven miss go through
+    // that exact same feedback path as an explicit mistimed press/release,
+    // instead of the two being handled differently.
+    std::vector<JudgementEvent> ConsumeJudgementEvents();
+
     // Returns how a specific lane note (identified by its start beat) was
     // judged, for the note lane to color it once it's passed the line.
     // Returns None if that note hasn't been judged yet, or is too old to
@@ -319,8 +344,11 @@ private:
     // are left alone once already passing, in Pass mode (frozen at their
     // passing value) - they no longer drive anything at that point. In
     // DontFail mode a hit while already passing is equally a no-op (there's
-    // nothing further to earn until a miss drops it back to failing).
-    void RegisterHit();
+    // nothing further to earn until a miss drops it back to failing). lane
+    // is only for the JudgementEvent this pushes (see ConsumeJudgementEvents) -
+    // every caller already knows it, since a hit is always judged against a
+    // specific lane's own note.
+    void RegisterHit(int lane);
 
     // Starts clipIndex's stem looping now (phase-aligned to its own
     // persistent origin - see EnsureClipInstance/ClipInstance::
@@ -366,8 +394,11 @@ private:
     // only effect on the section's own advance timing is indirect:
     // resetting the streak makes passing (and therefore advancing) take
     // longer to reach, possibly costing the clip another full loop's
-    // repeat - see Update()'s own comment.
-    void RegisterMiss();
+    // repeat - see Update()'s own comment. lane is only for the
+    // JudgementEvent this pushes (see ConsumeJudgementEvents) - every caller
+    // already knows it, since a miss is always judged against a specific
+    // lane's own note.
+    void RegisterMiss(int lane);
 
     // Moves this lane's next-expected-note pointer forward to the next note after it.
     void AdvanceExpectedNote(int lane);
@@ -488,4 +519,7 @@ private:
 
     QueuedBackground m_queuedBackground;
     JudgementResult m_lastJudgement = JudgementResult::None;
+    // See ConsumeJudgementEvents - populated by RegisterHit/RegisterMiss,
+    // drained (and cleared) there.
+    std::vector<JudgementEvent> m_judgementEvents;
 };

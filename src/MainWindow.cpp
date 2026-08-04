@@ -486,21 +486,22 @@ void MainWindow::RegisterPress(int lane)
     }
 
     m_gameSession.OnPress(lane);
-    JudgementResult result = m_gameSession.ConsumeLastJudgement();
-    if (result != JudgementResult::None)
-    {
-        m_noteLane.ShowJudgement(result, lane, m_gameSession.IsPassing());
-    }
+    DrainJudgements();
 }
 
 // Sends a lane release to the game session and reflects any judgement in the note lane.
 void MainWindow::RegisterRelease(int lane)
 {
     m_gameSession.OnRelease(lane);
-    JudgementResult result = m_gameSession.ConsumeLastJudgement();
-    if (result != JudgementResult::None)
+    DrainJudgements();
+}
+
+// See the header's own comment.
+void MainWindow::DrainJudgements()
+{
+    for (const GameSession::JudgementEvent& event : m_gameSession.ConsumeJudgementEvents())
     {
-        m_noteLane.ShowJudgement(result, lane, m_gameSession.IsPassing());
+        m_noteLane.ShowJudgement(event.result, event.lane, event.passing);
     }
 }
 
@@ -511,13 +512,7 @@ void MainWindow::RegisterRelease(int lane)
 void MainWindow::OnTimer(WPARAM timerId)
 {
     m_gameSession.Update();
-
-    // A judgement from Update() (a timeout miss) isn't tied to a specific
-    // key the player just pressed, so there's no single lane to flash the
-    // judge line for - the missed note's own bar color already shows it.
-    // Still have to drain it so it doesn't linger and get misattributed to
-    // the next real press/release's ConsumeLastJudgement() call.
-    m_gameSession.ConsumeLastJudgement();
+    DrainJudgements();
 
     if (m_screen == UiScreen::Playing && m_gameSession.Phase() == GamePhase::Complete)
     {
