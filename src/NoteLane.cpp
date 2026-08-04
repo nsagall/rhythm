@@ -55,3 +55,8 @@ void NoteLane::Draw(HDC hdc, const GameSession& session)
     NoteLaneScene scene = m_model.BuildScene(session);
     m_renderer->Draw(hdc, m_laneRect, scene);
 }
+
+void NoteLane::ToggleDebugOverlay()
+{
+    m_renderer->ToggleDebugOverlay();
+}

@@ -407,6 +407,13 @@ void MainWindow::OnKeyDown(WPARAM key, LPARAM flags)
         return;
     }
 
+    if (static_cast<int>(key) == 'D')
+    {
+        m_noteLane.ToggleDebugOverlay();
+        InvalidateRect(m_hwnd, nullptr, FALSE);
+        return;
+    }
+
     for (int lane = 0; lane < kLaneCount; ++lane)
     {
         if (static_cast<int>(key) == kLaneKeys[lane])

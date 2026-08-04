@@ -25,4 +25,11 @@ public:
     // the renderer's own continuous animations by however much wall-clock
     // time has passed since its last call.
     virtual void Draw(HDC hdc, RECT laneRect, const NoteLaneScene& scene) = 0;
+
+    // Flips whether Draw() also shows scene's debugPreviousClipName/
+    // debugCurrentClipName/debugNextClipName - off by default. Purely a
+    // display choice (which is exactly why this lives on the renderer, not
+    // NoteLaneModel/NoteLaneScene - the data itself is always populated
+    // regardless of this toggle).
+    virtual void ToggleDebugOverlay() = 0;
 };

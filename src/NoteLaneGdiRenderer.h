@@ -19,6 +19,7 @@ public:
 
     void OnJudgement(JudgementResult result, int lane, bool lockedIn) override;
     void Draw(HDC hdc, RECT laneRect, const NoteLaneScene& scene) override;
+    void ToggleDebugOverlay() override;
 
 private:
     // One piece of confetti spawned when a track locks in: falls from its
@@ -128,6 +129,8 @@ private:
     void DrawExplosion(HDC hdc, double elapsedSeconds, double t);
     void DrawRipples(HDC hdc, RECT laneRect);
     void DrawHud(HDC hdc, RECT laneRect, const std::wstring& statusText);
+    // Only called when m_debugOverlayEnabled - see ToggleDebugOverlay.
+    void DrawDebugOverlay(HDC hdc, RECT laneRect, const NoteLaneScene& scene);
 
     // Spawns a lock-in confetti burst across laneRect's width.
     void SpawnConfetti(RECT laneRect);
@@ -145,6 +148,9 @@ private:
     int m_scratchHeight = 0;
 
     HFONT m_hudFont = nullptr;
+
+    // See ToggleDebugOverlay/DrawDebugOverlay.
+    bool m_debugOverlayEnabled = false;
 
     JudgementResult m_flashResult[kLaneCount] = {};
     DWORD m_flashUntilMs[kLaneCount] = {};

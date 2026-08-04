@@ -670,6 +670,44 @@ void NoteLaneGdiRenderer::DrawHud(HDC hdc, RECT laneRect, const std::wstring& st
     SelectObject(hdc, oldFont);
 }
 
+void NoteLaneGdiRenderer::ToggleDebugOverlay()
+{
+    m_debugOverlayEnabled = !m_debugOverlayEnabled;
+}
+
+// Small panel below the status HUD showing NoteLaneModel's own
+// previous/current/next instance chain by clip name - only ever drawn
+// while m_debugOverlayEnabled (see ToggleDebugOverlay), purely a
+// debugging aid for that chain's own behavior (loop-repeat prediction,
+// promotion, retirement into previous).
+void NoteLaneGdiRenderer::DrawDebugOverlay(HDC hdc, RECT laneRect, const NoteLaneScene& scene)
+{
+    RECT panelRect{laneRect.left + 8, laneRect.top + 50, laneRect.right - 8, laneRect.top + 104};
+    DrawAlphaRoundRect(hdc, panelRect, 10, RGB(12, 8, 28), 175);
+
+    if (!m_hudFont)
+    {
+        m_hudFont = CreateFontW(-17, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+                                 CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
+    }
+    HFONT oldFont = (HFONT)SelectObject(hdc, m_hudFont);
+    SetBkMode(hdc, TRANSPARENT);
+    SetTextColor(hdc, kTextColor);
+
+    constexpr UINT kTextFlags = DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX;
+    std::wstring lines[3] = {L"prev: " + scene.debugPreviousClipName, L"cur:  " + scene.debugCurrentClipName,
+                              L"next: " + scene.debugNextClipName};
+    int lineHeight = (panelRect.bottom - panelRect.top) / 3;
+    for (int i = 0; i < 3; ++i)
+    {
+        RECT lineRect{panelRect.left + 10, panelRect.top + i * lineHeight, panelRect.right - 10,
+                       panelRect.top + (i + 1) * lineHeight};
+        DrawTextW(hdc, lines[i].c_str(), -1, &lineRect, kTextFlags);
+    }
+
+    SelectObject(hdc, oldFont);
+}
+
 // The instant a track locks in, burst a confetti celebration across the
 // full width of the lane. Positions/velocities/colors are all generated
 // here from PseudoRandom() (same stable-scatter trick DrawSparkles uses)
@@ -823,4 +861,8 @@ void NoteLaneGdiRenderer::Draw(HDC hdc, RECT laneRect, const NoteLaneScene& scen
 
     DrawRipples(hdc, laneRect);
     DrawHud(hdc, laneRect, scene.statusText);
+    if (m_debugOverlayEnabled)
+    {
+        DrawDebugOverlay(hdc, laneRect, scene);
+    }
 }

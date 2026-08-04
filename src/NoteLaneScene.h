@@ -146,4 +146,16 @@ struct NoteLaneScene
     std::vector<SceneNote> explodingNotes;
 
     std::wstring statusText;
+
+    // Which ChartClip (by display name) each of NoteLaneModel's own
+    // m_previousClip/m_currentClip/m_nextClip currently identifies, or
+    // L"(none)" for a null slot - always populated (cheap; a handful of
+    // pointer derefs), same as statusText, regardless of whether any
+    // renderer actually draws it. Purely a debugging aid for the
+    // previous/current/next instance chain itself; a renderer decides for
+    // itself whether/when to show it (see INoteLaneRenderer::
+    // ToggleDebugOverlay).
+    std::wstring debugPreviousClipName;
+    std::wstring debugCurrentClipName;
+    std::wstring debugNextClipName;
 };

@@ -41,6 +41,10 @@ public:
     // Builds this frame's scene from session and renders it.
     void Draw(HDC hdc, const GameSession& session);
 
+    // Toggles the renderer's own previous/current/next clip-name debug
+    // overlay - see INoteLaneRenderer::ToggleDebugOverlay.
+    void ToggleDebugOverlay();
+
 private:
     HWND m_hwnd = nullptr;
     RECT m_laneRect{};
