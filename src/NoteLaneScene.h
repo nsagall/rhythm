@@ -31,6 +31,8 @@ enum class NoteVisualState
     Miss,   // judged incorrect
 };
 
+// One note to draw: where and when (beats), and what it should look like
+// (semantically - see NoteVisualState) - never a pixel position.
 struct SceneNote
 {
     int lane = 0;
@@ -46,6 +48,9 @@ struct SceneNote
     bool lockedIn = false;
 };
 
+// One lane's judge-line receptor state, as far as game rules go - a
+// renderer adds its own transient visual feedback (flash/ripple) on top,
+// driven separately by INoteLaneRenderer::OnJudgement.
 struct SceneReceptor
 {
     bool held = false;

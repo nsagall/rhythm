@@ -120,6 +120,10 @@ private:
         Playing,
     };
 
+    // One clip's loaded audio, keyed by the editor's stable EditorClip::id
+    // (not a position in m_song.clips, which can shift on reorder/delete) -
+    // durationSeconds is the stem's real, AudioEngine-measured length, the
+    // ground truth BlockSchedule::Build needs, not any chart-declared value.
     struct ClipStem
     {
         int editorClipId = 0;

@@ -11,6 +11,8 @@ struct SongEntry
     std::wstring chartPath; // full path to the .chart file
 };
 
+// Scrapes a content folder for playable songs - the only way MainWindow's
+// song-select list gets populated.
 class SongLibrary
 {
 public:

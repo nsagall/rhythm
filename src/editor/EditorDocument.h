@@ -38,6 +38,10 @@ struct Overridable
     T value{};
 };
 
+// The editor's in-progress view of one clip - a superset of ChartClip
+// (EditorDocument's own comment above), since the editor also needs to
+// track things a resolved ChartClip throws away (whether a tolerance was
+// explicitly set, whether assets exist on disk yet).
 struct EditorClip
 {
     // Stable editor-only identity, assigned once at creation (or on load,
@@ -77,6 +81,8 @@ struct EditorClip
     double volume = 1.0;
 };
 
+// The editor's in-progress view of one ChartSection - what the timeline
+// UI calls a "block" (see the file-level comment on vocabulary).
 struct EditorBlock
 {
     int id = 0;
@@ -93,6 +99,9 @@ struct EditorBlock
     int loopCount = 1;
 };
 
+// The whole chart being assembled: song-level fields, every clip, every
+// block in gameplay order, and the bookkeeping (dirty/docVersion/next*Id)
+// the rest of the editor needs to track edits and undo/redo against.
 struct EditorDocument
 {
     // Empty only for a brand-new, never-yet-saved document.

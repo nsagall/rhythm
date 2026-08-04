@@ -96,6 +96,12 @@ public:
     double GetStemDurationSeconds(StemHandle stemHandle) const;
 
 private:
+    // One loaded WAV's playback state: the source voice actually playing
+    // it, the raw PCM data XAudio2 streams from (kept alive for the
+    // voice's whole lifetime, since XAudio2 doesn't copy it), its format,
+    // and the voice's own SamplesPlayed count at the moment its current
+    // loop started, so GetPositionSeconds can measure elapsed-since-loop-
+    // start instead of elapsed-since-the-voice-was-first-created.
     struct Stem
     {
         IXAudio2SourceVoice* voice = nullptr;

@@ -95,6 +95,9 @@ struct VoiceWindow
     double originSeconds = 0.0;
 };
 
+// Build()'s full result for one song: every judging Entry and every
+// VoiceWindow, in chronological order, plus the song's total duration -
+// everything Seek() needs to answer "what's true at second X" for any X.
 struct Schedule
 {
     std::vector<Entry> entries;
@@ -115,6 +118,9 @@ struct Schedule
 // obtained).
 Schedule Build(const ChartSong& song, const std::vector<double>& stemDurationsByClipIndex);
 
+// One clip that should currently be audible, as reported by SeekResult -
+// clipIndex plus everything BlockPlayer::ApplyAudioForPosition needs to
+// actually reproduce that voice (volume, phase).
 struct ActiveVoice
 {
     int clipIndex = -1;
@@ -125,6 +131,9 @@ struct ActiveVoice
     double originSeconds = 0.0;
 };
 
+// Seek()'s answer to "what's true at this elapsed-seconds position": which
+// entry/pass/phase the timeline/playhead should show, and every clip that
+// should actually be audible right then.
 struct SeekResult
 {
     int entryIndex = -1; // -1 if elapsedSeconds is before/after every entry, or the schedule is empty

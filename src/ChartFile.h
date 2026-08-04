@@ -83,6 +83,9 @@ struct ChartSong
     std::vector<ChartSection> sections;
 };
 
+// Parses/validates a .chart text file into a ChartSong - the only way a
+// chart ever becomes one; nothing else in this codebase constructs a
+// ChartSong by hand.
 class ChartFile
 {
 public:

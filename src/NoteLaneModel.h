@@ -22,6 +22,9 @@ public:
     NoteLaneScene BuildScene(const GameSession& session);
 
 private:
+    // One note visible on screen for a single lane: where it starts and
+    // how long it lasts, both in beats - NotesInRange's own result type,
+    // before CollectNotes resolves it into a fully-fledged SceneNote.
     struct BeatRange
     {
         double startBeat = 0.0;

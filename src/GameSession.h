@@ -393,6 +393,9 @@ private:
     ChartSong m_song;
     std::vector<StemHandle> m_stemHandles; // one full-loop stem per clip, indexed by clip index
 
+    // How one specific lane note (identified by its start beat) was judged
+    // - recorded so OnsetJudgement() can look it up later and NoteLane can
+    // color a note that's already scrolled past the judge line.
     struct JudgedLaneNote
     {
         double beat = 0.0;

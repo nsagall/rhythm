@@ -97,6 +97,10 @@ double ComputeLearnAdvanceSeconds(double originSeconds, double sectionStartSecon
 // the wait. originSeconds is this clip's own persistent phase reference
 // (see FreshOnsetForAllLanes) - loopStartSeconds is measured on the same
 // absolute-wall-clock timeline as originSeconds itself.
+// ComputeBreakAdvance's result: the loop count it settled on (possibly
+// larger than the caller's requested one - see the function's own comment
+// above) and the wall-clock second the section should advance at, given
+// that final loop count.
 struct BreakAdvance
 {
     int loopCount = 1;
