@@ -37,12 +37,15 @@ constexpr double kBeatsBehind = 1.0;
 // the same object as GameSession's own private per-clip playback voice
 // (audio/timing internals a renderer has no business touching). A
 // ChartClip is immutable song data and can be played more than once in a
-// song (looped, or reused by a later section); each such playthrough gets
-// its own ClipInstance, since lockedIn resets fresh every time regardless
-// of whether it's the same ChartClip as before. Owned persistently by
-// NoteLaneModel (see its m_previousClip/m_currentClip/m_nextClip) rather
-// than rebuilt every frame - a fresh instance is only created when a new
-// playthrough actually begins, not on every BuildScene call.
+// song - a later section reusing it, or simply its own pattern looping
+// again before locking in - and each such playthrough gets its own
+// ClipInstance (never mutated to represent a different one), since
+// lockedIn resets fresh every time and identity/color needs to be
+// distinguishable even between two instances of the same ChartClip. Owned
+// persistently by NoteLaneModel (see its m_previousClip/m_currentClip/
+// m_nextClip) rather than rebuilt every frame - a fresh instance is only
+// created when a new playthrough actually begins (or is predicted ahead of
+// time - see startBeat below), not on every BuildScene call.
 struct ClipInstance
 {
     // Which ChartClip this is a playthrough of - this instance's own
@@ -52,6 +55,17 @@ struct ClipInstance
     // instances of the same clip apart from a genuinely different clip
     // without an external lookup table.
     const ChartClip* chartClip = nullptr;
+
+    // The beat this specific playthrough began (or, for a not-yet-current
+    // instance, is predicted to begin) at - together with chartClip, this
+    // is the instance's full identity: two instances of the same chartClip
+    // with different startBeat are different playthroughs (different loop
+    // repetitions), never the same one. Knowable before the playthrough is
+    // actually current - a predicted loop repeat's startBeat is just the
+    // current instance's own startBeat plus one spanBeats, computable the
+    // instant the current instance exists, no need to wait for the loop to
+    // actually happen.
+    double startBeat = 0.0;
 
     // This clip's accent color - part of its identity (see ClipColor.h),
     // resolved once when NoteLaneModel creates this instance, so a

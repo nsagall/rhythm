@@ -49,28 +49,38 @@ private:
     void CollectNotes(const GameSession& session, const ClipInstance* instance, double originBeat, bool judged,
                        double fromBeat, double upperBoundBeat, NoteLaneScene& scene) const;
 
-    // Creates a fresh instance for chartClip (identity, freshly-resolved
-    // color, lockedIn=false), or returns null if chartClip is null. The
-    // color lookup needs chartClip's position in session.Song().clips -
-    // computed here, once, purely to pick a palette entry (ClipColor::
-    // ForIndex) for this brand new instance; never stored or reused as a
-    // lookup key afterward, unlike the index pattern this replaced.
-    static std::unique_ptr<ClipInstance> MakeClipInstance(const GameSession& session, const ChartClip* chartClip);
+    // Creates a fresh instance identified by (chartClip, startBeat) -
+    // freshly-resolved color, lockedIn=false - or returns null if chartClip
+    // is null. startBeat is the caller's responsibility: for a clip just
+    // becoming current/preview for real, that's session.
+    // CurrentClipOriginBeat()/PreviewClipOriginBeat(); for a predicted loop
+    // repeat, it's the current instance's own startBeat plus one spanBeats
+    // - see UpdateClipInstances. The color lookup needs chartClip's
+    // position in session.Song().clips - computed here, once, purely to
+    // pick a palette entry (ClipColor::ForIndex) for this brand new
+    // instance; never stored or reused as a lookup key afterward, unlike
+    // the index pattern this replaced.
+    static std::unique_ptr<ClipInstance> MakeClipInstance(const GameSession& session, const ChartClip* chartClip,
+                                                            double startBeat);
 
-    // Keeps m_previousClip/m_currentClip/m_nextClip in sync with
-    // session.CurrentClip()/PreviewClip() for this frame - called once, at
-    // the top of BuildScene. See the members' own comments for what each
-    // slot means and when it changes.
-    void UpdateClipInstances(const GameSession& session);
+    // Keeps m_previousClip/m_currentClip/m_nextClip in sync for this frame
+    // - called once, at the top of BuildScene, with that frame's own
+    // nowBeat (scene.nowBeat - passed explicitly rather than re-derived,
+    // since it's already 0 vs. a real clock read depending on
+    // clockRunning). See the members' own comments for what each slot
+    // means and when it changes.
+    void UpdateClipInstances(const GameSession& session, double nowBeat);
 
     // Persistent (NOT rebuilt every frame) identity for the up-to-three
     // clip playthroughs the note lane ever cares about. A fresh
     // ClipInstance is only created when a new playthrough actually begins
-    // (m_currentClip's own chartClip differs from session.CurrentClip()),
-    // reusing m_nextClip directly (same object, no rebuild) when it
-    // already represents the clip that's now going live - a preview that
-    // correctly predicted what's next becomes that same instance, not an
-    // equivalent new one.
+    // - detected by comparing (chartClip, startBeat) as a pair, not just
+    // chartClip, since a clip looping in place keeps the same chartClip but
+    // starts a new playthrough (see UpdateClipInstances) - reusing
+    // m_nextClip directly (same object, no rebuild) when it already
+    // predicted exactly this playthrough - a preview (of either a real next
+    // section or a predicted loop repeat) that turned out right becomes
+    // that same instance, not an equivalent new one.
     //
     // The one being actively judged/shown right now - mirrors
     // session.CurrentClip()'s own identity exactly (null when there isn't
@@ -85,7 +95,14 @@ private:
     // itself is still correct there), but kept in sync regardless, as the
     // general "what was current a moment ago" answer.
     std::unique_ptr<ClipInstance> m_previousClip;
-    // The preview clip - mirrors session.PreviewClip()'s own identity.
+    // Whatever playthrough is predicted to become current next. Mirrors
+    // session.PreviewClip()'s own identity whenever that's non-null (a real
+    // section-level preview); otherwise, while the current section is an
+    // unlocked Learn section (the case session.PreviewClip() itself has
+    // nothing to offer - see its own comment on why), predicts that same
+    // clip's own next loop repeat instead, so the note lane always has
+    // something legitimate to preview rather than going blank right up
+    // until a section transition or lock-in. See UpdateClipInstances.
     std::unique_ptr<ClipInstance> m_nextClip;
 
     bool m_prevLockedIn = false;

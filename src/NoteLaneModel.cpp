@@ -155,7 +155,8 @@ void NoteLaneModel::CollectNotes(const GameSession& session, const ClipInstance*
     }
 }
 
-std::unique_ptr<ClipInstance> NoteLaneModel::MakeClipInstance(const GameSession& session, const ChartClip* chartClip)
+std::unique_ptr<ClipInstance> NoteLaneModel::MakeClipInstance(const GameSession& session, const ChartClip* chartClip,
+                                                                double startBeat)
 {
     if (!chartClip)
     {
@@ -163,33 +164,61 @@ std::unique_ptr<ClipInstance> NoteLaneModel::MakeClipInstance(const GameSession&
     }
     auto instance = std::make_unique<ClipInstance>();
     instance->chartClip = chartClip;
+    instance->startBeat = startBeat;
     const ChartClip* base = session.Song().clips.data();
     instance->color = ClipColor::ForIndex(static_cast<int>(chartClip - base));
     return instance;
 }
 
-void NoteLaneModel::UpdateClipInstances(const GameSession& session)
+namespace
+{
+// Which beat the loop repetition covering nowBeat actually started at,
+// given the clip's own persistent origin - originBeat itself for the very
+// first repetition, originBeat + spanBeats for the second, and so on.
+double CurrentLoopStartBeat(double originBeat, double nowBeat, double spanBeats)
+{
+    if (spanBeats <= 0.0)
+    {
+        return originBeat;
+    }
+    return originBeat + std::floor((nowBeat - originBeat) / spanBeats) * spanBeats;
+}
+} // namespace
+
+void NoteLaneModel::UpdateClipInstances(const GameSession& session, double nowBeat)
 {
     const ChartClip* currentChartClip = session.CurrentClip();
-    const ChartClip* trackedCurrent = m_currentClip ? m_currentClip->chartClip : nullptr;
-    if (trackedCurrent != currentChartClip)
+    double currentStartBeat =
+        currentChartClip ? CurrentLoopStartBeat(session.CurrentClipOriginBeat(), nowBeat, currentChartClip->spanBeats)
+                          : 0.0;
+
+    // Identity is the (chartClip, startBeat) pair, not chartClip alone -
+    // same clip, same section, but a new loop repetition has begun is
+    // still a new playthrough (same currentChartClip, different
+    // currentStartBeat), and must be detected here exactly like a genuine
+    // section transition is.
+    const ChartClip* trackedCurrentClip = m_currentClip ? m_currentClip->chartClip : nullptr;
+    bool currentChanged = trackedCurrentClip != currentChartClip ||
+                           (currentChartClip && std::abs(m_currentClip->startBeat - currentStartBeat) > 1e-6);
+    if (currentChanged)
     {
-        // A new playthrough is starting (or none is, anymore) - whatever
-        // m_currentClip was a moment ago becomes m_previousClip, exactly
-        // once, right here.
+        // Whatever m_currentClip was a moment ago becomes m_previousClip,
+        // exactly once, right here.
         m_previousClip = std::move(m_currentClip);
 
-        const ChartClip* trackedNext = m_nextClip ? m_nextClip->chartClip : nullptr;
-        if (currentChartClip && trackedNext == currentChartClip)
+        bool nextMatches = m_nextClip && m_nextClip->chartClip == currentChartClip &&
+                            std::abs(m_nextClip->startBeat - currentStartBeat) <= 1e-6;
+        if (nextMatches)
         {
-            // The clip we were already previewing just went live - reuse
-            // that same instance (same identity/color) rather than
-            // building a redundant new one.
+            // Whatever we were already predicting (a real next section, or
+            // this same clip's own predicted loop repeat) turned out to be
+            // exactly right - reuse that same instance rather than building
+            // a redundant new one.
             m_currentClip = std::move(m_nextClip);
         }
         else
         {
-            m_currentClip = MakeClipInstance(session, currentChartClip);
+            m_currentClip = MakeClipInstance(session, currentChartClip, currentStartBeat);
         }
     }
     if (m_currentClip)
@@ -201,10 +230,31 @@ void NoteLaneModel::UpdateClipInstances(const GameSession& session)
     }
 
     const ChartClip* previewChartClip = session.PreviewClip();
-    const ChartClip* trackedNextNow = m_nextClip ? m_nextClip->chartClip : nullptr;
-    if (trackedNextNow != previewChartClip)
+    double previewStartBeat = 0.0;
+    if (previewChartClip)
     {
-        m_nextClip = MakeClipInstance(session, previewChartClip);
+        previewStartBeat = session.PreviewClipOriginBeat();
+    }
+    else if (m_currentClip && session.Phase() == GamePhase::Learning &&
+             session.CurrentSectionKind() == SectionKind::Learn && !session.IsLockedIn())
+    {
+        // session.PreviewClip() has nothing to offer here - an unlocked
+        // Learn section might still repeat any number of further loops
+        // before it actually advances (see PreviewClip()'s own comment) -
+        // but a predicted repeat of the CURRENT clip's own pattern is
+        // legitimate to preview, unlike a real (and possibly wrong) guess
+        // at the next section. Its start beat is simply one spanBeats past
+        // the current instance's own.
+        previewChartClip = m_currentClip->chartClip;
+        previewStartBeat = m_currentClip->startBeat + previewChartClip->spanBeats;
+    }
+
+    const ChartClip* trackedNextClip = m_nextClip ? m_nextClip->chartClip : nullptr;
+    bool nextChanged = trackedNextClip != previewChartClip ||
+                        (previewChartClip && std::abs(m_nextClip->startBeat - previewStartBeat) > 1e-6);
+    if (nextChanged)
+    {
+        m_nextClip = MakeClipInstance(session, previewChartClip, previewStartBeat);
     }
 }
 
@@ -216,7 +266,7 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
     scene.nowBeat = scene.clockRunning ? session.Clock().BeatPosition() : 0.0;
     scene.beatsPerBar = session.Song().beatsPerBar;
 
-    UpdateClipInstances(session);
+    UpdateClipInstances(session, scene.nowBeat);
 
     const ChartClip* clip = session.CurrentClip();
 
@@ -331,6 +381,19 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
     m_prevLockedIn = nowLockedIn;
     m_prevNotesHandoff = nextClipShowing;
 
+    // m_nextClip may mirror a real GameSession preview, or (see
+    // UpdateClipInstances) a synthetic predicted loop repeat of the
+    // CURRENT clip that GameSession itself knows nothing about - in the
+    // latter case, session.PreviewClipOriginBeat() is meaningless (-1,
+    // nothing being previewed as far as GameSession is concerned), and the
+    // -1.0 "reveal each lane's own first note" sentinel doesn't apply
+    // either (that's for a genuinely fresh debut; a predicted loop is
+    // just an ordinary repeat, so every lane reveals together from the
+    // predicted loop's own start beat, same as any other repeat).
+    bool nextIsRealPreview = session.PreviewClip() != nullptr;
+    double nextOriginBeat = nextIsRealPreview ? session.PreviewClipOriginBeat() : session.CurrentClipOriginBeat();
+    double nextFromBeat = nextIsRealPreview ? -1.0 : (m_nextClip ? m_nextClip->startBeat : -1.0);
+
     // While the player can act, draw the live judged pass; otherwise
     // (count-in, break/reset/background, or just past nextClipShowing)
     // draw only the upcoming clip's preview, from each lane's own first
@@ -343,8 +406,8 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
     }
     else
     {
-        CollectNotes(session, m_nextClip.get(), session.PreviewClipOriginBeat(), /*judged=*/false, -1.0,
-                     notesUpperBoundBeat, scene);
+        CollectNotes(session, m_nextClip.get(), nextOriginBeat, /*judged=*/false, nextFromBeat, notesUpperBoundBeat,
+                     scene);
     }
 
     // The judged pass never tiles past notesUpperBoundBeat, which would
@@ -361,7 +424,7 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
     }
     else if (isLiveJudging)
     {
-        CollectNotes(session, m_nextClip.get(), session.PreviewClipOriginBeat(), /*judged=*/false, -1.0,
+        CollectNotes(session, m_nextClip.get(), nextOriginBeat, /*judged=*/false, nextFromBeat,
                      scene.nowBeat + kBeatsAhead, scene);
     }
 
