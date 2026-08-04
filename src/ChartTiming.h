@@ -47,15 +47,23 @@ void FreshOnsetForAllLanes(double originBeat, const ChartClip& clip, double outB
 double ComputeLoopFloorSeconds(double originSeconds, double loopStartSeconds, double stemDuration, int loopCount);
 
 // If clip's declared spanBeats is shorter than one full loop of its actual
-// audio (stemDurationSeconds, at the song's bpm), tiles each lane's notes
-// to fill the whole loop and widens spanBeats to match, so a repeating
-// pattern loops on the audio's own bar boundary instead of shrinking to
-// "last note's end" and leaving the back half of every loop silent/
-// ungraded. A trailing repeat that would be cut off mid-note (its start
-// fits before the loop wraps but its duration wouldn't finish in time)
-// drops that note rather than shipping one that could never be
-// legitimately pressed and released. No-op if clip's span already fills
-// (or exceeds) one loop.
+// audio (stemDurationSeconds, at the song's bpm), widens spanBeats to
+// match the audio's own length - so a clip's loop boundary always lands
+// where the real, phase-seeked audio actually wraps, not wherever the
+// last MIDI note (or AlignToBarBoundary's own rounding) happened to end.
+// Only re-tiles the pattern into the newly-widened space in whole
+// repeats - a repeat whose own full span wouldn't entirely fit before the
+// audio wraps is left out rather than partially included, since a
+// leftover stretch shorter than one full pattern is far more often a
+// deliberate trailing pause (a MIDI file with a bar of silence at the
+// end, matching a stem that has a bar of room-tone/reverb tail past the
+// last note) than an intentional partial repeat - tiling one in would
+// silently invent notes the chart author never placed, appearing to the
+// player as the pattern looping early while the audio is still finishing
+// its real first pass. A clip whose pattern is meant to legitimately
+// repeat multiple times within one audio loop (e.g. a 2-bar riff filling
+// an 8-bar stem) is unaffected: every one of its repeats fits whole. No-op
+// if clip's span already fills (or exceeds) one loop.
 void ExpandLaneNotesToFillClip(ChartClip& clip, double stemDurationSeconds, double bpm);
 
 // The reverse case ExpandLaneNotesToFillClip doesn't handle: true if

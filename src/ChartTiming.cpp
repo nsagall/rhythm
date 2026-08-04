@@ -93,6 +93,12 @@ void ExpandLaneNotesToFillClip(ChartClip& clip, double stemDurationSeconds, doub
     }
 
     double originalSpan = clip.spanBeats;
+    // Same tolerance ClipFitsOneLoop uses, in beats - a real stem's measured
+    // duration essentially never lands exactly on a beat-derived value, so
+    // "does this whole repeat fit" needs the same measurement-slop
+    // allowance, not the tighter floating-point-safety epsilons used
+    // elsewhere below (which are about roundoff, not measurement noise).
+    double toleranceBeats = kClipLengthToleranceSeconds / secondsPerBeat;
     for (int lane = 0; lane < kLaneCount; ++lane)
     {
         if (clip.laneNotes[lane].empty())
@@ -104,6 +110,15 @@ void ExpandLaneNotesToFillClip(ChartClip& clip, double stemDurationSeconds, doub
         std::vector<LaneNote> expanded;
         for (double repeatStart = 0.0; repeatStart < clipBeats - 1e-9; repeatStart += originalSpan)
         {
+            // Only a repeat whose own full span entirely fits before the
+            // audio wraps gets tiled in - see this function's own header
+            // comment for why a partial leftover is left silent instead.
+            // repeatStart only ever grows from here, so once one repeat
+            // doesn't fit, no later one will either.
+            if (repeatStart + originalSpan > clipBeats + toleranceBeats)
+            {
+                break;
+            }
             for (const LaneNote& note : original)
             {
                 double absoluteStart = repeatStart + note.startBeat;
