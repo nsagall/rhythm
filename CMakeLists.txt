@@ -35,6 +35,7 @@ add_executable(Rhythm WIN32
     src/main.cpp
     src/MainWindow.cpp
     src/GameSession.cpp
+    src/SectionInstance.cpp
     src/NoteLane.cpp
     src/NoteLaneModel.cpp
     src/NoteLaneGdiRenderer.cpp

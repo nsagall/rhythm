@@ -79,15 +79,15 @@ Schedule Build(const ChartSong& song, const std::vector<double>& stemDurationsBy
     int queuedBackgroundClipIndex = -1;
     int queuedBackgroundSectionIndex = -1;
 
-    // Per-clip, mirroring GameSession's own m_clipOriginEstablished/
-    // m_clipOriginSeconds exactly - NOT a single whole-schedule flag. A
-    // clip's first-ever start establishes clipOriginSecondsByClipIndex to
-    // that exact instant, its own persistent phase reference from then on
-    // (see FreshOnsetForAllLanes) - every later reuse of that same clip
-    // anchors independently per lane instead, continuing its groove from
-    // wherever ITS OWN beat grid (not any other clip's, and not absolute
-    // beat 0) says it'd be. See GameSession.h's own comment on
-    // m_clipOriginEstablished for why this must be keyed per clip.
+    // Per-clip, mirroring GameSession's own ClipVoice::originEstablished/
+    // originSeconds exactly - NOT a single whole-schedule flag. A clip's
+    // first-ever start establishes clipOriginSecondsByClipIndex to that
+    // exact instant, its own persistent phase reference from then on (see
+    // FreshOnsetForAllLanes) - every later reuse of that same clip anchors
+    // independently per lane instead, continuing its groove from wherever
+    // ITS OWN beat grid (not any other clip's, and not absolute beat 0)
+    // says it'd be. See GameSession.h's own comment on ClipVoice for why
+    // this must be keyed per clip.
     std::vector<bool> clipOriginEstablished(song.clips.size(), false);
     std::vector<double> clipOriginSecondsByClipIndex(song.clips.size(), 0.0);
 
@@ -104,17 +104,17 @@ Schedule Build(const ChartSong& song, const std::vector<double>& stemDurationsBy
         return true;
     };
 
-    // Per-clip playback state, mirroring GameSession's own
-    // m_clipIsPlaying/m_clipLoopStartSeconds arrays exactly - a clip
-    // reused by a later section while still open from an earlier one
+    // Per-clip playback state, mirroring GameSession's own ClipVoice::
+    // isPlaying/loopStartSeconds exactly - a clip reused by a later
+    // section while still open from an earlier one
     // (nothing has stopped it since) does NOT restart or re-seek; it just
     // keeps going, and any lock-in-floor math that section computes uses
     // the ORIGINAL start time, not its own. -1 means "not currently open".
     std::vector<int> voiceIndexByClipIndex(song.clips.size(), -1);
     std::vector<double> loopStartSecondsByClipIndex(song.clips.size(), -1.0);
 
-    // Mirrors AudioEngine::StopAll() + GameSession's m_clipIsPlaying fill -
-    // called on entering a Break or Reset section (both call StopAll()
+    // Mirrors AudioEngine::StopAll() + GameSession's ClipVoice::isPlaying
+    // fill - called on entering a Break or Reset section (both call StopAll()
     // before anything else, silencing every currently-open voice
     // regardless of how it started).
     auto stopAllVoices = [&](double atSeconds)
@@ -286,7 +286,7 @@ Schedule Build(const ChartSong& song, const std::vector<double>& stemDurationsBy
                 // earlier, un-stopped section), startVoiceIfNeeded is a
                 // no-op and loopStartSecondsByClipIndex keeps its
                 // ORIGINAL value - exactly mirroring how the real
-                // StartClipLoop's guard leaves m_clipLoopStartSeconds
+                // StartClipLoop's guard leaves ClipVoice::loopStartSeconds
                 // untouched in that case, so this section's own advance
                 // floor is computed relative to when the clip truly
                 // started, not this section's own start.

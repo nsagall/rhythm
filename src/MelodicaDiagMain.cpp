@@ -133,7 +133,7 @@ int main(int argc, char** argv)
             if (clip && phase == GamePhase::Learning && kind == SectionKind::Learn)
             {
                 // sectionStartBeat approximates this clip's own origin (see
-                // GameSession::m_clipOriginEstablished) - exact for a
+                // GameSession::ClipVoice::originEstablished) - exact for a
                 // first-ever appearance (established at this same instant),
                 // and a live-clock read (not scheduledBeat-derived) so it's
                 // only ever a hair later than the true origin for a
