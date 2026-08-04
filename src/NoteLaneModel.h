@@ -23,6 +23,16 @@ public:
     NoteLaneScene BuildScene(const GameSession& session);
 
 private:
+    // Detects a chart switch (session.Song().clips' own buffer address
+    // changed since last call - see this class's own .cpp for why that's
+    // the right signal) and, if so, clears m_previousClip/m_currentClip/
+    // m_nextClip before anything else runs this frame - every
+    // ClipInstance::chartClip they hold points into the *previous* song's
+    // now-destroyed ChartClip vector otherwise. Called first thing in
+    // BuildScene, ahead of UpdateClipInstances and anything that might
+    // dereference a stale instance's chartClip.
+    void ResetIfSongChanged(const GameSession& session);
+
     // Returns every note (from one lane's repeating pattern) whose span
     // overlaps [fromBeat, toBeat] at all, not just ones whose start falls
     // inside it - a note that started earlier but whose tail carries past
@@ -107,4 +117,8 @@ private:
 
     bool m_prevLockedIn = false;
     bool m_prevNotesHandoff = false;
+
+    // The last session.Song().clips.data() ResetIfSongChanged saw - see
+    // its own comment for why this is the right chart-switch signal.
+    const ChartClip* m_lastSongClipsBase = nullptr;
 };

@@ -264,9 +264,29 @@ void NoteLaneModel::UpdateClipInstances(const GameSession& session, double nowBe
     }
 }
 
+void NoteLaneModel::ResetIfSongChanged(const GameSession& session)
+{
+    const std::vector<ChartClip>& clips = session.Song().clips;
+    const ChartClip* clipsBase = clips.empty() ? nullptr : clips.data();
+    if (clipsBase == m_lastSongClipsBase)
+    {
+        return;
+    }
+    m_lastSongClipsBase = clipsBase;
+    m_previousClip.reset();
+    m_currentClip.reset();
+    m_nextClip.reset();
+    // Also stale otherwise: a leftover true from the old song could
+    // suppress the new song's own first legitimate justLockedIn/
+    // justHandedOff edge (nowX && !m_prevX never firing once for it).
+    m_prevLockedIn = false;
+    m_prevNotesHandoff = false;
+}
+
 NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
 {
     NoteLaneScene scene;
+    ResetIfSongChanged(session);
 
     scene.clockRunning = session.Phase() != GamePhase::Idle;
     scene.nowBeat = scene.clockRunning ? session.Clock().BeatPosition() : 0.0;
