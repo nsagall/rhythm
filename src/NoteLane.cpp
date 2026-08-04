@@ -45,9 +45,9 @@ bool NoteLane::OnTimer(WPARAM timerId)
     return true;
 }
 
-void NoteLane::ShowJudgement(JudgementResult result, int lane, bool lockedIn)
+void NoteLane::ShowJudgement(JudgementResult result, int lane, bool passing)
 {
-    m_renderer->OnJudgement(result, lane, lockedIn);
+    m_renderer->OnJudgement(result, lane, passing);
 }
 
 void NoteLane::Draw(HDC hdc, const GameSession& session)

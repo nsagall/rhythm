@@ -9,9 +9,11 @@ namespace
 constexpr int kMaxConsecutiveMisses = 3;
 } // namespace
 
-// Binds this instance to sectionIndex; every other field starts at its own
-// "nothing has happened yet" default.
-SectionInstance::SectionInstance(int sectionIndex) : m_sectionIndex(sectionIndex)
+// Binds this instance to sectionIndex and mode; every other field starts at
+// its own "nothing has happened yet" default, except m_passing itself -
+// DontFail mode starts already passing (see the header's own comment).
+SectionInstance::SectionInstance(int sectionIndex, LearnMode mode)
+    : m_sectionIndex(sectionIndex), m_mode(mode), m_passing(mode == LearnMode::DontFail)
 {
 }
 
@@ -105,7 +107,7 @@ void SectionInstance::ClearLaneHold(int lane)
 
 bool SectionInstance::RegisterHit(int hitsRequired)
 {
-    if (m_lockedIn)
+    if (m_passing)
     {
         return false;
     }
@@ -113,28 +115,41 @@ bool SectionInstance::RegisterHit(int hitsRequired)
     m_consecutiveMisses = 0;
     if (m_streak >= hitsRequired)
     {
-        m_lockedIn = true;
+        m_passing = true;
         return true;
     }
     return false;
 }
 
-bool SectionInstance::RegisterMiss(bool easyMode)
+SectionInstance::MissResult SectionInstance::RegisterMiss(bool easyMode)
 {
-    if (m_lockedIn)
+    MissResult result;
+
+    if (m_passing && m_mode == LearnMode::Pass)
     {
-        return false;
+        return result;
     }
 
     if (easyMode && m_easyGraceAvailable)
     {
         m_easyGraceAvailable = false;
-        return false;
+        return result;
     }
 
+    bool wasPassing = m_passing;
     m_streak = 0;
     m_consecutiveMisses++;
-    return m_consecutiveMisses >= kMaxConsecutiveMisses;
+    result.shouldStopClip = m_consecutiveMisses >= kMaxConsecutiveMisses;
+
+    if (wasPassing)
+    {
+        // Only reachable in DontFail mode - Pass mode already returned
+        // above when m_passing was true.
+        m_passing = false;
+        result.justEnteredFailState = true;
+    }
+
+    return result;
 }
 
 JudgementResult SectionInstance::OnsetJudgement(double startBeat, int lane) const

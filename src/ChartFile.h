@@ -25,6 +25,24 @@
 // exist on disk, which is only a problem for a clip used in a [learn]
 // section (rejected at load time); [break]/[reset]/[background] sections
 // never touch MIDI data at all.
+// How a [learn] clip's judging responds to a miss - see GameSession/
+// SectionInstance for the actual state machine. Only meaningful for a
+// clip used in a [learn] section; ignored entirely for break/reset/
+// background usage.
+enum class LearnMode
+{
+    // A streak of hitsRequired correct hits in a row locks the section
+    // in permanently for the rest of its run - once reached, further
+    // misses never un-reach it.
+    Pass,
+    // The same streak is reversible: starts already "passing," any miss
+    // immediately drops it to "failing," and re-earning hitsRequired in
+    // a row brings it back to "passing." Independent of the separate
+    // 3-consecutive-miss clip-stop penalty, which applies the same way
+    // in both modes.
+    DontFail,
+};
+
 struct ChartClip
 {
     // Stable identifier, also the file stem for wavFilePath/midiFilePath.
@@ -46,6 +64,9 @@ struct ChartClip
     double releaseToleranceMs = 120.0;
     double initVolume = 1.0; // volume while the player is still learning this clip
     double volume = 1.0;     // volume once it's locked in and looping automatically, or during break/background playback
+    // Declared per-clip only (no song-level default, unlike the
+    // tolerances above) - see LearnMode's own comment.
+    LearnMode learnMode = LearnMode::Pass;
 };
 
 // Which of the four block kinds a section is.

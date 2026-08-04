@@ -339,11 +339,12 @@ void NoteLaneGdiRenderer::DrawAlphaRect(HDC hdc, int cx, int cy, int halfWidth, 
 
 // Draws a music-notation-free notehead marker: dark bevel rim, color fill, a soft alpha glow
 // behind it, and a small specular highlight - the note's start marker, sitting at the bottom
-// (leading) edge of its duration bar. lockedIn adds a second, wider green glow ring underneath
-// everything else - a supplementary "this track has locked in" cue that doesn't touch color.
-void NoteLaneGdiRenderer::DrawNoteGlyph(HDC hdc, int x, int y, COLORREF color, bool glow, bool lockedIn)
+// (leading) edge of its duration bar. passing adds a second, wider green glow ring underneath
+// everything else - a supplementary "this track is currently passing" cue that doesn't touch
+// color.
+void NoteLaneGdiRenderer::DrawNoteGlyph(HDC hdc, int x, int y, COLORREF color, bool glow, bool passing)
 {
-    if (lockedIn)
+    if (passing)
     {
         DrawAlphaCircle(hdc, x, y, kGlyphRadiusX + 14, kNoteColorHit, 90);
     }
@@ -376,17 +377,17 @@ void NoteLaneGdiRenderer::DrawNoteGlyph(HDC hdc, int x, int y, COLORREF color, b
 // Draws a note's duration bar spanning [yTop, yBottom] at horizontal center
 // x, with the same dark-rim/fill/highlight-strip bevel language as the
 // glyph, so the bar and its start marker read as one consistent object.
-// lockedIn adds a glowing green outline around the whole bar underneath
-// everything else, matching DrawNoteGlyph's own lockedIn glow.
+// passing adds a glowing green outline around the whole bar underneath
+// everything else, matching DrawNoteGlyph's own passing glow.
 void NoteLaneGdiRenderer::DrawNoteBar(HDC hdc, int x, int yTop, int yBottom, int halfWidth, COLORREF color,
-                                       bool lockedIn)
+                                       bool passing)
 {
     if (yBottom <= yTop)
     {
         return;
     }
 
-    if (lockedIn)
+    if (passing)
     {
         RECT glowRect{x - halfWidth - 5, yTop - 5, x + halfWidth + 5, yBottom + 5};
         DrawAlphaRoundRect(hdc, glowRect, kBarCornerRadius + 5, kNoteColorHit, 130);
@@ -526,7 +527,7 @@ void NoteLaneGdiRenderer::DrawReceptors(HDC hdc, RECT laneRect, const NoteLaneSc
 // color; a held/hit note in kNoteColorHit; a missed note in kNoteColorMiss
 // - both then hold for the rest of the note's time on screen, matching the
 // real outcome rather than fading back to Normal. Judged hit/miss/held
-// notes get the same glow halo as the lock-in outline (note.clip->lockedIn)
+// notes get the same glow halo as the passing outline (note.clip->passing)
 // so the pass/fail moment pops instead of being a flat color swap.
 void NoteLaneGdiRenderer::DrawNotes(HDC hdc, RECT laneRect, const NoteLaneScene& scene)
 {
@@ -549,8 +550,8 @@ void NoteLaneGdiRenderer::DrawNotes(HDC hdc, RECT laneRect, const NoteLaneScene&
         COLORREF color = ColorForNote(note.state, note.clip->color);
         bool emphasisGlow = note.state != NoteVisualState::Normal;
 
-        DrawNoteBar(hdc, laneX, yTop, yBottom, barHalfWidth, color, note.clip->lockedIn);
-        DrawNoteGlyph(hdc, laneX, yBottom, color, emphasisGlow, note.clip->lockedIn);
+        DrawNoteBar(hdc, laneX, yTop, yBottom, barHalfWidth, color, note.clip->passing);
+        DrawNoteGlyph(hdc, laneX, yBottom, color, emphasisGlow, note.clip->passing);
     }
 }
 
@@ -761,8 +762,9 @@ void NoteLaneGdiRenderer::SpawnExplosion(RECT laneRect, const NoteLaneScene& sce
 
 // Flashes a brief hit/miss indicator at the judge line for one lane's
 // column, and spawns an expanding judgement ripple: green for a hit
-// (always, even after lock-in), red for a pre-lock-in miss only.
-void NoteLaneGdiRenderer::OnJudgement(JudgementResult result, int lane, bool lockedIn)
+// (always, even while passing), red for a miss while not yet/no longer
+// passing only.
+void NoteLaneGdiRenderer::OnJudgement(JudgementResult result, int lane, bool passing)
 {
     if (lane < 0 || lane >= kLaneCount)
     {
@@ -776,7 +778,7 @@ void NoteLaneGdiRenderer::OnJudgement(JudgementResult result, int lane, bool loc
         m_ripples.push_back(
             {lane, GetTickCount(), kNoteColorHit, kHitRippleSpeedPxPerSec, kHitRippleStartAlpha, kHitRippleFadeRate});
     }
-    else if (result == JudgementResult::Miss && !lockedIn)
+    else if (result == JudgementResult::Miss && !passing)
     {
         m_ripples.push_back({lane, GetTickCount(), kNoteColorMiss, kMissRippleSpeedPxPerSec, kMissRippleStartAlpha,
                               kMissRippleFadeRate});
@@ -816,7 +818,7 @@ void NoteLaneGdiRenderer::Draw(HDC hdc, RECT laneRect, const NoteLaneScene& scen
     {
         SpawnConfetti(laneRect);
     }
-    if (scene.justHandedOff || scene.justLockedIn)
+    if (scene.justHandedOff || scene.justLockedIn || scene.justFailed)
     {
         SpawnExplosion(laneRect, scene);
     }

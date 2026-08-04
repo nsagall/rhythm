@@ -230,9 +230,10 @@ void NoteLaneModel::UpdateClipInstances(const GameSession& session, double nowBe
     if (m_currentClip)
     {
         // A fresh (or freshly-promoted) instance already starts at false;
-        // this also carries a same-instance run's lock-in forward as it
-        // happens.
-        m_currentClip->lockedIn = session.IsLockedIn();
+        // this also carries a same-instance run's passing state forward as
+        // it happens - including DontFail mode's reversals, both
+        // directions.
+        m_currentClip->passing = session.IsPassing();
     }
 
     const ChartClip* previewChartClip = session.PreviewClip();
@@ -242,7 +243,7 @@ void NoteLaneModel::UpdateClipInstances(const GameSession& session, double nowBe
         previewStartBeat = session.PreviewClipOriginBeat();
     }
     else if (m_currentClip && session.Phase() == GamePhase::Learning &&
-             session.CurrentSectionKind() == SectionKind::Learn && !session.IsLockedIn())
+             session.CurrentSectionKind() == SectionKind::Learn && !session.IsPassing())
     {
         // session.PreviewClip() has nothing to offer here - an unlocked
         // Learn section might still repeat any number of further loops
@@ -277,9 +278,9 @@ void NoteLaneModel::ResetIfSongChanged(const GameSession& session)
     m_currentClip.reset();
     m_nextClip.reset();
     // Also stale otherwise: a leftover true from the old song could
-    // suppress the new song's own first legitimate justLockedIn/
+    // suppress the new song's own first legitimate justLockedIn/justFailed/
     // justHandedOff edge (nowX && !m_prevX never firing once for it).
-    m_prevLockedIn = false;
+    m_prevPassing = false;
     m_prevNotesHandoff = false;
 }
 
@@ -292,6 +293,44 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
     scene.nowBeat = scene.clockRunning ? session.Clock().BeatPosition() : 0.0;
     scene.beatsPerBar = session.Song().beatsPerBar;
 
+    const ChartClip* clip = session.CurrentClip();
+
+    // A learn section's dots keep coming (and being judged) until
+    // nextClipShowing flips true - either at the scheduled advance itself,
+    // or (only while kPreviewNextClipBeforeHandoff is true) earlier, once
+    // the next clip's first note comes within kBeatsAhead of now.
+    bool isLearnSection =
+        clip && session.Phase() == GamePhase::Learning && session.CurrentSectionKind() == SectionKind::Learn;
+    bool nowPassing = isLearnSection && session.IsPassing();
+
+    // DontFail mode only: detect a passing->failing reversal for the SAME
+    // clip already tracked as m_currentClip last frame (ruling out an
+    // ordinary section/loop change - a different event UpdateClipInstances'
+    // own identity check already handles) before calling UpdateClipInstances
+    // below. The instant IsPassing() reverts, session.PreviewClip() goes
+    // null (see GameSession::PreviewSectionIndex()), which is exactly what
+    // makes UpdateClipInstances silently swap m_nextClip from the real
+    // next-section preview to a loop-repeat prediction of this same clip -
+    // detecting the transition here, first, means m_nextClip still holds
+    // whatever was about to be thrown away, so it can still be exploded.
+    bool sameClipAsLastFrame = m_currentClip && m_currentClip->chartClip == clip;
+    bool justFailedThisFrame = sameClipAsLastFrame && m_prevPassing && !nowPassing;
+    if (justFailedThisFrame && m_nextClip)
+    {
+        const ClipInstance* explosionClip = m_nextClip.get();
+        const ChartClip* failedNextChartClip = m_nextClip->chartClip;
+        for (int lane = 0; lane < kLaneCount; ++lane)
+        {
+            for (SceneNote& sceneNote :
+                 NotesInRange(lane, m_nextClip->startBeat, scene.nowBeat - kBeatsBehind, scene.nowBeat + kBeatsAhead,
+                              failedNextChartClip->laneNotes[lane], failedNextChartClip->spanBeats))
+            {
+                sceneNote.clip = explosionClip;
+                scene.explodingNotes.push_back(sceneNote);
+            }
+        }
+    }
+
     UpdateClipInstances(session, scene.nowBeat);
 
     auto clipInstanceName = [](const ClipInstance* instance)
@@ -300,20 +339,12 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
     scene.debugCurrentClipName = clipInstanceName(m_currentClip.get());
     scene.debugNextClipName = clipInstanceName(m_nextClip.get());
 
-    const ChartClip* clip = session.CurrentClip();
-
     // Whichever clip is most relevant right now - the actively-playing one
     // if there is one (Learn or Break alike; CurrentClip() is non-null for
     // both), otherwise whatever's about to start (the count-in, or a
     // Reset's own zero-time gap).
     scene.primaryClip = m_currentClip ? m_currentClip.get() : m_nextClip.get();
 
-    // A learn section's dots keep coming (and being judged) until
-    // nextClipShowing flips true - either at the scheduled advance itself,
-    // or (only while kPreviewNextClipBeforeHandoff is true) earlier, once
-    // the next clip's first note comes within kBeatsAhead of now.
-    bool isLearnSection =
-        clip && session.Phase() == GamePhase::Learning && session.CurrentSectionKind() == SectionKind::Learn;
     bool nextClipShowing = false;
 
     // Caps how far the live *judged* pass tiles this clip's pattern -
@@ -368,9 +399,12 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
     // Edge-triggered flags: true only on the exact frame each condition
     // first becomes true, so a renderer can react once (a celebration
     // burst, an explosion) instead of every frame the condition holds.
-    bool nowLockedIn = isLearnSection && session.IsLockedIn();
-    scene.justLockedIn = nowLockedIn && !m_prevLockedIn;
+    // justLockedIn covers both a first-ever pass and (DontFail mode) a
+    // failing->passing re-entry - see NoteLaneScene::justLockedIn's own
+    // comment for why it doesn't need a separate name for the latter.
+    scene.justLockedIn = nowPassing && !m_prevPassing;
     scene.justHandedOff = nextClipShowing && !m_prevNotesHandoff;
+    scene.justFailed = justFailedThisFrame;
 
     if ((scene.justHandedOff || scene.justLockedIn) && clip)
     {
@@ -410,7 +444,7 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
         }
     }
 
-    m_prevLockedIn = nowLockedIn;
+    m_prevPassing = nowPassing;
     m_prevNotesHandoff = nextClipShowing;
 
     // m_nextClip may mirror a real GameSession preview, or (see
@@ -463,7 +497,7 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
     // counted twice for as long as that straddle lasts.
     if (notesUpperBoundBeat < scene.nowBeat + kBeatsAhead - 1e-9)
     {
-        if (isLiveJudging && !session.IsLockedIn())
+        if (isLiveJudging && !session.IsPassing())
         {
             CollectNotes(session, m_currentClip.get(), session.CurrentClipOriginBeat(), /*judged=*/false,
                          notesUpperBoundBeat, scene.nowBeat + kBeatsAhead, scene);

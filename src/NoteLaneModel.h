@@ -6,9 +6,9 @@
 #include "GameSession.h"
 #include "NoteLaneScene.h"
 
-// Turns one GameSession's current judging/lock-in state into a
+// Turns one GameSession's current judging/passing state into a
 // NoteLaneScene - the only part of the note lane that knows anything about
-// game rules (judging, lock-in, section/clip identity, phase timing).
+// game rules (judging, passing, section/clip identity, phase timing).
 // Never touches HDC/GDI or a pixel position, and owns no continuous
 // animation state (confetti/explosion/ripples/flash - see
 // NoteLaneRenderer.h for that), so a renderer can be swapped out freely
@@ -17,9 +17,10 @@
 class NoteLaneModel
 {
 public:
-    // Call once per frame; internally tracks lock-in/handoff edges across
-    // calls (see NoteLaneScene::justLockedIn/justHandedOff), so calls must
-    // be sequential real frames of the same session, not arbitrary replays.
+    // Call once per frame; internally tracks passing/handoff edges across
+    // calls (see NoteLaneScene::justLockedIn/justFailed/justHandedOff), so
+    // calls must be sequential real frames of the same session, not
+    // arbitrary replays.
     NoteLaneScene BuildScene(const GameSession& session);
 
 private:
@@ -60,7 +61,7 @@ private:
                        double fromBeat, double upperBoundBeat, NoteLaneScene& scene) const;
 
     // Creates a fresh instance identified by (chartClip, startBeat) -
-    // freshly-resolved color, lockedIn=false - or returns null if chartClip
+    // freshly-resolved color, passing=false - or returns null if chartClip
     // is null. startBeat is the caller's responsibility: for a clip just
     // becoming current/preview for real, that's session.
     // CurrentClipOriginBeat()/PreviewClipOriginBeat(); for a predicted loop
@@ -94,7 +95,7 @@ private:
     //
     // The one being actively judged/shown right now - mirrors
     // session.CurrentClip()'s own identity exactly (null when there isn't
-    // one, e.g. Idle/CountIn). lockedIn is refreshed from session every
+    // one, e.g. Idle/CountIn). passing is refreshed from session every
     // frame while non-null.
     std::unique_ptr<ClipInstance> m_currentClip;
     // Whatever m_currentClip held immediately before its last transition -
@@ -115,7 +116,11 @@ private:
     // until a section transition or lock-in. See UpdateClipInstances.
     std::unique_ptr<ClipInstance> m_nextClip;
 
-    bool m_prevLockedIn = false;
+    // Last frame's IsPassing() value, purely to edge-detect justLockedIn/
+    // justFailed (see NoteLaneScene) - not the same as any ClipInstance::
+    // passing field, which is a per-instance snapshot rather than a
+    // frame-to-frame edge tracker.
+    bool m_prevPassing = false;
     bool m_prevNotesHandoff = false;
 
     // The last session.Song().clips.data() ResetIfSongChanged saw - see

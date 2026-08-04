@@ -40,7 +40,7 @@ constexpr double kBeatsBehind = 1.0;
 // song - a later section reusing it, or simply its own pattern looping
 // again before locking in - and each such playthrough gets its own
 // ClipInstance (never mutated to represent a different one), since
-// lockedIn resets fresh every time and identity/color needs to be
+// passing resets fresh every time and identity/color needs to be
 // distinguishable even between two instances of the same ChartClip. Owned
 // persistently by NoteLaneModel (see its m_previousClip/m_currentClip/
 // m_nextClip) rather than rebuilt every frame - a fresh instance is only
@@ -73,12 +73,14 @@ struct ClipInstance
     // to draw a clip in a consistent, recognizable color.
     COLORREF color = ClipColor::kNeutral;
 
-    // Whether this playthrough has locked in - a renderer-chosen
+    // Whether this playthrough is currently passing - a renderer-chosen
     // supplementary cue (e.g. a glow outline), independent of any one
     // note's own state/color. Reset false whenever a new ClipInstance is
     // created (a fresh playthrough hasn't earned anything yet), kept in
-    // sync with the session every frame while this instance is current.
-    bool lockedIn = false;
+    // sync with the session every frame while this instance is current. In
+    // Pass mode this only ever goes false->true once; in DontFail mode it
+    // can also revert true->false (see GameSession::IsPassing()).
+    bool passing = false;
 };
 
 // What a single note looks like once NoteLaneModel has resolved the
@@ -135,14 +137,21 @@ struct NoteLaneScene
 
     // Edge-triggered this frame only (never stays true across frames) -
     // lets a renderer react once, the instant either happens, without
-    // tracking its own copy of the session's lock-in/handoff state.
+    // tracking its own copy of the session's passing/handoff state.
     bool justLockedIn = false;
     bool justHandedOff = false;
+    // DontFail mode only: the current clip was passing and just reverted to
+    // failing (see GameSession::IsPassing()) - never true in Pass mode,
+    // where passing is a one-way latch. The reverse direction (failing ->
+    // passing, including a first-ever pass) is justLockedIn above; it
+    // didn't need a name of its own since it already fires correctly for
+    // both cases with no assumption baked in that it can only happen once.
+    bool justFailed = false;
     // Candidate notes for whichever of the above fired this frame (may be
-    // both at once, and the two triggers' notes are not distinguished from
-    // each other since they're drawn identically) - a renderer reacting to
-    // these should still apply its own on-screen visibility check first,
-    // exactly as it would for NoteLaneScene::notes.
+    // more than one at once, and the triggers' notes are not distinguished
+    // from each other since they're drawn identically) - a renderer
+    // reacting to these should still apply its own on-screen visibility
+    // check first, exactly as it would for NoteLaneScene::notes.
     std::vector<SceneNote> explodingNotes;
 
     std::wstring statusText;

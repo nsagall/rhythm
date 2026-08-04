@@ -14,7 +14,7 @@
 // time (never actually reaching Update()'s advance) while
 // CurrentSectionIndex() stays put and PreviewClip()/
 // PreviewFirstOnsetBeatForLane() report nothing to preview - then starts
-// playing perfectly, confirming IsLockedIn() flips true mid-loop, the
+// playing perfectly, confirming IsPassing() flips true mid-loop, the
 // preview immediately starts reflecting the real next clip, and the
 // section eventually advances at the next loop boundary after that.
 
@@ -80,8 +80,8 @@ int main(int argc, char** argv)
     bool startPressing = false;
     bool sawPreviewBeforeLockIn = false;
     bool sawNoPreviewBeforeLockIn = false;
-    bool lockedInObserved = false;
-    double lockedInAtExtensions = -1;
+    bool passingObserved = false;
+    double passingAtExtensions = -1;
     bool advancedObserved = false;
     int lastSectionIndex = -1;
 
@@ -97,8 +97,8 @@ int main(int argc, char** argv)
             if (lastSectionIndex == 0 && sectionIndex == 1)
             {
                 advancedObserved = true;
-                printf("[t=%.3fs] section 0 -> 1 (advanced) lockedIn=%s\n", session.Clock().ElapsedSeconds(),
-                       session.IsLockedIn() ? "true" : "false");
+                printf("[t=%.3fs] section 0 -> 1 (advanced) passing=%s\n", session.Clock().ElapsedSeconds(),
+                       session.IsPassing() ? "true" : "false");
                 break;
             }
             lastSectionIndex = sectionIndex;
@@ -113,9 +113,9 @@ int main(int argc, char** argv)
         if (lastSeenAdvance >= 0.0 && advance > lastSeenAdvance + 1e-6)
         {
             extensionsObserved++;
-            printf("[t=%.3fs] section 0 REPEATED (extension #%d): advance %.3f -> %.3f, lockedIn=%s\n",
+            printf("[t=%.3fs] section 0 REPEATED (extension #%d): advance %.3f -> %.3f, passing=%s\n",
                    session.Clock().ElapsedSeconds(), extensionsObserved, lastSeenAdvance, advance,
-                   session.IsLockedIn() ? "true" : "false");
+                   session.IsPassing() ? "true" : "false");
             if (extensionsObserved >= 2 && !startPressing)
             {
                 startPressing = true;
@@ -128,18 +128,18 @@ int main(int argc, char** argv)
         // (it shouldn't), and whether it shows something once locked in
         // (it should).
         bool hasPreview = session.PreviewClip() != nullptr;
-        if (!session.IsLockedIn() && hasPreview)
+        if (!session.IsPassing() && hasPreview)
         {
             sawPreviewBeforeLockIn = true;
         }
-        if (!session.IsLockedIn() && !hasPreview)
+        if (!session.IsPassing() && !hasPreview)
         {
             sawNoPreviewBeforeLockIn = true;
         }
-        if (session.IsLockedIn() && !lockedInObserved)
+        if (session.IsPassing() && !passingObserved)
         {
-            lockedInObserved = true;
-            lockedInAtExtensions = extensionsObserved;
+            passingObserved = true;
+            passingAtExtensions = extensionsObserved;
             printf("[t=%.3fs] LOCKED IN (after %d repeat(s)) streak=%d preview=%s\n", session.Clock().ElapsedSeconds(),
                    extensionsObserved, session.CurrentStreak(), hasPreview ? "non-null" : "null");
         }
@@ -204,8 +204,8 @@ int main(int argc, char** argv)
            sawNoPreviewBeforeLockIn ? "" : " ** MISMATCH - expected true **");
     printf("Preview ever showed something before lock-in (should never happen): %s%s\n",
            sawPreviewBeforeLockIn ? "true" : "false", sawPreviewBeforeLockIn ? " ** MISMATCH - expected false **" : "");
-    printf("Locked in: %s (after %.0f repeat(s))%s\n", lockedInObserved ? "true" : "false", lockedInAtExtensions,
-           lockedInObserved ? "" : " ** MISMATCH - expected true **");
+    printf("Locked in: %s (after %.0f repeat(s))%s\n", passingObserved ? "true" : "false", passingAtExtensions,
+           passingObserved ? "" : " ** MISMATCH - expected true **");
     printf("Advanced to section 1: %s%s\n", advancedObserved ? "true" : "false",
            advancedObserved ? "" : " ** MISMATCH - expected true **");
 

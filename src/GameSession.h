@@ -40,15 +40,19 @@ enum class GamePhase
 //     advance is computed that same instant (loop_count full loops,
 //     floored the same way a break section's own wait is, via
 //     ChartTiming::ComputeLearnAdvanceSeconds). Hitting hits_required worth
-//     of the shared streak locks the clip in - IsLockedIn() flips true, its
-//     volume switches from init_volume to volume, and misses stop mattering
-//     (no more stopping the loop after 3 in a row). The section only
-//     actually advances once BOTH the current candidate advance arrives AND
-//     the clip is locked in by then - if it isn't, the clip's loop simply
-//     repeats (the candidate advance pushes back by one more full loop) and
-//     the same check happens again at that new instant, however many times
-//     it takes. A clip that's never proving itself just keeps looping
-//     forever rather than being abandoned - see Update()'s own comment.
+//     of the shared streak starts the clip passing - IsPassing() flips
+//     true, its volume switches from init_volume to volume. In the default
+//     Pass mode (ChartClip::learnMode), that's permanent for the rest of
+//     the section's run and misses stop mattering (no more stopping the
+//     loop after 3 in a row); in DontFail mode it's reversible - see
+//     IsPassing()'s and SectionInstance::RegisterMiss's own comments. The
+//     section only actually advances once BOTH the current candidate
+//     advance arrives AND the clip is passing by then - if it isn't, the
+//     clip's loop simply repeats (the candidate advance pushes back by one
+//     more full loop) and the same check happens again at that new
+//     instant, however many times it takes. A clip that's never proving
+//     itself just keeps looping forever rather than being abandoned - see
+//     Update()'s own comment.
 //   - Break ([break]): stops every clip currently playing, starts this
 //     section's clip looping, and blocks advancing until loop_count full
 //     loops complete - no judging happens. Advancing is also floored at
@@ -67,7 +71,7 @@ enum class GamePhase
 //     on background sections. This section itself takes zero time and
 //     never blocks.
 //
-// Live, per-section-run judging state (streak, isLockedIn, pending-advance,
+// Live, per-section-run judging state (streak, isPassing, pending-advance,
 // lane holds, judged notes) lives in SectionInstance, not here directly -
 // GameSession just owns "the current one" and replaces it wholesale every
 // time a new section begins. A clip's own playback voice (is it playing,
@@ -129,7 +133,7 @@ public:
     // Registers a key-up for the given lane at the current moment; judges it
     // against the note that lane was holding, if any. Not gated by phase or
     // play mode - a hold already in flight resolves on its own merits even
-    // if the section has since locked in, so it still paints its true
+    // if the section has since started passing, so it still paints its true
     // outcome instead of being abandoned mid-air.
     void OnRelease(int lane);
 
@@ -195,25 +199,28 @@ public:
 
     // True once the current learn section's shared streak has met its
     // clip's hits_required - always false for a break section (nothing to
-    // lock in). Drives the glowing note outline, the confetti burst, and
-    // the init_volume -> volume switch, same as always - but now also
-    // gates the section's own advance directly: while this is false, the
-    // section's candidate advance (PendingAdvanceAtSeconds()) keeps pushing
-    // back by a full loop every time it's reached, instead of ever actually
-    // firing. See BeginSection's/Update()'s own Learn-case comments.
-    bool IsLockedIn() const;
+    // pass). Drives the glowing note outline, the confetti burst, and the
+    // init_volume -> volume switch, same as always - but now also gates the
+    // section's own advance directly: while this is false, the section's
+    // candidate advance (PendingAdvanceAtSeconds()) keeps pushing back by a
+    // full loop every time it's reached, instead of ever actually firing.
+    // See BeginSection's/Update()'s own Learn-case comments. In Pass mode
+    // (ChartClip::learnMode), once true this never reverts for the rest of
+    // the section's run. In DontFail mode, it's reversible - a miss can
+    // drop this back to false (see RegisterMiss/OnPress/Update()'s own
+    // miss paths), and re-earning hits_required in a row brings it back.
+    bool IsPassing() const;
 
     // Returns the wall-clock second the current section is *currently*
     // scheduled to advance at, or a negative value if nothing is pending.
-    // For a break section (or an already-locked-in learn section) this is
-    // final. For a learn section not yet locked in, it's only provisional -
-    // every time this instant is reached without IsLockedIn() having gone
-    // true, it pushes back by one more full loop (see Update()'s own
-    // comment) - so a caller polling this every frame will see it hold
-    // steady, then jump forward a whole loop, however many times it takes.
-    // Lets the note lane derive a guaranteed-to-fire deadline for a
-    // locked-in clip's explosion, independent of whether (or when) the next
-    // clip's own notes become visible.
+    // For a break section this is final. For a learn section not currently
+    // passing, it's only provisional - every time this instant is reached
+    // without IsPassing() being true, it pushes back by one more full loop
+    // (see Update()'s own comment) - so a caller polling this every frame
+    // will see it hold steady, then jump forward a whole loop, however many
+    // times it takes. Lets the note lane derive a guaranteed-to-fire
+    // deadline for a passing clip's explosion, independent of whether (or
+    // when) the next clip's own notes become visible.
     double PendingAdvanceAtSeconds() const;
 
     // Returns the clip whose dots should be shown as an early preview while
@@ -226,8 +233,8 @@ public:
     // anything), but does NOT skip over an intervening Break section,
     // since that section's own screen time hasn't happened yet and is
     // itself the right moment to preview what comes after it. Also
-    // returns nullptr the whole time the current section is a not-yet-
-    // locked-in learn section: it doesn't yet know whether it's about to
+    // returns nullptr the whole time the current section is a not-currently-
+    // passing learn section: it doesn't yet know whether it's about to
     // advance or repeat itself another loop, so there's nothing legitimate
     // to preview - the clip's own notes simply keep scrolling by
     // themselves in that case (see CurrentClip()), no preview needed.
@@ -309,8 +316,10 @@ private:
     // Records a hit: advances the shared streak, resets the shared miss
     // counter, and starts the current section's clip loop (phase-aligned,
     // at init_volume) if it isn't already playing. The streak/miss counters
-    // are left alone once already locked in (frozen at their lock-in
-    // value) - they no longer drive anything at that point.
+    // are left alone once already passing, in Pass mode (frozen at their
+    // passing value) - they no longer drive anything at that point. In
+    // DontFail mode a hit while already passing is equally a no-op (there's
+    // nothing further to earn until a miss drops it back to failing).
     void RegisterHit();
 
     // Starts clipIndex's stem looping now (phase-aligned to its own
@@ -348,13 +357,16 @@ private:
     void StopClipLoop(int clipIndex);
 
     // Records a miss: resets the shared streak, and stops the current
-    // section's clip loop after 3 in a row. A no-op once already locked
-    // in - further misses shouldn't stop the clip or unfreeze the streak
-    // display once it's proven itself. Before lock-in, a miss's only
-    // effect on the section's own advance timing is indirect: resetting
-    // the streak makes lock-in (and therefore advancing) take longer to
-    // reach, possibly costing the clip another full loop's repeat - see
-    // Update()'s own comment.
+    // section's clip loop after 3 in a row (unchanged in both modes). In
+    // Pass mode, a no-op once already passing - further misses shouldn't
+    // stop the clip or unfreeze the streak display once it's proven
+    // itself. In DontFail mode, a miss while passing instead drops the
+    // section back to failing (see SectionInstance::RegisterMiss) and
+    // reverts the clip's volume to init_volume. Before passing, a miss's
+    // only effect on the section's own advance timing is indirect:
+    // resetting the streak makes passing (and therefore advancing) take
+    // longer to reach, possibly costing the clip another full loop's
+    // repeat - see Update()'s own comment.
     void RegisterMiss();
 
     // Moves this lane's next-expected-note pointer forward to the next note after it.
