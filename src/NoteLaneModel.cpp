@@ -269,7 +269,7 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
     UpdateClipInstances(session, scene.nowBeat);
 
     auto clipInstanceName = [](const ClipInstance* instance)
-    { return instance ? instance->chartClip->displayName : L"(none)"; };
+    { return instance ? instance->chartClip->name : L"(none)"; };
     scene.debugPreviousClipName = clipInstanceName(m_previousClip.get());
     scene.debugCurrentClipName = clipInstanceName(m_currentClip.get());
     scene.debugNextClipName = clipInstanceName(m_nextClip.get());
