@@ -31,13 +31,16 @@ name = bridge
 [clip]
 display_name = Melodica
 name = melodica
-hits_required = 24
+hits_required = 4
 release_tolerance_ms = 1000
+learn_mode = dontfail
 
 [clip]
 display_name = Melodica
 name = melodica_2
 release_tolerance_ms = 1000
+learn_mode = dontfail
+hits_required = 4
 
 [clip]
 display_name = Background
@@ -56,6 +59,7 @@ display_name = Melodica 3
 name = melodica_3
 hits_required = 4
 release_tolerance_ms = 1000
+learn_mode = dontfail
 
 [clip]
 display_name = Piano 2
@@ -65,6 +69,8 @@ name = piano_2
 display_name = Melodica 4
 name = melodica_4
 release_tolerance_ms = 1000
+learn_mode = dontfail
+hits_required = 4
 
 [learn]
 clip = organ
