@@ -2,6 +2,9 @@
 
 #include <windows.h>
 
+#include <cstdlib>
+#include <cwchar>
+
 namespace
 {
 
@@ -32,4 +35,20 @@ std::wstring EditorSettings::LoadLastChartPath()
 void EditorSettings::SaveLastChartPath(const std::wstring& chartPath)
 {
     WritePrivateProfileStringW(L"App", L"LastChartPath", chartPath.c_str(), GetSettingsFilePath().c_str());
+}
+
+float EditorSettings::LoadPaneSize(const wchar_t* key, float defaultValue)
+{
+    wchar_t defaultBuf[64];
+    swprintf(defaultBuf, 64, L"%.3f", defaultValue);
+    wchar_t buffer[64] = L"";
+    GetPrivateProfileStringW(L"Layout", key, defaultBuf, buffer, 64, GetSettingsFilePath().c_str());
+    return static_cast<float>(_wtof(buffer));
+}
+
+void EditorSettings::SavePaneSize(const wchar_t* key, float value)
+{
+    wchar_t buffer[64];
+    swprintf(buffer, 64, L"%.3f", value);
+    WritePrivateProfileStringW(L"Layout", key, buffer, GetSettingsFilePath().c_str());
 }

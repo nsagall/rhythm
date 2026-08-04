@@ -14,4 +14,11 @@ public:
 
     // Saves the given chart path so it's pre-filled next launch.
     void SaveLastChartPath(const std::wstring& chartPath);
+
+    // Generic persistence for resizable-pane layout (splitter positions in
+    // EditorApp, in pixels) - one value per caller-chosen key under the
+    // "Layout" section, so each new splitter doesn't need its own bespoke
+    // Load/Save method. Returns defaultValue if key has never been saved.
+    float LoadPaneSize(const wchar_t* key, float defaultValue);
+    void SavePaneSize(const wchar_t* key, float value);
 };

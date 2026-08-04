@@ -8,6 +8,7 @@
 
 #include "EditorChartIO.h"
 #include "FileDialogs.h"
+#include "PaneSplitter.h"
 #include "Utf8.h"
 
 namespace
@@ -68,6 +69,11 @@ bool EditorApp::Initialize(HWND hwnd)
         MessageBoxW(hwnd, L"Failed to initialize audio (XAudio2). Preview playback will be unavailable.",
                     L"RhythmEditor", MB_OK | MB_ICONWARNING);
     }
+
+    m_leftColumnWidth = m_settings.LoadPaneSize(L"LeftColumnWidth", -1.0f);
+    m_songPaneHeight = m_settings.LoadPaneSize(L"SongPaneHeight", 180.0f);
+    m_timelineHeight = m_settings.LoadPaneSize(L"TimelineHeight", 220.0f);
+    m_bottomHeight = m_settings.LoadPaneSize(L"BottomHeight", 160.0f);
 
     std::wstring lastPath = m_settings.LoadLastChartPath();
     if (!lastPath.empty())
@@ -144,20 +150,146 @@ void EditorApp::Update()
 
     ImGuiIO& io = ImGui::GetIO();
     float menuBarHeight = ImGui::GetFrameHeight();
-    float bottomHeight = 160.0f;
-    float timelineHeight = 220.0f;
     float contentY = menuBarHeight;
-    float upperHeight = io.DisplaySize.y - menuBarHeight - bottomHeight - timelineHeight;
-    if (upperHeight < 100.0f)
-    {
-        upperHeight = 100.0f;
-    }
-    float leftWidth = io.DisplaySize.x * 0.4f;
+    float contentWidth = io.DisplaySize.x;
+    float contentHeight = io.DisplaySize.y - menuBarHeight;
 
-    DrawClipsWindow(0.0f, contentY, leftWidth, upperHeight);
-    DrawBlockPropertiesWindow(leftWidth, contentY, io.DisplaySize.x - leftWidth, upperHeight);
-    DrawBlockTimelineWindow(0.0f, contentY + upperHeight, io.DisplaySize.x, timelineHeight);
-    DrawBottomWindow(0.0f, contentY + upperHeight + timelineHeight, io.DisplaySize.x, bottomHeight);
+    constexpr float kSplitterThickness = 6.0f;
+    constexpr float kMinPaneSize = 80.0f;
+
+    if (m_leftColumnWidth <= 0.0f)
+    {
+        m_leftColumnWidth = contentWidth * 0.4f;
+    }
+
+    // Clamp every persisted size against the current window dimensions
+    // before laying anything out - either can be stale (loaded from a
+    // previous, differently-sized session) or momentarily too big right
+    // after the window itself was shrunk.
+    if (m_timelineHeight < kMinPaneSize)
+    {
+        m_timelineHeight = kMinPaneSize;
+    }
+    if (m_bottomHeight < kMinPaneSize)
+    {
+        m_bottomHeight = kMinPaneSize;
+    }
+    float maxTimelinePlusBottom = contentHeight - kMinPaneSize - kSplitterThickness * 2.0f;
+    if (m_timelineHeight + m_bottomHeight > maxTimelinePlusBottom)
+    {
+        float excess = (m_timelineHeight + m_bottomHeight) - maxTimelinePlusBottom;
+        float takeFromTimeline = m_timelineHeight - kMinPaneSize;
+        if (takeFromTimeline > excess)
+        {
+            takeFromTimeline = excess;
+        }
+        if (takeFromTimeline > 0.0f)
+        {
+            m_timelineHeight -= takeFromTimeline;
+            excess -= takeFromTimeline;
+        }
+        if (excess > 0.0f)
+        {
+            m_bottomHeight -= excess;
+            if (m_bottomHeight < kMinPaneSize)
+            {
+                m_bottomHeight = kMinPaneSize;
+            }
+        }
+    }
+
+    float upperHeight = contentHeight - m_timelineHeight - m_bottomHeight - kSplitterThickness * 2.0f;
+    if (upperHeight < kMinPaneSize)
+    {
+        upperHeight = kMinPaneSize;
+    }
+
+    if (m_leftColumnWidth < kMinPaneSize)
+    {
+        m_leftColumnWidth = kMinPaneSize;
+    }
+    float maxLeftColumnWidth = contentWidth - kMinPaneSize - kSplitterThickness;
+    if (m_leftColumnWidth > maxLeftColumnWidth)
+    {
+        m_leftColumnWidth = maxLeftColumnWidth > kMinPaneSize ? maxLeftColumnWidth : kMinPaneSize;
+    }
+    float rightColumnX = m_leftColumnWidth + kSplitterThickness;
+    float rightColumnWidth = contentWidth - rightColumnX;
+
+    if (m_songPaneHeight < kMinPaneSize)
+    {
+        m_songPaneHeight = kMinPaneSize;
+    }
+    float maxSongPaneHeight = upperHeight - kMinPaneSize - kSplitterThickness;
+    if (m_songPaneHeight > maxSongPaneHeight)
+    {
+        m_songPaneHeight = maxSongPaneHeight > kMinPaneSize ? maxSongPaneHeight : kMinPaneSize;
+    }
+    float clipsY = contentY + m_songPaneHeight + kSplitterThickness;
+    float clipsHeight = upperHeight - m_songPaneHeight - kSplitterThickness;
+
+    float timelineY = contentY + upperHeight + kSplitterThickness;
+    float bottomY = timelineY + m_timelineHeight + kSplitterThickness;
+
+    DrawSongPropertiesWindow(0.0f, contentY, m_leftColumnWidth, m_songPaneHeight);
+    DrawClipsWindow(0.0f, clipsY, m_leftColumnWidth, clipsHeight);
+    DrawBlockPropertiesWindow(rightColumnX, contentY, rightColumnWidth, upperHeight);
+    DrawBlockTimelineWindow(0.0f, timelineY, contentWidth, m_timelineHeight);
+    DrawBottomWindow(0.0f, bottomY, contentWidth, m_bottomHeight);
+
+    bool draggedThisFrame = false;
+
+    // Left/right column boundary: left column is the stored value, right
+    // column absorbs the change as a remainder.
+    float leftRightDelta = DrawPaneSplitter("##SplitLeftRight", ImVec2(m_leftColumnWidth, contentY),
+                                             ImVec2(kSplitterThickness, upperHeight), false);
+    if (leftRightDelta != 0.0f)
+    {
+        m_leftColumnWidth += leftRightDelta;
+        draggedThisFrame = true;
+    }
+
+    // Song/Clips boundary within the left column: Song is the stored
+    // value, Clips absorbs the change as a remainder.
+    float songClipsDelta = DrawPaneSplitter("##SplitSongClips", ImVec2(0.0f, clipsY - kSplitterThickness),
+                                             ImVec2(m_leftColumnWidth, kSplitterThickness), true);
+    if (songClipsDelta != 0.0f)
+    {
+        m_songPaneHeight += songClipsDelta;
+        draggedThisFrame = true;
+    }
+
+    // Upper row/Timeline boundary: upperHeight is itself a remainder
+    // (contentHeight minus timeline and bottom), so dragging this one only
+    // needs to move m_timelineHeight - upperHeight absorbs the change.
+    float upperTimelineDelta = DrawPaneSplitter("##SplitUpperTimeline", ImVec2(0.0f, timelineY - kSplitterThickness),
+                                                 ImVec2(contentWidth, kSplitterThickness), true);
+    if (upperTimelineDelta != 0.0f)
+    {
+        m_timelineHeight -= upperTimelineDelta;
+        draggedThisFrame = true;
+    }
+
+    // Timeline/Bottom boundary: both are independently stored, so this one
+    // transfers pixels directly between them (upperHeight is untouched).
+    float timelineBottomDelta = DrawPaneSplitter("##SplitTimelineBottom", ImVec2(0.0f, bottomY - kSplitterThickness),
+                                                  ImVec2(contentWidth, kSplitterThickness), true);
+    if (timelineBottomDelta != 0.0f)
+    {
+        m_timelineHeight += timelineBottomDelta;
+        m_bottomHeight -= timelineBottomDelta;
+        draggedThisFrame = true;
+    }
+
+    if (draggedThisFrame)
+    {
+        m_layoutDirty = true;
+    }
+    if (m_layoutDirty && !ImGui::IsMouseDown(ImGuiMouseButton_Left))
+    {
+        SaveLayoutSettings();
+        m_layoutDirty = false;
+    }
 
     if (m_hasDocument)
     {
@@ -219,6 +351,24 @@ constexpr ImGuiWindowFlags kFixedPanelFlags = ImGuiWindowFlags_NoTitleBar | ImGu
                                                ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
                                                ImGuiWindowFlags_NoBringToFrontOnFocus;
 } // namespace
+
+void EditorApp::DrawSongPropertiesWindow(float x, float y, float w, float h)
+{
+    ImGui::SetNextWindowPos(ImVec2(x, y));
+    ImGui::SetNextWindowSize(ImVec2(w, h));
+    ImGui::Begin("SongPropertiesWindow", nullptr, kFixedPanelFlags);
+    ImGui::Text("Song");
+    ImGui::Separator();
+    if (m_hasDocument)
+    {
+        m_songPropertiesPanel.Draw(m_doc);
+    }
+    else
+    {
+        ImGui::TextDisabled("No document open - File > New or Open.");
+    }
+    ImGui::End();
+}
 
 void EditorApp::DrawClipsWindow(float x, float y, float w, float h)
 {
@@ -452,6 +602,14 @@ void EditorApp::ApplyWindowTitleIfChanged()
     }
 }
 
+void EditorApp::SaveLayoutSettings()
+{
+    m_settings.SavePaneSize(L"LeftColumnWidth", m_leftColumnWidth);
+    m_settings.SavePaneSize(L"SongPaneHeight", m_songPaneHeight);
+    m_settings.SavePaneSize(L"TimelineHeight", m_timelineHeight);
+    m_settings.SavePaneSize(L"BottomHeight", m_bottomHeight);
+}
+
 void EditorApp::RebuildBlockSchedule()
 {
     if (!m_hasDocument)
@@ -487,6 +645,7 @@ void EditorApp::DoNew()
     m_doc = doc;
     m_hasDocument = true;
     m_undoHistory.Reset(m_doc);
+    m_songPropertiesPanel.NotifyDocumentReplaced();
     m_observedVersion = m_doc.docVersion;
     m_lastValidatedVersion = m_doc.docVersion - 1; // force a prompt validation pass
     m_currentErrors.clear();
@@ -516,6 +675,7 @@ void EditorApp::DoOpen()
     m_doc = newDoc;
     m_hasDocument = true;
     m_undoHistory.Reset(m_doc);
+    m_songPropertiesPanel.NotifyDocumentReplaced();
     m_observedVersion = m_doc.docVersion;
     m_lastValidatedVersion = m_doc.docVersion - 1;
     m_currentErrors.clear();
@@ -580,6 +740,7 @@ void EditorApp::DoUndo()
     }
     m_undoHistory.Undo(m_doc);
     m_clipPanel.NotifyDocumentReplaced();
+    m_songPropertiesPanel.NotifyDocumentReplaced();
 }
 
 void EditorApp::DoRedo()
@@ -590,6 +751,7 @@ void EditorApp::DoRedo()
     }
     m_undoHistory.Redo(m_doc);
     m_clipPanel.NotifyDocumentReplaced();
+    m_songPropertiesPanel.NotifyDocumentReplaced();
 }
 
 void EditorApp::RequestActionWithGuard(PendingAction action)
