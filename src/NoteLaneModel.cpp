@@ -66,25 +66,14 @@ std::vector<SceneNote> NoteLaneModel::NotesInRange(int lane, double originBeat, 
     return result;
 }
 
-void NoteLaneModel::CollectNotes(const GameSession& session, const ChartClip* drawClip, double originBeat,
-                                  bool judged, double fromBeat, double upperBoundBeat, const ClipLookup& clipLookup,
-                                  NoteLaneScene& scene) const
+void NoteLaneModel::CollectNotes(const GameSession& session, const ClipInstance* instance, double originBeat,
+                                  bool judged, double fromBeat, double upperBoundBeat, NoteLaneScene& scene) const
 {
-    if (!drawClip)
+    if (!instance)
     {
         return;
     }
-    ClipInstance* clip = clipLookup.at(drawClip);
-    // Once a track has locked in (only possible for the judged pass -
-    // still live-judging through its extended post-lock-in run), every
-    // note pointing at this clip's instance picks up a supplementary
-    // "this track has already locked in" cue, independent of state/color.
-    // Safe to overwrite unconditionally on every call: whenever the same
-    // clip is revisited within the same BuildScene (the self-repeat
-    // preview case), both calls agree this is false (only reached while
-    // !IsLockedIn()); whenever it could be true, that clip is never
-    // revisited again this frame - see BuildScene's own call sites.
-    clip->lockedIn = judged && session.IsLockedIn();
+    const ChartClip* drawClip = instance->chartClip;
 
     for (int lane = 0; lane < kLaneCount; ++lane)
     {
@@ -124,7 +113,7 @@ void NoteLaneModel::CollectNotes(const GameSession& session, const ChartClip* dr
 #endif
         for (SceneNote& sceneNote : visibleNotes)
         {
-            sceneNote.clip = clip;
+            sceneNote.clip = instance;
 
             // Upcoming notes stay Normal (a renderer colors that by
             // clip->color). The instant a press starts a note correctly
@@ -166,6 +155,59 @@ void NoteLaneModel::CollectNotes(const GameSession& session, const ChartClip* dr
     }
 }
 
+std::unique_ptr<ClipInstance> NoteLaneModel::MakeClipInstance(const GameSession& session, const ChartClip* chartClip)
+{
+    if (!chartClip)
+    {
+        return nullptr;
+    }
+    auto instance = std::make_unique<ClipInstance>();
+    instance->chartClip = chartClip;
+    const ChartClip* base = session.Song().clips.data();
+    instance->color = ClipColor::ForIndex(static_cast<int>(chartClip - base));
+    return instance;
+}
+
+void NoteLaneModel::UpdateClipInstances(const GameSession& session)
+{
+    const ChartClip* currentChartClip = session.CurrentClip();
+    const ChartClip* trackedCurrent = m_currentClip ? m_currentClip->chartClip : nullptr;
+    if (trackedCurrent != currentChartClip)
+    {
+        // A new playthrough is starting (or none is, anymore) - whatever
+        // m_currentClip was a moment ago becomes m_previousClip, exactly
+        // once, right here.
+        m_previousClip = std::move(m_currentClip);
+
+        const ChartClip* trackedNext = m_nextClip ? m_nextClip->chartClip : nullptr;
+        if (currentChartClip && trackedNext == currentChartClip)
+        {
+            // The clip we were already previewing just went live - reuse
+            // that same instance (same identity/color) rather than
+            // building a redundant new one.
+            m_currentClip = std::move(m_nextClip);
+        }
+        else
+        {
+            m_currentClip = MakeClipInstance(session, currentChartClip);
+        }
+    }
+    if (m_currentClip)
+    {
+        // A fresh (or freshly-promoted) instance already starts at false;
+        // this also carries a same-instance run's lock-in forward as it
+        // happens.
+        m_currentClip->lockedIn = session.IsLockedIn();
+    }
+
+    const ChartClip* previewChartClip = session.PreviewClip();
+    const ChartClip* trackedNextNow = m_nextClip ? m_nextClip->chartClip : nullptr;
+    if (trackedNextNow != previewChartClip)
+    {
+        m_nextClip = MakeClipInstance(session, previewChartClip);
+    }
+}
+
 NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
 {
     NoteLaneScene scene;
@@ -174,23 +216,7 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
     scene.nowBeat = scene.clockRunning ? session.Clock().BeatPosition() : 0.0;
     scene.beatsPerBar = session.Song().beatsPerBar;
 
-    // Sized and fully populated before anything below takes a pointer into
-    // it - see NoteLaneScene::clipInstances' own comment for why this
-    // vector must never be resized again after this point. clipLookup is
-    // this function's own private map from each clip's real address to its
-    // matching entry here - built in the same pass, so every lookup below
-    // (and inside CollectNotes) follows session.Song().clips' own pointers
-    // directly instead of converting one to a position and indexing back
-    // into clipInstances.
-    const std::vector<ChartClip>& songClips = session.Song().clips;
-    scene.clipInstances.resize(songClips.size());
-    ClipLookup clipLookup;
-    clipLookup.reserve(songClips.size());
-    for (size_t i = 0; i < songClips.size(); ++i)
-    {
-        scene.clipInstances[i].color = ClipColor::ForIndex(static_cast<int>(i));
-        clipLookup[&songClips[i]] = &scene.clipInstances[i];
-    }
+    UpdateClipInstances(session);
 
     const ChartClip* clip = session.CurrentClip();
 
@@ -198,9 +224,7 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
     // if there is one (Learn or Break alike; CurrentClip() is non-null for
     // both), otherwise whatever's about to start (the count-in, or a
     // Reset's own zero-time gap).
-    const ChartClip* primaryChartClip = clip ? clip : session.PreviewClip();
-    auto primaryIt = primaryChartClip ? clipLookup.find(primaryChartClip) : clipLookup.end();
-    scene.primaryClip = primaryIt != clipLookup.end() ? primaryIt->second : nullptr;
+    scene.primaryClip = m_currentClip ? m_currentClip.get() : m_nextClip.get();
 
     // A learn section's dots keep coming (and being judged) until
     // nextClipShowing flips true - either at the scheduled advance itself,
@@ -268,7 +292,13 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
 
     if ((scene.justHandedOff || scene.justLockedIn) && clip)
     {
-        const ClipInstance* explosionClip = clipLookup.at(clip);
+        // m_currentClip still mirrors session.CurrentClip() == clip here:
+        // GameSession's own transition to whatever comes next (which is
+        // what would make UpdateClipInstances next frame retire this into
+        // m_previousClip) hasn't happened yet on the very frame
+        // justHandedOff/justLockedIn first fires - see UpdateClipInstances'
+        // own comment.
+        const ClipInstance* explosionClip = m_currentClip.get();
         double originBeat = session.CurrentClipOriginBeat();
 
         auto addExplodingRange = [&](double fromBeat, double toBeat)
@@ -308,13 +338,13 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
     // popping in as a batch.
     if (isLiveJudging)
     {
-        CollectNotes(session, clip, session.CurrentClipOriginBeat(), /*judged=*/true, scene.nowBeat - kBeatsBehind,
-                     notesUpperBoundBeat, clipLookup, scene);
+        CollectNotes(session, m_currentClip.get(), session.CurrentClipOriginBeat(), /*judged=*/true,
+                     scene.nowBeat - kBeatsBehind, notesUpperBoundBeat, scene);
     }
     else
     {
-        CollectNotes(session, session.PreviewClip(), session.PreviewClipOriginBeat(), /*judged=*/false, -1.0,
-                     notesUpperBoundBeat, clipLookup, scene);
+        CollectNotes(session, m_nextClip.get(), session.PreviewClipOriginBeat(), /*judged=*/false, -1.0,
+                     notesUpperBoundBeat, scene);
     }
 
     // The judged pass never tiles past notesUpperBoundBeat, which would
@@ -326,13 +356,13 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
     // layered on top of the still-live judged pass.
     if (isLiveJudging && !session.IsLockedIn())
     {
-        CollectNotes(session, clip, session.CurrentClipOriginBeat(), /*judged=*/false, notesUpperBoundBeat,
-                     scene.nowBeat + kBeatsAhead, clipLookup, scene);
+        CollectNotes(session, m_currentClip.get(), session.CurrentClipOriginBeat(), /*judged=*/false,
+                     notesUpperBoundBeat, scene.nowBeat + kBeatsAhead, scene);
     }
     else if (isLiveJudging)
     {
-        CollectNotes(session, session.PreviewClip(), session.PreviewClipOriginBeat(), /*judged=*/false, -1.0,
-                     scene.nowBeat + kBeatsAhead, clipLookup, scene);
+        CollectNotes(session, m_nextClip.get(), session.PreviewClipOriginBeat(), /*judged=*/false, -1.0,
+                     scene.nowBeat + kBeatsAhead, scene);
     }
 
     switch (session.Phase())

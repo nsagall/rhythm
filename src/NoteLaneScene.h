@@ -7,6 +7,12 @@
 #include "ClipColor.h"
 #include "LaneConfig.h"
 
+// Never dereferenced by a renderer (see ClipInstance::chartClip) - forward
+// declared only so that field can exist as a pointer, without pulling
+// ChartFile.h's actual definition into every renderer that includes this
+// header.
+struct ChartClip;
+
 // The contract between NoteLaneModel (logic) and whatever draws it
 // (NoteLaneRenderer.h). Everything here is beats, lane indices, and
 // semantic/identity state - no pixel positions, no HDC, no GDI drawing
@@ -27,27 +33,37 @@
 constexpr double kBeatsAhead = kNoteFallBeats;
 constexpr double kBeatsBehind = 1.0;
 
-// One clip's identity and currently-relevant judged state, for rendering
-// purposes only - NOT the same object as GameSession's own private
-// per-clip playback voice (audio/timing internals a renderer has no
-// business touching). Lives in NoteLaneScene::clipInstances, one per clip
-// in the song, rebuilt fresh every frame; every SceneNote below points
-// into that same array rather than carrying its own copy of this state,
-// so every note belonging to the same clip in the same frame necessarily
-// agrees about it.
+// One live playthrough of a ChartClip, for rendering purposes only - NOT
+// the same object as GameSession's own private per-clip playback voice
+// (audio/timing internals a renderer has no business touching). A
+// ChartClip is immutable song data and can be played more than once in a
+// song (looped, or reused by a later section); each such playthrough gets
+// its own ClipInstance, since lockedIn resets fresh every time regardless
+// of whether it's the same ChartClip as before. Owned persistently by
+// NoteLaneModel (see its m_previousClip/m_currentClip/m_nextClip) rather
+// than rebuilt every frame - a fresh instance is only created when a new
+// playthrough actually begins, not on every BuildScene call.
 struct ClipInstance
 {
+    // Which ChartClip this is a playthrough of - this instance's own
+    // identity, not something a caller needs to look up separately.
+    // Never dereferenced by a renderer (only NoteLaneModel needs the song
+    // data behind it); exists here purely so NoteLaneModel can tell two
+    // instances of the same clip apart from a genuinely different clip
+    // without an external lookup table.
+    const ChartClip* chartClip = nullptr;
+
     // This clip's accent color - part of its identity (see ClipColor.h),
-    // resolved once when NoteLaneModel builds this instance, so a renderer
-    // never needs its own palette or index-to-color scheme just to draw a
-    // clip in a consistent, recognizable color.
+    // resolved once when NoteLaneModel creates this instance, so a
+    // renderer never needs its own palette or index-to-color scheme just
+    // to draw a clip in a consistent, recognizable color.
     COLORREF color = ClipColor::kNeutral;
 
-    // Whether the section currently judging this clip has locked in - a
-    // renderer-chosen supplementary cue (e.g. a glow outline), independent
-    // of any one note's own state/color. Only ever true for whichever
-    // clip is being live-judged right now - every other clip's instance
-    // reads false, even one locked in earlier by a since-ended section.
+    // Whether this playthrough has locked in - a renderer-chosen
+    // supplementary cue (e.g. a glow outline), independent of any one
+    // note's own state/color. Reset false whenever a new ClipInstance is
+    // created (a fresh playthrough hasn't earned anything yet), kept in
+    // sync with the session every frame while this instance is current.
     bool lockedIn = false;
 };
 
@@ -72,11 +88,10 @@ struct SceneNote
     NoteVisualState state = NoteVisualState::Normal;
 
     // Never null for a note that actually made it into NoteLaneScene::
-    // notes/explodingNotes - points into that same frame's
-    // NoteLaneScene::clipInstances, so it's only ever valid for as long as
-    // that NoteLaneScene is (see clipInstances' own comment for why that's
-    // safe despite the vector living in the very struct being returned by
-    // value).
+    // notes/explodingNotes - points into one of NoteLaneModel's own
+    // persistent instances (see ClipInstance's own comment), which outlive
+    // this NoteLaneScene, so the pointer stays valid for at least as long
+    // as this NoteLaneScene does.
     const ClipInstance* clip = nullptr;
 };
 
@@ -95,18 +110,6 @@ struct NoteLaneScene
     bool clockRunning = false;
     double nowBeat = 0.0;
     int beatsPerBar = 4;
-
-    // One entry per clip in the song - every SceneNote::clip (in notes/
-    // explodingNotes) and primaryClip below point somewhere into this
-    // array (NoteLaneModel finds the right one via its own private
-    // ChartClip*-keyed lookup, not by position - see NoteLaneModel.cpp).
-    // Sized and fully populated once, before taking any pointer into it,
-    // and never resized again for the rest of that BuildScene call - a
-    // std::vector's element addresses stay stable across everything except
-    // a resize, and this one never gets one after that point, so those
-    // pointers stay valid for exactly as long as this NoteLaneScene does
-    // (including surviving the move out of BuildScene's return).
-    std::vector<ClipInstance> clipInstances;
 
     // Rails/receptors' base color/identity - nullptr means no current/
     // preview clip (Idle or Complete), which a renderer should show as a
