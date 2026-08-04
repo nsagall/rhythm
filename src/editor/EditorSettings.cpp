@@ -52,3 +52,40 @@ void EditorSettings::SavePaneSize(const wchar_t* key, float value)
     swprintf(buffer, 64, L"%.3f", value);
     WritePrivateProfileStringW(L"Layout", key, buffer, GetSettingsFilePath().c_str());
 }
+
+bool EditorSettings::LoadWindowPlacement(WINDOWPLACEMENT& outPlacement)
+{
+    wchar_t buffer[128] = L"";
+    GetPrivateProfileStringW(L"Window", L"Placement", L"", buffer, 128, GetSettingsFilePath().c_str());
+    if (buffer[0] == L'\0')
+    {
+        return false;
+    }
+
+    LONG left, top, right, bottom;
+    int maximized = 0;
+    if (swscanf(buffer, L"%ld,%ld,%ld,%ld,%d", &left, &top, &right, &bottom, &maximized) != 5)
+    {
+        return false;
+    }
+    if (right <= left || bottom <= top)
+    {
+        return false;
+    }
+
+    WINDOWPLACEMENT placement = {};
+    placement.length = sizeof(WINDOWPLACEMENT);
+    placement.showCmd = maximized != 0 ? SW_SHOWMAXIMIZED : SW_SHOWNORMAL;
+    placement.rcNormalPosition = RECT{left, top, right, bottom};
+    outPlacement = placement;
+    return true;
+}
+
+void EditorSettings::SaveWindowPlacement(const WINDOWPLACEMENT& placement)
+{
+    wchar_t buffer[128];
+    swprintf(buffer, 128, L"%ld,%ld,%ld,%ld,%d", placement.rcNormalPosition.left, placement.rcNormalPosition.top,
+              placement.rcNormalPosition.right, placement.rcNormalPosition.bottom,
+              placement.showCmd == SW_SHOWMAXIMIZED ? 1 : 0);
+    WritePrivateProfileStringW(L"Window", L"Placement", buffer, GetSettingsFilePath().c_str());
+}

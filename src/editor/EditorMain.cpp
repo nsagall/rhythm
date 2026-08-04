@@ -11,6 +11,7 @@
 #include <imgui_impl_win32.h>
 
 #include "EditorApp.h"
+#include "EditorSettings.h"
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
@@ -23,6 +24,47 @@ IDXGISwapChain* g_pSwapChain = nullptr;
 ID3D11RenderTargetView* g_mainRenderTargetView = nullptr;
 EditorApp* g_app = nullptr;
 bool g_destroyRequested = false;
+
+// Separate from EditorApp's own EditorSettings member - EditorSettings
+// holds no state of its own (every call re-opens the ini file), so a
+// second instance here is safe; this one exists purely because window
+// placement has to be loaded before EditorApp is even constructed (it
+// sizes/positions the window before CreateDeviceD3D touches it), and
+// saved from WndProc, which has no access to EditorApp's members either.
+EditorSettings g_windowSettings;
+// True from WM_ENTERSIZEMOVE to WM_EXITSIZEMOVE - an interactive
+// drag-move/drag-resize is in progress. WM_SIZE fires once per pixel
+// during that drag; gating the maximize/restore save on !g_inSizeMove
+// keeps that case from writing the ini file dozens of times a second,
+// while WM_EXITSIZEMOVE itself still saves once when the drag ends (see
+// WndProc).
+bool g_inSizeMove = false;
+
+void SaveCurrentWindowPlacement(HWND hwnd)
+{
+    WINDOWPLACEMENT placement = {};
+    placement.length = sizeof(WINDOWPLACEMENT);
+    if (GetWindowPlacement(hwnd, &placement))
+    {
+        g_windowSettings.SaveWindowPlacement(placement);
+    }
+}
+
+// A saved placement can be stale (a monitor that's since been unplugged,
+// a resolution change) - reject it rather than create a window the user
+// can't see or reach, and fall back to the normal default instead.
+bool IsPlacementOnScreen(const RECT& rect)
+{
+    RECT virtualScreen;
+    virtualScreen.left = GetSystemMetrics(SM_XVIRTUALSCREEN);
+    virtualScreen.top = GetSystemMetrics(SM_YVIRTUALSCREEN);
+    virtualScreen.right = virtualScreen.left + GetSystemMetrics(SM_CXVIRTUALSCREEN);
+    virtualScreen.bottom = virtualScreen.top + GetSystemMetrics(SM_CYVIRTUALSCREEN);
+
+    RECT intersection;
+    return IntersectRect(&intersection, &rect, &virtualScreen) != 0 && (rect.right - rect.left) >= 200 &&
+           (rect.bottom - rect.top) >= 150;
+}
 
 void CreateRenderTarget()
 {
@@ -119,7 +161,23 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
                                              DXGI_FORMAT_UNKNOWN, 0);
                 CreateRenderTarget();
             }
+            // Only maximize/restore here - not every intermediate size
+            // during an interactive drag (WM_EXITSIZEMOVE below covers
+            // that once, when the drag ends) - and never while minimized,
+            // which isn't a placement worth persisting (see
+            // EditorSettings::LoadWindowPlacement's own comment).
+            if (!g_inSizeMove && (wParam == SIZE_MAXIMIZED || wParam == SIZE_RESTORED))
+            {
+                SaveCurrentWindowPlacement(hWnd);
+            }
             return 0;
+        case WM_ENTERSIZEMOVE:
+            g_inSizeMove = true;
+            break;
+        case WM_EXITSIZEMOVE:
+            g_inSizeMove = false;
+            SaveCurrentWindowPlacement(hWnd);
+            break;
         case WM_CLOSE:
             if (g_app != nullptr)
             {
@@ -135,6 +193,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
             }
             break;
         case WM_DESTROY:
+            // Final safety net - covers a plain Alt+F4/close-button exit
+            // that never went through an interactive move/resize at all,
+            // so WM_EXITSIZEMOVE never fired this session.
+            SaveCurrentWindowPlacement(hWnd);
             PostQuitMessage(0);
             return 0;
         default:
@@ -158,6 +220,21 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int nCmdShow)
     HWND hwnd = CreateWindowExW(0, wc.lpszClassName, L"RhythmEditor", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT,
                                  CW_USEDEFAULT, 1440, 900, nullptr, nullptr, hInstance, nullptr);
 
+    // Restore the last session's size/position/maximized state, if any and
+    // still on-screen, before CreateDeviceD3D reads the window's client
+    // rect for the swap chain (its BufferDesc.Width/Height of 0 means
+    // "match the window") - applying it any later would show a default-
+    // sized window for one frame, then visibly jump.
+    WINDOWPLACEMENT savedPlacement = {};
+    bool hasSavedPlacement =
+        g_windowSettings.LoadWindowPlacement(savedPlacement) && IsPlacementOnScreen(savedPlacement.rcNormalPosition);
+    if (hasSavedPlacement)
+    {
+        WINDOWPLACEMENT hiddenPlacement = savedPlacement;
+        hiddenPlacement.showCmd = SW_HIDE; // stay invisible until the normal ShowWindow below - avoids a flash
+        SetWindowPlacement(hwnd, &hiddenPlacement);
+    }
+
     if (!CreateDeviceD3D(hwnd))
     {
         CleanupDeviceD3D();
@@ -165,7 +242,7 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int nCmdShow)
         return 1;
     }
 
-    ShowWindow(hwnd, nCmdShow);
+    ShowWindow(hwnd, hasSavedPlacement ? savedPlacement.showCmd : nCmdShow);
     UpdateWindow(hwnd);
 
     IMGUI_CHECKVERSION();
