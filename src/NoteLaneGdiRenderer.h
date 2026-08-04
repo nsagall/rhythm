@@ -17,7 +17,7 @@ class NoteLaneGdiRenderer : public INoteLaneRenderer
 public:
     ~NoteLaneGdiRenderer() override;
 
-    void OnJudgement(JudgementResult result, int lane, bool lockedIn) override;
+    void OnJudgement(JudgementResult result, int lane, bool passing) override;
     void Draw(HDC hdc, RECT laneRect, const NoteLaneScene& scene) override;
     void ToggleDebugOverlay() override;
 
@@ -116,8 +116,8 @@ private:
     void DrawAlphaRoundRect(HDC hdc, RECT rect, int cornerRadius, COLORREF color, BYTE alpha);
     void DrawAlphaRect(HDC hdc, int cx, int cy, int halfWidth, int halfHeight, COLORREF color, BYTE alpha);
 
-    void DrawNoteGlyph(HDC hdc, int x, int y, COLORREF color, bool glow, bool lockedIn);
-    void DrawNoteBar(HDC hdc, int x, int yTop, int yBottom, int halfWidth, COLORREF color, bool lockedIn);
+    void DrawNoteGlyph(HDC hdc, int x, int y, COLORREF color, bool glow, bool passing);
+    void DrawNoteBar(HDC hdc, int x, int yTop, int yBottom, int halfWidth, COLORREF color, bool passing);
     void DrawReceptor(HDC hdc, int x, int y, COLORREF laneColor, bool held, bool flashing, COLORREF flashColor,
                        double flashProgress);
     void DrawSparkles(HDC hdc, RECT laneRect, double beatPulse);

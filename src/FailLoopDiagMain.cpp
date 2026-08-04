@@ -113,8 +113,8 @@ int main(int argc, char** argv)
             {
                 name.assign(clip->name.begin(), clip->name.end());
             }
-            printf("[t=%.3fs] section=%d clip=(%s) lockedIn=%s\n", session.Clock().ElapsedSeconds(), sectionIndex,
-                   name.c_str(), session.IsLockedIn() ? "true" : "false");
+            printf("[t=%.3fs] section=%d clip=(%s) passing=%s\n", session.Clock().ElapsedSeconds(), sectionIndex,
+                   name.c_str(), session.IsPassing() ? "true" : "false");
             lastSectionIndex = sectionIndex;
             for (int lane = 0; lane < kLaneCount; ++lane)
             {
@@ -157,9 +157,9 @@ int main(int argc, char** argv)
                 JudgementResult result = session.ConsumeLastJudgement();
                 if (sectionIndex == targetSectionIndex)
                 {
-                    printf("[t=%.3fs]   lane %d release -> %ls (streak=%d lockedIn=%s)\n",
+                    printf("[t=%.3fs]   lane %d release -> %ls (streak=%d passing=%s)\n",
                            session.Clock().ElapsedSeconds(), lane, JudgementName(result), session.CurrentStreak(),
-                           session.IsLockedIn() ? "true" : "false");
+                           session.IsPassing() ? "true" : "false");
                     if (result == JudgementResult::Miss)
                     {
                         if (switchedToPerfect)
@@ -228,9 +228,9 @@ int main(int argc, char** argv)
                 JudgementResult result = session.ConsumeLastJudgement();
                 if (sectionIndex == targetSectionIndex)
                 {
-                    printf("[t=%.3fs]   lane %d press beat=%.4f -> %ls (streak=%d lockedIn=%s)\n",
+                    printf("[t=%.3fs]   lane %d press beat=%.4f -> %ls (streak=%d passing=%s)\n",
                            session.Clock().ElapsedSeconds(), lane, nextBeat, JudgementName(result),
-                           session.CurrentStreak(), session.IsLockedIn() ? "true" : "false");
+                           session.CurrentStreak(), session.IsPassing() ? "true" : "false");
                     if (result == JudgementResult::Miss)
                     {
                         if (switchedToPerfect)
@@ -256,7 +256,7 @@ int main(int argc, char** argv)
             }
         }
 
-        if (switchedToPerfect && session.IsLockedIn() && sectionIndex != targetSectionIndex)
+        if (switchedToPerfect && session.IsPassing() && sectionIndex != targetSectionIndex)
         {
             // Advanced past the target section after locking in - success,
             // stop here.

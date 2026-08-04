@@ -18,10 +18,10 @@ enum class JudgementResult
 // section - everything that's true only "while this particular section is
 // current," as distinct from ChartSection/ChartClip (immutable - exactly
 // what the .chart file says) and from a clip's own playback voice
-// (GameSession's private ClipVoice - shared across every section that ever
-// references that clip, since two sections reusing the same clip must
+// (GameSession's private ClipInstance - shared across every section that
+// ever references that clip, since two sections reusing the same clip must
 // never disagree about whether it's playing or where its groove is - see
-// ClipVoice's own comment). GameSession replaces its current instance
+// ClipInstance's own comment). GameSession replaces its current instance
 // wholesale (m_currentInstance = SectionInstance(index)) every time a new
 // section begins, so there's never any stale field left over to remember
 // to reset by hand.
@@ -29,7 +29,7 @@ enum class JudgementResult
 // A Break section gets one of these too, same as Learn - it uses the
 // pending-advance half of this state (every section schedules its own
 // advance the instant it begins) but never touches the judging half
-// (streak/isLockedIn/lane holds/judged notes all just sit at their
+// (streak/isPassing/lane holds/judged notes all just sit at their
 // default, unused values), since IsLaneJudgeable() only ever returns true
 // for a Learn section. Reset/Background sections never become "current" at
 // all (GameSession::BeginSection recurses straight through both), so
@@ -39,8 +39,11 @@ class SectionInstance
 public:
     // sectionIndex == -1 represents "no current section" (Idle, or before
     // Start()) - every other field defaults to its own "nothing has
-    // happened yet" value.
-    explicit SectionInstance(int sectionIndex = -1);
+    // happened yet" value. mode only matters for a Learn section (see
+    // ChartClip::learnMode) - it decides m_passing's starting value: false
+    // (Pass mode, matching today) or true (DontFail mode - a track starts
+    // out already passing, only a miss ever drops it to failing).
+    explicit SectionInstance(int sectionIndex = -1, LearnMode mode = LearnMode::Pass);
 
     int SectionIndex() const
     {
@@ -52,9 +55,13 @@ public:
         return m_streak;
     }
 
-    bool IsLockedIn() const
+    // Pass mode: true is a one-way latch - once reached, never reverts for
+    // the rest of this section's run. DontFail mode: reversible - a miss
+    // can drop this back to false (see RegisterMiss), and re-earning
+    // hitsRequired in a row brings it back to true.
+    bool IsPassing() const
     {
-        return m_lockedIn;
+        return m_passing;
     }
 
     bool HasPendingAdvance() const
@@ -99,20 +106,39 @@ public:
     void StartLaneHold(int lane, double startBeat, double expectedEndBeat);
     void ClearLaneHold(int lane);
 
-    // Records a hit: advances the streak (unless already locked in, where
-    // it's frozen at its lock-in value and no longer moves), and locks the
-    // section in once the streak reaches hitsRequired. Returns true the
-    // instant lock-in is newly reached this call (so the caller can react
-    // - e.g. switching the clip's own volume), false every other time.
+    // Records a hit: advances the streak (unless already passing, where
+    // it's frozen at its passing value and no longer moves - true whether
+    // that's Pass mode's permanent lock-in or DontFail mode's current
+    // passing streak), and starts passing once the streak reaches
+    // hitsRequired. Returns true the instant passing is newly (re-)reached
+    // this call (so the caller can react - e.g. switching the clip's own
+    // volume), false every other time. No logic difference between modes
+    // needed here - see m_passing's own comment.
     bool RegisterHit(int hitsRequired);
 
-    // Records a miss: a no-op once already locked in. In easy mode, the
-    // very first miss each section is instead fully forgiven (streak and
-    // consecutive-miss count both left untouched) - see the
+    // What RegisterMiss found happened - see its own comment.
+    struct MissResult
+    {
+        // kMaxConsecutiveMisses reached - same meaning, same threshold, in
+        // both modes; the caller should stop the clip's audio.
+        bool shouldStopClip = false;
+        // DontFail mode only: this section was passing, and this miss just
+        // dropped it to failing - the caller should react (e.g. revert the
+        // clip's volume, and the note lane should swap its upcoming-notes
+        // preview). Never true in Pass mode, where a miss while passing is
+        // already a no-op below.
+        bool justEnteredFailState = false;
+    };
+
+    // Records a miss: a no-op once passing, in Pass mode (frozen forever,
+    // exactly like RegisterHit). In easy mode, the very first miss each
+    // section is instead fully forgiven regardless of mode or current
+    // passing state (streak and consecutive-miss count both left
+    // untouched, and no mode-specific consequence fires either) - see the
     // m_easyGraceAvailable field comment. Otherwise resets the streak and
-    // counts toward the consecutive-miss limit; returns true the instant
-    // that limit is reached, so the caller knows to stop the clip's audio.
-    bool RegisterMiss(bool easyMode);
+    // counts toward the consecutive-miss limit; in DontFail mode, a miss
+    // while passing additionally drops back to failing.
+    MissResult RegisterMiss(bool easyMode);
 
     JudgementResult OnsetJudgement(double startBeat, int lane) const;
 
@@ -142,6 +168,7 @@ private:
     };
 
     int m_sectionIndex = -1;
+    LearnMode m_mode = LearnMode::Pass;
     int m_streak = 0;
     int m_consecutiveMisses = 0;
 
@@ -150,7 +177,7 @@ private:
     // forgiven. Never consulted when easyMode is false.
     bool m_easyGraceAvailable = true;
 
-    bool m_lockedIn = false;
+    bool m_passing = false;
     bool m_hasPendingAdvance = false;
     double m_pendingAdvanceAtSeconds = 0.0;
 

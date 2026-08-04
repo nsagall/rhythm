@@ -86,7 +86,7 @@ int main(int argc, char** argv)
     GamePhase lastPhase = GamePhase::Idle;
     int lastSection = -2;
     bool section0Seen = false;
-    bool section0LockedInEver = false;
+    bool section0PassingEver = false;
     bool section0StillPlayingAtAdvance = false;
     bool section0AdvanceObserved = false;
     int section0ClipIndex = -1;
@@ -150,9 +150,9 @@ int main(int argc, char** argv)
             }
         }
 
-        if (session.IsLockedIn() && sectionIndex == 0 && !section0LockedInEver)
+        if (session.IsPassing() && sectionIndex == 0 && !section0PassingEver)
         {
-            section0LockedInEver = true;
+            section0PassingEver = true;
             printf("[t=%.3fs] section 0 LOCKED IN (streak=%d)\n", session.Clock().ElapsedSeconds(),
                    session.CurrentStreak());
         }
@@ -220,8 +220,8 @@ int main(int argc, char** argv)
     }
 
     printf("\n=== RESULTS ===\n");
-    printf("Section 0 (played perfectly): lockedIn=%s%s advanced=%s%s clipStillPlayingAtAdvance=%s%s\n",
-           section0LockedInEver ? "true" : "false", section0LockedInEver ? "" : " ** MISMATCH - expected true **",
+    printf("Section 0 (played perfectly): passing=%s%s advanced=%s%s clipStillPlayingAtAdvance=%s%s\n",
+           section0PassingEver ? "true" : "false", section0PassingEver ? "" : " ** MISMATCH - expected true **",
            section0AdvanceObserved ? "true" : "false", section0AdvanceObserved ? "" : " ** MISMATCH - expected true **",
            section0StillPlayingAtAdvance ? "true" : "false",
            section0StillPlayingAtAdvance ? "" : " ** MISMATCH - expected true (locked in) **");

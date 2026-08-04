@@ -36,7 +36,7 @@ public:
 
     // Forwards a fresh press/release judgement to the renderer, for
     // whatever transient visual feedback it wants to show.
-    void ShowJudgement(JudgementResult result, int lane, bool lockedIn);
+    void ShowJudgement(JudgementResult result, int lane, bool passing);
 
     // Builds this frame's scene from session and renders it.
     void Draw(HDC hdc, const GameSession& session);

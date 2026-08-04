@@ -608,6 +608,21 @@ bool ChartFile::Load(const std::wstring& chartFilePath, ChartSong& outSong, std:
                     currentClip.volume = volume;
                 }
             }
+            else if (key == L"learn_mode")
+            {
+                if (value == L"pass")
+                {
+                    currentClip.learnMode = LearnMode::Pass;
+                }
+                else if (value == L"dontfail")
+                {
+                    currentClip.learnMode = LearnMode::DontFail;
+                }
+                else
+                {
+                    outErrors.push_back(L"Line " + std::to_wstring(lineNumber) + L": " + context + L": learn_mode must be 'pass' or 'dontfail', got '" + value + L"'");
+                }
+            }
             else
             {
                 outErrors.push_back(L"Line " + std::to_wstring(lineNumber) + L": unsupported field '" + key + L"' in [clip] section");

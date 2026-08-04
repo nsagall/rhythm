@@ -19,7 +19,7 @@ public:
     // Notifies the renderer of a fresh press/release judgement, for
     // whatever transient visual feedback it wants to show - a flash, a
     // ripple, nothing at all. Purely cosmetic; never affects scoring.
-    virtual void OnJudgement(JudgementResult result, int lane, bool lockedIn) = 0;
+    virtual void OnJudgement(JudgementResult result, int lane, bool passing) = 0;
 
     // Draws one frame of scene into laneRect on hdc, and advances any of
     // the renderer's own continuous animations by however much wall-clock

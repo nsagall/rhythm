@@ -128,9 +128,9 @@ void GameSession::Start()
         return;
     }
 
-    // A previous run may have left clips locked in and still looping
+    // A previous run may have left clips passing and still looping
     // (that's by design while a song is in progress/just completed - each
-    // locked-in loop keeps playing to build up the full arrangement), so a
+    // passing loop keeps playing to build up the full arrangement), so a
     // fresh start has to stop them explicitly or they'd keep playing
     // underneath the new run.
     m_audioEngine.StopAll();
@@ -346,9 +346,9 @@ void GameSession::Update()
 
     // Held-past-late-release timeout: deliberately independent of
     // phase/pending-advance, so a hold already in flight keeps resolving
-    // even if the section has since locked in, instead of being abandoned
-    // mid-air. Lane holds structurally only ever populate during a Learn
-    // section, but the play-mode check is kept anyway as defense-in-depth.
+    // even if the section has since started passing, instead of being
+    // abandoned mid-air. Lane holds structurally only ever populate during
+    // a Learn section, but the play-mode check is kept anyway as defense-in-depth.
     // Skipped entirely in easy mode: a hold there is already judged Hit at
     // press time (see OnPress), so there's nothing left to time out - it
     // just sits active until the real key-up, which OnRelease resolves as
@@ -410,7 +410,7 @@ void GameSession::Update()
             // finiteLoopCount==0 for a learn clip), so nothing about
             // playback itself needs to restart - only the section's own
             // "am I allowed to leave yet" decision repeats.
-            if (finishedSection.kind == SectionKind::Learn && !m_currentInstance.IsLockedIn())
+            if (finishedSection.kind == SectionKind::Learn && !m_currentInstance.IsPassing())
             {
                 double stemDuration = m_audioEngine.GetStemDurationSeconds(m_stemHandles[finishedSection.clipIndex]);
                 m_currentInstance.ExtendPendingAdvance(stemDuration);
@@ -419,14 +419,14 @@ void GameSession::Update()
 
             m_currentInstance.ClearPendingAdvance();
 
-            // A learn section reaching here is always locked in (see
+            // A learn section reaching here is always passing (see
             // above) - its clip already switched from init_volume to
             // volume back in RegisterHit, and keeps playing by design (to
             // build up the arrangement), so there's nothing to do for it
             // here, unlike break below.
             if (finishedSection.kind == SectionKind::Break)
             {
-                // Unlike a locked-in learn clip (which keeps playing by
+                // Unlike a passing learn clip (which keeps playing by
                 // design, to build up the arrangement), a break section
                 // is a one-off scripted interlude - stop it once its own
                 // loop_count wait completes so it doesn't drone on
@@ -571,9 +571,9 @@ bool GameSession::IsAwaitingAdvance() const
     return m_currentInstance.HasPendingAdvance();
 }
 
-bool GameSession::IsLockedIn() const
+bool GameSession::IsPassing() const
 {
-    return m_currentInstance.IsLockedIn();
+    return m_currentInstance.IsPassing();
 }
 
 double GameSession::PendingAdvanceAtSeconds() const
@@ -615,7 +615,7 @@ int GameSession::PreviewSectionIndex() const
         return -1;
     }
 
-    // A learn section that hasn't locked in yet doesn't know when it'll
+    // A learn section that isn't currently passing doesn't know when it'll
     // really advance - it might repeat any number of further loops first
     // (see Update()'s own comment) - so there's nothing legitimate to
     // preview yet: showing the *real* next clip's notes here would just
@@ -626,7 +626,7 @@ int GameSession::PreviewSectionIndex() const
     // (loop_count is fixed, not gated on any player performance), so it
     // isn't held back by this at all.
     const ChartSection& current = m_song.sections[sectionIndex];
-    if (current.kind == SectionKind::Learn && !m_currentInstance.IsLockedIn())
+    if (current.kind == SectionKind::Learn && !m_currentInstance.IsPassing())
     {
         return -1;
     }
@@ -771,14 +771,21 @@ void GameSession::RecordOnsetJudgement(double startBeat, int lane, JudgementResu
 // own kind.
 void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
 {
-    m_currentInstance = SectionInstance(sectionIndex);
+    // Resolved before constructing m_currentInstance, since the Learn
+    // clip's own learnMode decides that instance's starting passing state
+    // (see SectionInstance's own constructor comment) - irrelevant/unused
+    // for every other section kind, where Pass is just a harmless default.
+    const ChartSection& section = m_song.sections[sectionIndex];
+    LearnMode mode =
+        section.kind == SectionKind::Learn ? m_song.clips[section.clipIndex].learnMode : LearnMode::Pass;
+    m_currentInstance = SectionInstance(sectionIndex, mode);
     m_phase = GamePhase::Learning;
 
     // "The next section begins" is exactly this call - kick off whatever
     // the previous section (if it was `background`) queued, before this
     // section's own logic runs, so the two play out in parallel from here.
     // Once started, a background clip loops indefinitely - exactly like a
-    // locked-in learn clip - until a later `break`/`reset` section's
+    // passing learn clip - until a later `break`/`reset` section's
     // StopAll() (or Stop()/Start()) silences it; loop_count has no effect
     // on background sections.
     if (m_queuedBackground.clipIndex >= 0)
@@ -787,8 +794,6 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
         m_queuedBackground = QueuedBackground{};
         StartClipLoop(bgClipIndex, m_song.clips[bgClipIndex].volume);
     }
-
-    const ChartSection& section = m_song.sections[sectionIndex];
 
     switch (section.kind)
     {
@@ -847,7 +852,7 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
 
             // Unlike a learn clip (which always loops forever - it might
             // still need to keep playing past this section's own end, if
-            // locked in), a break clip never outlives its own section, so
+            // passing), a break clip never outlives its own section, so
             // its now-known loop count is handed straight to StartClipLoop:
             // the voice stops itself naturally and sample-accurately once
             // its (possibly loop-count-extended) loops are done, instead of
@@ -942,11 +947,11 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
 
             // Starts immediately and schedules its own advance right away
             // too, exactly like Break above - the section advances on this
-            // fixed schedule whether or not the player ever locks in (see
-            // RegisterHit/RegisterMiss for what locking in still does:
-            // purely the glow/confetti/volume-switch treatment, and turning
-            // off the "3 misses stops the loop" penalty - none of it
-            // affects this timing, which is already decided).
+            // fixed schedule whether or not the player ever passes (see
+            // RegisterHit/RegisterMiss for what passing still does: purely
+            // the glow/confetti/volume-switch treatment, and - in Pass mode
+            // only - turning off the "3 misses stops the loop" penalty;
+            // none of it affects this timing, which is already decided).
             double tFallSeconds = kNoteFallBeats * secondsPerBeat;
             double stemDuration = m_audioEngine.GetStemDurationSeconds(m_stemHandles[section.clipIndex]);
 
@@ -964,13 +969,15 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
 // counter, and (re)starts the current section's clip loop if it isn't
 // already playing - only actually needed to recover a clip StopClipLoop
 // silenced after 3 consecutive misses, since BeginSection already started
-// it once. Once the streak reaches the clip's hits_required, locks the
-// section in: IsLockedIn() flips true and the clip's volume switches from
-// init_volume to volume - purely a reward/feedback treatment, since the
-// section's own advance timing was already decided in BeginSection and
-// doesn't change either way. Once already locked in, the streak/miss
-// counters are left alone (frozen at their lock-in value) since they no
-// longer drive anything.
+// it once. Once the streak reaches the clip's hits_required, starts the
+// section passing: IsPassing() flips true and the clip's volume switches
+// from init_volume to volume - purely a reward/feedback treatment, since
+// the section's own advance timing was already decided in BeginSection and
+// doesn't change either way. Once already passing, the streak/miss
+// counters are left alone (frozen at their passing value) since they no
+// longer drive anything - in Pass mode that's permanent; in DontFail mode
+// a later miss (see RegisterMiss) can still drop back to failing and start
+// the streak over.
 void GameSession::RegisterHit()
 {
     const ChartSection& section = m_song.sections[m_currentInstance.SectionIndex()];
@@ -1063,13 +1070,20 @@ void GameSession::StopClipLoop(int clipIndex)
     it->second.isPlaying = false;
 }
 
-// Records a miss: resets the shared streak, and stops the current section's clip loop after 3 in a row. A no-op once already locked in - further misses shouldn't stop the clip or unfreeze the streak display once it's proven itself, though the section's own advance timing was never affected by any of this either way. In easy mode, the first miss each section is instead fully forgiven (see SectionInstance's own easy-grace comment) - streak and consecutive-miss count both left untouched, as if it never happened.
+// Records a miss: resets the shared streak, and stops the current section's clip loop after 3 in a row - unchanged in both modes. In Pass mode, a no-op once already passing - further misses shouldn't stop the clip or unfreeze the streak display once it's proven itself, though the section's own advance timing was never affected by any of this either way. In DontFail mode, a miss while passing additionally drops the section back to failing and reverts the clip's volume to init_volume (the mirror of RegisterHit's own switch to volume on newly passing). In easy mode, the first miss each section is instead fully forgiven regardless of mode (see SectionInstance's own easy-grace comment) - streak and consecutive-miss count both left untouched, and neither of the above fires, as if it never happened.
 void GameSession::RegisterMiss()
 {
-    if (m_currentInstance.RegisterMiss(m_easyMode))
+    const ChartSection& section = m_song.sections[m_currentInstance.SectionIndex()];
+    const ChartClip& clip = m_song.clips[section.clipIndex];
+
+    SectionInstance::MissResult result = m_currentInstance.RegisterMiss(m_easyMode);
+    if (result.shouldStopClip)
     {
-        int clipIndex = m_song.sections[m_currentInstance.SectionIndex()].clipIndex;
-        StopClipLoop(clipIndex);
+        StopClipLoop(section.clipIndex);
+    }
+    if (result.justEnteredFailState)
+    {
+        m_audioEngine.SetVolume(m_stemHandles[section.clipIndex], static_cast<float>(clip.initVolume));
     }
 }
 
