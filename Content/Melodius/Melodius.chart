@@ -2,7 +2,7 @@
 title = Melodius Dub
 bpm = 85
 time_signature = 4/4
-start_tolerance_ms = 100
+start_tolerance_ms = 150
 release_tolerance_ms = 400
 
 [clip]
@@ -32,10 +32,12 @@ name = bridge
 display_name = Melodica
 name = melodica
 hits_required = 24
+release_tolerance_ms = 1000
 
 [clip]
 display_name = Melodica
 name = melodica_2
+release_tolerance_ms = 1000
 
 [clip]
 display_name = Background
@@ -53,6 +55,7 @@ name = background_3
 display_name = Melodica 3
 name = melodica_3
 hits_required = 4
+release_tolerance_ms = 1000
 
 [clip]
 display_name = Piano 2
@@ -61,6 +64,7 @@ name = piano_2
 [clip]
 display_name = Melodica 4
 name = melodica_4
+release_tolerance_ms = 1000
 
 [learn]
 clip = organ

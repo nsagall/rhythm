@@ -1,31 +1,33 @@
 [song]
-title = Through the Forest
-bpm = 77
+title = Voltage Run (AI Slop)
+bpm = 128
 time_signature = 4/4
-start_tolerance_ms = 100
-release_tolerance_ms = 400
+start_tolerance_ms = 120
+release_tolerance_ms = 250
 
 [clip]
 display_name = Drum Intro
 name = drum_intro
+hits_required = 20
 
 [clip]
-display_name = Drums 1
-name = drums_1
+display_name = Full Beat
+name = drums
 
 [clip]
 display_name = Bass
 name = bass
-hits_required = 24
+hits_required = 20
 
 [clip]
-display_name = Piano
-name = piano
+display_name = Arp
+name = arp
+hits_required = 20
 
 [clip]
-display_name = Melody
-name = melody
-release_tolerance_ms = 1000
+display_name = Lead
+name = lead
+hits_required = 8
 
 [clip]
 display_name = Drums 2
@@ -33,9 +35,9 @@ name = drums_2
 hits_required = 24
 
 [clip]
-display_name = Melody 2
-name = melody_2
-release_tolerance_ms = 1000
+display_name = Lead 2
+name = lead_2
+hits_required = 10
 
 [learn]
 clip = drum_intro
@@ -43,22 +45,22 @@ clip = drum_intro
 [reset]
 
 [background]
-clip = drums_1
+clip = drums
 
 [learn]
 clip = bass
 
 [learn]
-clip = piano
+clip = arp
 
 [learn]
-clip = melody
+clip = lead
 
 [break]
-clip = piano
+clip = arp
 
 [background]
-clip = piano
+clip = arp
 
 [learn]
 clip = drums_2
@@ -67,13 +69,13 @@ clip = drums_2
 clip = bass
 
 [learn]
-clip = melody_2
+clip = lead_2
 
 [break]
-clip = piano
+clip = arp
 
 [background]
-clip = piano
+clip = arp
 
 [learn]
 clip = drum_intro
