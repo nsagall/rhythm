@@ -1,5 +1,6 @@
 #pragma once
 
+#include <unordered_map>
 #include <vector>
 
 #include "ChartFile.h"
@@ -14,6 +15,10 @@
 // delegates to ChartTiming (src/ChartTiming.h), the same functions
 // GameSession itself uses for live play, so the two can never compute
 // different answers for the same chart.
+//
+// Every ChartClip* below (Entry::clip, VoiceWindow::clip, ActiveVoice::clip)
+// points directly into the song passed to Build() - see Build()'s own
+// comment for the lifetime contract that makes this safe.
 namespace BlockSchedule
 {
 
@@ -29,22 +34,23 @@ struct Entry
 {
     int sectionIndex = 0; // index into ChartSong::sections
     SectionKind kind = SectionKind::Learn;
-    int clipIndex = -1; // index into ChartSong::clips
+    const ChartClip* clip = nullptr; // points into the ChartSong passed to Build()
 
     double sectionStartSeconds = 0.0; // == previous entry's endSeconds (0 for the first)
     // Learn and Break alike: == sectionStartSeconds. Both start their clip
     // immediately when the section begins - no press gate, no lock-in wait
     // - even on the rare chart where the same clip was already playing
-    // from an earlier, still-open section (see Build()'s comment on
-    // clipLoopStartSeconds), where it does not necessarily mean the
-    // underlying audio voice re-seeks its phase at this instant.
+    // from an earlier, still-open section (see Build()'s own
+    // ClipBuildState::loopStartSeconds comment), where it does not
+    // necessarily mean the underlying audio voice re-seeks its phase at
+    // this instant.
     double audioStartSeconds = 0.0;
     // This clip's own persistent phase reference - the wall-clock second it
     // was first ever started at, whether that was this entry or an earlier
-    // one (see Build()'s clipOriginEstablished) - not necessarily ==
-    // audioStartSeconds. Every phase/loop-boundary computation for this
-    // entry's clip is measured relative to this, not absolute second 0, so
-    // Seek() can correctly reproduce where the real, phase-seeked audio
+    // one (see Build()'s own ClipBuildState::originEstablished) - not
+    // necessarily == audioStartSeconds. Every phase/loop-boundary
+    // computation for this entry's clip is measured relative to this, not
+    // absolute second 0, so Seek() can correctly reproduce where the real, phase-seeked audio
     // voice actually is.
     double originSeconds = 0.0;
     // Learn only: the hits_required-th onset in chronological order across
@@ -77,7 +83,7 @@ struct Entry
 struct VoiceWindow
 {
     int sectionIndex = 0; // which section started this voice
-    int clipIndex = -1;
+    const ChartClip* clip = nullptr; // points into the ChartSong passed to Build()
     double startSeconds = 0.0;
     double stopSeconds = -1.0; // -1 = still playing at the end of the schedule
     // Volume before/from lockInSeconds - equal to each other (both ==
@@ -111,19 +117,29 @@ struct Schedule
 // in chronological order means "lock-in happens at the hits_required-th
 // onset" is a precise restatement of the real rule). song's clips must
 // already carry real, AudioEngine-measured stem durations in
-// stemDurationsByClipIndex (parallel to song.clips) and must already be
-// ChartTiming::ExpandLaneNotesToFillClip'd using those durations - Build()
-// does no audio I/O and no expansion itself, only the timing arithmetic
-// (see src/editor/BlockPlayer.cpp for how a fully-resolved song is
-// obtained).
-Schedule Build(const ChartSong& song, const std::vector<double>& stemDurationsByClipIndex);
+// stemDurationsByClip (keyed by each clip's own address in song.clips) and
+// must already be ChartTiming::ExpandLaneNotesToFillClip'd using those
+// durations - Build() does no audio I/O and no expansion itself, only the
+// timing arithmetic (see src/editor/BlockPlayer.cpp for how a
+// fully-resolved song is obtained).
+//
+// Lifetime contract: every pointer in the returned Schedule (Entry::clip,
+// VoiceWindow::clip, and every ActiveVoice::clip a later Seek() call
+// produces) points directly into song.clips. song must outlive the
+// Schedule, and must not be reassigned or resized while the Schedule is
+// still in use - callers that rebuild their ChartSong (e.g. after an edit)
+// must rebuild the Schedule from it at the same time, before anything reads
+// the old one again. See BlockPlayer::RebuildSchedule for how that's kept
+// true in practice (song and its Schedule are sibling members, replaced
+// together in one function, never independently).
+Schedule Build(const ChartSong& song, const std::unordered_map<const ChartClip*, double>& stemDurationsByClip);
 
 // One clip that should currently be audible, as reported by SeekResult -
-// clipIndex plus everything BlockPlayer::ApplyAudioForPosition needs to
+// clip plus everything BlockPlayer::ApplyAudioForPosition needs to
 // actually reproduce that voice (volume, phase).
 struct ActiveVoice
 {
-    int clipIndex = -1;
+    const ChartClip* clip = nullptr; // points into the ChartSong passed to Build()
     double volume = 1.0;
     // This clip's own persistent phase reference - see
     // VoiceWindow::originSeconds - needed by BlockPlayer::ApplyAudioForPosition

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <unordered_map>
 #include <vector>
 
 #include "GameSession.h"
@@ -37,22 +38,26 @@ private:
     static std::vector<SceneNote> NotesInRange(int lane, double originBeat, double fromBeat, double toBeat,
                                                 const std::vector<LaneNote>& notes, double spanBeats);
 
-    // Returns clip's position in ChartSong::clips, or -1 for nullptr -
-    // stable for the whole session, since m_song is only ever reassigned
-    // wholesale by LoadChart, never mutated element-by-element in place.
-    static int ClipIndex(const GameSession& session, const ChartClip* clip);
+    // Maps each of session.Song().clips' own addresses to its matching
+    // entry in scene.clipInstances - built once per BuildScene call (right
+    // alongside clipInstances itself) so every other lookup in this class
+    // can go straight from a ChartClip* to its ClipInstance* by following
+    // that pointer, instead of converting it to a position and indexing
+    // back into the vector.
+    using ClipLookup = std::unordered_map<const ChartClip*, ClipInstance*>;
 
     // Appends drawClip's notes into scene.notes, resolving each one's
     // NoteVisualState from session's judging when judged is true (held/
     // hit/miss/normal), or leaving every note Normal for an unjudged
     // preview pass - and pointing each one at drawClip's own entry in
-    // scene.clipInstances (updating that entry's lockedIn flag to match
-    // this pass). fromBeat is a shared per-lane start point, except a
-    // negative sentinel means "each lane's own first required note"
+    // clipLookup (updating that entry's lockedIn flag to match this pass).
+    // fromBeat is a shared per-lane start point, except a negative
+    // sentinel means "each lane's own first required note"
     // (PreviewFirstOnsetBeatForLane) - used for a not-yet-started clip, so
     // its lanes reveal one at a time instead of all at once.
     void CollectNotes(const GameSession& session, const ChartClip* drawClip, double originBeat, bool judged,
-                       double fromBeat, double upperBoundBeat, NoteLaneScene& scene) const;
+                       double fromBeat, double upperBoundBeat, const ClipLookup& clipLookup,
+                       NoteLaneScene& scene) const;
 
     bool m_prevLockedIn = false;
     bool m_prevNotesHandoff = false;

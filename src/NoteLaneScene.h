@@ -37,11 +37,6 @@ constexpr double kBeatsBehind = 1.0;
 // agrees about it.
 struct ClipInstance
 {
-    // This clip's stable position in ChartSong::clips, or -1 for the
-    // "no clip" placeholder a null SceneNote::clip/NoteLaneScene::
-    // primaryClip stands in for.
-    int index = -1;
-
     // This clip's accent color - part of its identity (see ClipColor.h),
     // resolved once when NoteLaneModel builds this instance, so a renderer
     // never needs its own palette or index-to-color scheme just to draw a
@@ -101,15 +96,16 @@ struct NoteLaneScene
     double nowBeat = 0.0;
     int beatsPerBar = 4;
 
-    // One entry per clip in the song, index-for-index with ChartSong::
-    // clips - every SceneNote::clip (in notes/explodingNotes) and
-    // primaryClip below point somewhere into this array. NoteLaneModel
-    // sizes and fully populates this once, before taking any pointer into
-    // it, and never resizes it again for the rest of that BuildScene call
-    // - a std::vector's element addresses stay stable across everything
-    // except a resize, and this one never gets one after that point, so
-    // those pointers stay valid for exactly as long as this NoteLaneScene
-    // does (including surviving the move out of BuildScene's return).
+    // One entry per clip in the song - every SceneNote::clip (in notes/
+    // explodingNotes) and primaryClip below point somewhere into this
+    // array (NoteLaneModel finds the right one via its own private
+    // ChartClip*-keyed lookup, not by position - see NoteLaneModel.cpp).
+    // Sized and fully populated once, before taking any pointer into it,
+    // and never resized again for the rest of that BuildScene call - a
+    // std::vector's element addresses stay stable across everything except
+    // a resize, and this one never gets one after that point, so those
+    // pointers stay valid for exactly as long as this NoteLaneScene does
+    // (including surviving the move out of BuildScene's return).
     std::vector<ClipInstance> clipInstances;
 
     // Rails/receptors' base color/identity - nullptr means no current/

@@ -9,7 +9,7 @@
 // Shared (not NoteLaneGdiRenderer-private) so every renderer gets the same
 // answer for the same clip for free; a renderer that wants a different
 // scheme entirely is still free to ignore ClipInstance::color and derive
-// its own from ClipInstance::index instead.
+// its own some other way.
 namespace ClipColor
 {
 

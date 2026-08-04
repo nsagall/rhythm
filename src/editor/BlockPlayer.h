@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "AudioEngine.h"
@@ -108,9 +109,9 @@ private:
     void ApplyAudioForPosition();
     // Looks up a stem by the *editor's* stable clip id (m_stems' own key) -
     // only needed while re-resolving in RebuildSchedule, to populate
-    // m_stemHandlesBySongClipIndex (indexed by position in m_song.clips
-    // instead, which everything else - BlockSchedule::Entry::clipIndex
-    // included - uses directly with no further lookup needed).
+    // m_stemHandlesByClip (keyed by each clip's own address in
+    // m_song.clips instead, which everything else - BlockSchedule::
+    // Entry::clip included - uses directly with no further lookup needed).
     StemHandle GetStemForEditorClipId(int editorClipId) const;
 
     enum class State
@@ -134,18 +135,24 @@ private:
     AudioEngine& m_audioEngine;
     std::vector<ClipStem> m_stems; // keyed by EditorClip::id
 
+    // m_song and m_schedule are only ever replaced together, in
+    // RebuildSchedule() - see BlockSchedule::Build's own lifetime comment
+    // for why that's what makes every ChartClip* below (m_schedule's own,
+    // m_stemHandlesByClip's keys, m_activeVoiceClips' entries) safe to hold
+    // onto: they all point into m_song.clips, which never changes out from
+    // under them except as part of that same rebuild.
     ChartSong m_song;                  // fully resolved (post ExpandLaneNotesToFillClip)
     BlockSchedule::Schedule m_schedule; // built from m_song
-    std::vector<StemHandle> m_stemHandlesBySongClipIndex; // parallel to m_song.clips
+    std::unordered_map<const ChartClip*, StemHandle> m_stemHandlesByClip; // keyed by address in m_song.clips
 
     State m_state = State::Stopped;
     bool m_loopWholeSong = false;
     double m_positionSeconds = 0.0;
 
-    // Which clips (by index into m_song.clips) are currently audible, so
-    // ApplyAudioForPosition only starts/stops a voice when its active
-    // state actually changed - unified across Learn/Break/Background, see
-    // BlockSchedule::VoiceWindow's own comment for why they all behave the
-    // same way once started.
-    std::vector<int> m_activeVoiceClipIndices;
+    // Which clips are currently audible, so ApplyAudioForPosition only
+    // starts/stops a voice when its active state actually changed -
+    // unified across Learn/Break/Background, see BlockSchedule::
+    // VoiceWindow's own comment for why they all behave the same way once
+    // started.
+    std::vector<const ChartClip*> m_activeVoiceClips;
 };

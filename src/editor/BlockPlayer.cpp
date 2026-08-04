@@ -93,14 +93,22 @@ bool BlockPlayer::RebuildSchedule(const EditorDocument& doc, std::vector<std::ws
         return false;
     }
 
-    std::vector<double> stemDurations(song.clips.size(), 0.0);
-    std::vector<StemHandle> stemHandles(song.clips.size());
+    // Validate and mutate (ExpandLaneNotesToFillClip) on the *local* song
+    // first, matching doc.clips by position (ValidateDocument preserves
+    // that order) - not yet on m_song, so a validation failure below can
+    // still return false leaving m_song/m_schedule exactly as they were
+    // (see this function's own header comment on why that matters). The
+    // per-clip results are kept in these two position-indexed vectors only
+    // long enough to hand off to the pointer-keyed maps below, once
+    // m_song.clips has its own final, stable addresses.
+    std::vector<double> durationsByPosition(song.clips.size(), 0.0);
+    std::vector<StemHandle> handlesByPosition(song.clips.size());
     for (size_t i = 0; i < song.clips.size() && i < doc.clips.size(); ++i)
     {
         StemHandle handle = GetStemForEditorClipId(doc.clips[i].id);
-        stemHandles[i] = handle;
+        handlesByPosition[i] = handle;
         double duration = handle.IsValid() ? m_audioEngine.GetStemDurationSeconds(handle) : 0.0;
-        stemDurations[i] = duration;
+        durationsByPosition[i] = duration;
 
         ChartClip& clip = song.clips[i];
         if (clip.hasMidi)
@@ -123,8 +131,22 @@ bool BlockPlayer::RebuildSchedule(const EditorDocument& doc, std::vector<std::ws
     }
 
     m_song = std::move(song);
-    m_stemHandlesBySongClipIndex = std::move(stemHandles);
-    m_schedule = BlockSchedule::Build(m_song, stemDurations);
+
+    // Now build the pointer-keyed maps everything else uses, from
+    // m_song.clips' own final addresses - not from the pre-move `song`
+    // (which would in fact still be safe, since moving a std::vector never
+    // reallocates its buffer, but reading straight from m_song avoids
+    // needing to lean on that at all).
+    m_stemHandlesByClip.clear();
+    std::unordered_map<const ChartClip*, double> stemDurationsByClip;
+    for (size_t i = 0; i < m_song.clips.size() && i < handlesByPosition.size(); ++i)
+    {
+        const ChartClip* clip = &m_song.clips[i];
+        m_stemHandlesByClip[clip] = handlesByPosition[i];
+        stemDurationsByClip[clip] = durationsByPosition[i];
+    }
+
+    m_schedule = BlockSchedule::Build(m_song, stemDurationsByClip);
     return true;
 }
 
@@ -150,14 +172,14 @@ void BlockPlayer::Pause()
         return;
     }
     m_audioEngine.StopAll();
-    m_activeVoiceClipIndices.clear();
+    m_activeVoiceClips.clear();
     m_state = State::Paused;
 }
 
 void BlockPlayer::Stop()
 {
     m_audioEngine.StopAll();
-    m_activeVoiceClipIndices.clear();
+    m_activeVoiceClips.clear();
     m_positionSeconds = 0.0;
     m_state = State::Stopped;
 }
@@ -245,14 +267,13 @@ void BlockPlayer::ApplyAudioForPosition()
     BlockSchedule::SeekResult result = BlockSchedule::Seek(m_schedule, m_positionSeconds);
 
     // Stop voices that are no longer supposed to be active.
-    for (int clipIndex : m_activeVoiceClipIndices)
+    for (const ChartClip* clip : m_activeVoiceClips)
     {
         bool stillActive = std::any_of(result.activeVoices.begin(), result.activeVoices.end(),
-                                        [clipIndex](const BlockSchedule::ActiveVoice& v)
-                                        { return v.clipIndex == clipIndex; });
+                                        [clip](const BlockSchedule::ActiveVoice& v) { return v.clip == clip; });
         if (!stillActive)
         {
-            m_audioEngine.Stop(m_stemHandlesBySongClipIndex[static_cast<size_t>(clipIndex)]);
+            m_audioEngine.Stop(m_stemHandlesByClip.at(clip));
         }
     }
 
@@ -262,25 +283,24 @@ void BlockPlayer::ApplyAudioForPosition()
     // particular voice window happened to open). Already-active voices
     // just get their volume kept in sync, for a Learn voice's own
     // init_volume -> volume switch at its lock-in instant.
-    std::vector<int> newActive;
+    std::vector<const ChartClip*> newActive;
     newActive.reserve(result.activeVoices.size());
     for (const BlockSchedule::ActiveVoice& voice : result.activeVoices)
     {
-        newActive.push_back(voice.clipIndex);
-        bool wasActive = std::find(m_activeVoiceClipIndices.begin(), m_activeVoiceClipIndices.end(),
-                                    voice.clipIndex) != m_activeVoiceClipIndices.end();
-        StemHandle stem = m_stemHandlesBySongClipIndex[static_cast<size_t>(voice.clipIndex)];
+        newActive.push_back(voice.clip);
+        bool wasActive =
+            std::find(m_activeVoiceClips.begin(), m_activeVoiceClips.end(), voice.clip) != m_activeVoiceClips.end();
+        StemHandle stem = m_stemHandlesByClip.at(voice.clip);
         if (!wasActive)
         {
             double stemDuration = m_audioEngine.GetStemDurationSeconds(stem);
-            const ChartClip& clip = m_song.clips[static_cast<size_t>(voice.clipIndex)];
             // ChartTiming::ComputeClipPhaseSeconds, matching GameSession's
             // own real-game phase-seek exactly - see its doc comment for
             // why this must use the clip's beat-based pattern length
             // (spanBeats), not the audio file's own raw measured duration.
             // voice.originSeconds (not 0) is this clip's own persistent
             // phase reference - see BlockSchedule::VoiceWindow::originSeconds.
-            double phase = ChartTiming::ComputeClipPhaseSeconds(voice.originSeconds, m_positionSeconds, clip,
+            double phase = ChartTiming::ComputeClipPhaseSeconds(voice.originSeconds, m_positionSeconds, *voice.clip,
                                                                   stemDuration, m_song.bpm);
             m_audioEngine.StartLooping(stem, phase, static_cast<float>(voice.volume), 0);
         }
@@ -290,7 +310,7 @@ void BlockPlayer::ApplyAudioForPosition()
         }
     }
 
-    m_activeVoiceClipIndices = std::move(newActive);
+    m_activeVoiceClips = std::move(newActive);
 }
 
 bool BlockPlayer::IsPlaying() const
@@ -318,7 +338,7 @@ std::wstring BlockPlayer::NowPlayingText() const
 
     const BlockSchedule::Entry& entry = m_schedule.entries[static_cast<size_t>(result.entryIndex)];
     const wchar_t* kindName = entry.kind == SectionKind::Break ? L"Break" : L"Learn";
-    const ChartClip& clip = m_song.clips[static_cast<size_t>(entry.clipIndex)];
+    const ChartClip& clip = *entry.clip;
 
     std::wstring text = clip.displayName + L", " + kindName + L" (#" + std::to_wstring(result.entryIndex + 1) +
                          L" of " + std::to_wstring(m_schedule.entries.size()) + L")";
@@ -332,9 +352,9 @@ std::wstring BlockPlayer::NowPlayingText() const
         text += L" | also playing:";
         for (const BlockSchedule::ActiveVoice& voice : result.activeVoices)
         {
-            if (voice.clipIndex != entry.clipIndex)
+            if (voice.clip != entry.clip)
             {
-                text += L" " + m_song.clips[static_cast<size_t>(voice.clipIndex)].displayName;
+                text += L" " + voice.clip->displayName;
             }
         }
     }
