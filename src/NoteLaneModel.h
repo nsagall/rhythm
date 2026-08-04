@@ -47,7 +47,7 @@ private:
     // stable for the whole session, since m_song is only ever reassigned
     // wholesale by LoadChart, never mutated element-by-element in place. A
     // renderer resolves this to an actual color; this class never does.
-    static int InstrumentIndexForClip(const GameSession& session, const ChartClip* clip);
+    static int ClipIndex(const GameSession& session, const ChartClip* clip);
 
     // Appends drawClip's notes into outNotes, resolving each one's
     // NoteVisualState from session's judging when judged is true (held/

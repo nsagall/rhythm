@@ -7,9 +7,9 @@
 // later means only touching this file plus MainWindow's key table.
 constexpr int kLaneCount = 4;
 
-// The exact MIDI note numbers read out of an instrument's midi_file, left
+// The exact MIDI note numbers read out of a clip's midi_file, left
 // to right, lane 0..3 - all other note numbers in the file are ignored.
-// This is a single global constant, not per-chart/per-instrument
+// This is a single global constant, not per-chart/per-clip
 // configurable. C4/D4/E4/F4 - but note Ableton Live (the DAW used to
 // author this project's charts) numbers octaves one lower than the
 // "middle C = C4" convention most other software/MIDI docs use, so

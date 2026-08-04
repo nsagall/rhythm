@@ -19,7 +19,7 @@ public:
     double BeatPosition() const;
 
     // Seconds until the next bar boundary, for quantizing when a newly
-    // locked-in instrument should start looping.
+    // locked-in clip should start looping.
     double SecondsToNextBar(int beatsPerBar) const;
 
     // Nudges the clock's anchor so ElapsedSeconds() matches a known-good

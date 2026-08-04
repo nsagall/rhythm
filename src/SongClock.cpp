@@ -25,7 +25,7 @@ double SongClock::BeatPosition() const
     return ElapsedSeconds() / secondsPerBeat;
 }
 
-// Seconds until the next bar boundary, for quantizing when a newly locked-in instrument should start looping.
+// Seconds until the next bar boundary, for quantizing when a newly locked-in clip should start looping.
 double SongClock::SecondsToNextBar(int beatsPerBar) const
 {
     double beat = BeatPosition();

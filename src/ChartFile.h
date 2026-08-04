@@ -51,7 +51,7 @@ struct ChartClip
 // Which of the four block kinds a section is.
 enum class SectionKind
 {
-    Learn,      // [learn]: judge presses/releases against the clip, exactly like today's single-instrument flow
+    Learn,      // [learn]: judge presses/releases against the clip, exactly like today's single-clip flow
     Break,      // [break]: stop everything else playing, play this clip, block until loop_count loops finish
     Reset,      // [reset]: stop everything else playing, then advance immediately (a silence gate, no clip)
     Background, // [background]: queue this clip to start playing (without stopping anything) when the *next* section begins

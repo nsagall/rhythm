@@ -63,7 +63,7 @@ std::vector<NoteLaneModel::BeatRange> NoteLaneModel::NotesInRange(double originB
     return result;
 }
 
-int NoteLaneModel::InstrumentIndexForClip(const GameSession& session, const ChartClip* clip)
+int NoteLaneModel::ClipIndex(const GameSession& session, const ChartClip* clip)
 {
     if (clip == nullptr)
     {
@@ -86,7 +86,7 @@ void NoteLaneModel::CollectNotes(const GameSession& session, const ChartClip* dr
     // of its notes gets a supplementary "this track has already locked in"
     // cue stamped on, independent of state/color.
     bool lockedIn = judged && session.IsLockedIn();
-    int instrumentIndex = InstrumentIndexForClip(session, drawClip);
+    int clipIndex = ClipIndex(session, drawClip);
 
     for (int lane = 0; lane < kLaneCount; ++lane)
     {
@@ -130,11 +130,11 @@ void NoteLaneModel::CollectNotes(const GameSession& session, const ChartClip* dr
             sceneNote.lane = lane;
             sceneNote.startBeat = note.startBeat;
             sceneNote.durationBeats = note.durationBeats;
-            sceneNote.instrumentIndex = instrumentIndex;
+            sceneNote.clipIndex = clipIndex;
             sceneNote.lockedIn = lockedIn;
 
             // Upcoming notes stay Normal (a renderer colors that by
-            // instrumentIndex). The instant a press starts a note
+            // clipIndex). The instant a press starts a note
             // correctly (within tolerance) it becomes Held and stays that
             // way through the hold; a release that's too early/late (or a
             // press-window timeout with no press at all) resolves it to
@@ -187,7 +187,7 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
     // if there is one (Learn or Break alike; CurrentClip() is non-null for
     // both), otherwise whatever's about to start (the count-in, or a
     // Reset's own zero-time gap).
-    scene.primaryInstrumentIndex = InstrumentIndexForClip(session, clip ? clip : session.PreviewClip());
+    scene.primaryClipIndex = ClipIndex(session, clip ? clip : session.PreviewClip());
 
     // A learn section's dots keep coming (and being judged) until
     // nextClipShowing flips true - either at the scheduled advance itself,
@@ -203,7 +203,7 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
     // note judged past that point might belong to a repeat that never
     // plays, since the section could lock in there instead of repeating
     // (see GameSession::Update). The resulting gap is filled back in,
-    // unjudged, by the self-repeat/next-instrument preview passes below.
+    // unjudged, by the self-repeat/next-clip preview passes below.
     double notesUpperBoundBeat = scene.nowBeat + kBeatsAhead;
 
     if (isLearnSection)
@@ -255,7 +255,7 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
 
     if ((scene.justHandedOff || scene.justLockedIn) && clip)
     {
-        int explosionInstrumentIndex = InstrumentIndexForClip(session, clip);
+        int explosionClipIndex = ClipIndex(session, clip);
         double originBeat = session.CurrentClipOriginBeat();
 
         auto addExplodingRange = [&](double fromBeat, double toBeat)
@@ -269,7 +269,7 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
                     sceneNote.lane = lane;
                     sceneNote.startBeat = note.startBeat;
                     sceneNote.durationBeats = note.durationBeats;
-                    sceneNote.instrumentIndex = explosionInstrumentIndex;
+                    sceneNote.clipIndex = explosionClipIndex;
                     scene.explodingNotes.push_back(sceneNote);
                 }
             }

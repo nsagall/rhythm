@@ -7,9 +7,9 @@
 #include <vector>
 
 // A distinct type for referring to a loaded stem, so it can't be silently
-// mixed up at compile time with other unrelated integers (e.g. an
-// instrument index into a chart, which is a very easy accidental swap
-// since both are small ints that are often numerically equal).
+// mixed up at compile time with other unrelated integers (e.g. a clip
+// index into a chart, which is a very easy accidental swap since both are
+// small ints that are often numerically equal).
 struct StemHandle
 {
     int value = -1;
@@ -30,7 +30,7 @@ inline bool operator!=(StemHandle a, StemHandle b)
     return !(a == b);
 }
 
-// Wraps XAudio2: loads WAV stems (each a full instrument loop) and
+// Wraps XAudio2: loads WAV stems (each one clip's full loop) and
 // starts/stops them playing, seeking to the correct phase so a loop
 // entering mid-song stays in sync with the beat grid. All calls are
 // synchronous and safe to make from the UI thread - XAudio2 runs its own

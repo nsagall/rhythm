@@ -32,7 +32,7 @@ enum class JudgementResult
 // judging thresholds):
 //   - Learn ([learn]): judges key presses/releases against the clip's
 //     MIDI-derived pattern (via SongClock), exactly as a lone "learn one
-//     instrument at a time" flow always has. Each of the kLaneCount lanes
+//     clip at a time" flow always has. Each of the kLaneCount lanes
 //     tracks its own note sequence completely independently - its own
 //     next-expected-note pointer, its own press/release judging, its own
 //     retry-on-mistimed-press behavior - the lanes share nothing but the

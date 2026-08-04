@@ -58,14 +58,14 @@ constexpr COLORREF kBorderColor = RGB(120, 90, 190);
 constexpr COLORREF kTextColor = RGB(255, 250, 240);
 constexpr COLORREF kStreakColor = RGB(255, 205, 70); // still used as one of the confetti burst's colors
 
-// One accent color per *instrument* (clip), not per lane - a curated
-// "candy" palette rather than a literal rainbow, so it reads as matched
-// instead of clashing. Avoids red/green so a clip's own color is never
-// mistaken for the kNoteColorHit/kNoteColorMiss flash; entry 0 is pushed
-// toward magenta rather than a redder hue so it doesn't read as a
-// near-miss of the miss-red. Indexed by SceneNote::instrumentIndex; cycles
-// if a chart has more clips than colors here.
-constexpr COLORREF kInstrumentPalette[] = {
+// One accent color per clip, not per lane - a curated "candy" palette
+// rather than a literal rainbow, so it reads as matched instead of
+// clashing. Avoids red/green so a clip's own color is never mistaken for
+// the kNoteColorHit/kNoteColorMiss flash; entry 0 is pushed toward magenta
+// rather than a redder hue so it doesn't read as a near-miss of the
+// miss-red. Indexed by SceneNote::clipIndex; cycles if a chart has more
+// clips than colors here.
+constexpr COLORREF kClipPalette[] = {
     RGB(255, 70, 235),  // magenta
     RGB(56, 219, 255),  // electric cyan
     RGB(255, 205, 70),  // gold
@@ -75,13 +75,13 @@ constexpr COLORREF kInstrumentPalette[] = {
     RGB(255, 170, 40),  // amber
     RGB(130, 110, 255), // periwinkle
 };
-constexpr int kInstrumentPaletteSize = sizeof(kInstrumentPalette) / sizeof(kInstrumentPalette[0]);
+constexpr int kClipPaletteSize = sizeof(kClipPalette) / sizeof(kClipPalette[0]);
 
 // Shown for the rails/receptors whenever there's no current or preview
-// instrument to color them by (Idle before a chart's loaded, or Complete)
-// - a dim, desaturated neutral rather than any real instrument's own
-// color, so an empty lane reads as "nothing playing" rather than implying
-// a specific instrument that isn't actually there.
+// clip to color them by (Idle before a chart's loaded, or Complete) - a
+// dim, desaturated neutral rather than any real clip's own color, so an
+// empty lane reads as "nothing playing" rather than implying a specific
+// clip that isn't actually there.
 constexpr COLORREF kNeutralClipColor = RGB(150, 150, 170);
 
 // Pass/fail feedback: saturated, high-contrast green/red, pushed toward
@@ -93,8 +93,8 @@ constexpr COLORREF kNoteColorHit = RGB(40, 235, 80);
 constexpr COLORREF kNoteColorMiss = RGB(255, 30, 30);
 
 // Palette confetti pieces are drawn from at lock-in - a small fixed set of
-// "party colors" of its own, deliberately independent of any instrument's
-// color (this is a generic celebration, not an identity cue).
+// "party colors" of its own, deliberately independent of any clip's color
+// (this is a generic celebration, not an identity cue).
 constexpr COLORREF kConfettiPalette[] = {
     RGB(255, 70, 235), RGB(56, 219, 255), RGB(255, 205, 70), RGB(190, 140, 255), kStreakColor, RGB(255, 255, 255),
 };
@@ -211,16 +211,16 @@ int NoteLaneGdiRenderer::YForBeatsFromNow(RECT laneRect, double beatsFromNow) co
     return laneRect.top + static_cast<int>((kBeatsAhead - beatsFromNow) * PixelsPerBeat(laneRect));
 }
 
-COLORREF NoteLaneGdiRenderer::ColorForInstrument(int instrumentIndex) const
+COLORREF NoteLaneGdiRenderer::ColorForClip(int clipIndex) const
 {
-    if (instrumentIndex < 0)
+    if (clipIndex < 0)
     {
         return kNeutralClipColor;
     }
-    return kInstrumentPalette[static_cast<size_t>(instrumentIndex) % kInstrumentPaletteSize];
+    return kClipPalette[static_cast<size_t>(clipIndex) % kClipPaletteSize];
 }
 
-COLORREF NoteLaneGdiRenderer::ColorForNote(NoteVisualState state, int instrumentIndex) const
+COLORREF NoteLaneGdiRenderer::ColorForNote(NoteVisualState state, int clipIndex) const
 {
     switch (state)
     {
@@ -231,14 +231,14 @@ COLORREF NoteLaneGdiRenderer::ColorForNote(NoteVisualState state, int instrument
             return kNoteColorMiss;
         case NoteVisualState::Normal:
         default:
-            return ColorForInstrument(instrumentIndex);
+            return ColorForClip(clipIndex);
     }
 }
 
 // Returns a solid brush for `color`, creating it once and reusing it for
 // this renderer's lifetime - every note/receptor/ripple/confetti piece
 // redraws every single frame (up to 60 times a second) from a small,
-// bounded palette (instrument colors, hit/miss, and their Darken()/
+// bounded palette (clip colors, hit/miss, and their Darken()/
 // Lighten() derivatives), so creating and immediately destroying a fresh
 // HBRUSH for each one would be pure per-frame GDI churn for no benefit.
 HBRUSH NoteLaneGdiRenderer::CachedSolidBrush(COLORREF color)
@@ -519,9 +519,9 @@ void NoteLaneGdiRenderer::DrawMeasureLines(HDC hdc, RECT laneRect, const NoteLan
     }
 }
 
-// A faint glowing rail down each column, in the current/upcoming
-// instrument's own color, so every lane has a visible identity even where
-// no notes are currently on screen.
+// A faint glowing rail down each column, in the current/upcoming clip's
+// own color, so every lane has a visible identity even where no notes are
+// currently on screen.
 void NoteLaneGdiRenderer::DrawRails(HDC hdc, RECT laneRect, COLORREF primaryColor)
 {
     int lineY = LineY(laneRect);
@@ -556,7 +556,7 @@ void NoteLaneGdiRenderer::DrawReceptors(HDC hdc, RECT laneRect, const NoteLaneSc
     }
 }
 
-// Draws every note in scene.notes: upcoming notes in their own instrument
+// Draws every note in scene.notes: upcoming notes in their own clip
 // color; a held/hit note in kNoteColorHit; a missed note in kNoteColorMiss
 // - both then hold for the rest of the note's time on screen, matching the
 // real outcome rather than fading back to Normal. Judged hit/miss/held
@@ -580,7 +580,7 @@ void NoteLaneGdiRenderer::DrawNotes(HDC hdc, RECT laneRect, const NoteLaneScene&
             continue;
         }
 
-        COLORREF color = ColorForNote(note.state, note.instrumentIndex);
+        COLORREF color = ColorForNote(note.state, note.clipIndex);
         bool emphasisGlow = note.state != NoteVisualState::Normal;
 
         DrawNoteBar(hdc, laneX, yTop, yBottom, barHalfWidth, color, note.lockedIn);
@@ -742,7 +742,7 @@ void NoteLaneGdiRenderer::SpawnExplosion(RECT laneRect, const NoteLaneScene& sce
         {
             continue;
         }
-        COLORREF explosionColor = ColorForInstrument(note.instrumentIndex);
+        COLORREF explosionColor = ColorForClip(note.clipIndex);
         for (int p = 0; p < kExplosionParticlesPerNote; ++p)
         {
             double angle = PseudoRandom(particleSeed++) * 6.283185307;
@@ -804,7 +804,7 @@ void NoteLaneGdiRenderer::Draw(HDC hdc, RECT laneRect, const NoteLaneScene& scen
 
     DrawMeasureLines(hdc, laneRect, scene);
 
-    COLORREF primaryColor = ColorForInstrument(scene.primaryInstrumentIndex);
+    COLORREF primaryColor = ColorForClip(scene.primaryClipIndex);
     DrawRails(hdc, laneRect, primaryColor);
     DrawReceptors(hdc, laneRect, scene, primaryColor);
 

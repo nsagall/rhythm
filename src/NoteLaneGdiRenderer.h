@@ -96,8 +96,8 @@ private:
     int LaneCenterX(RECT laneRect, int lane) const;
     int YForBeatsFromNow(RECT laneRect, double beatsFromNow) const;
 
-    COLORREF ColorForInstrument(int instrumentIndex) const;
-    COLORREF ColorForNote(NoteVisualState state, int instrumentIndex) const;
+    COLORREF ColorForClip(int clipIndex) const;
+    COLORREF ColorForNote(NoteVisualState state, int clipIndex) const;
 
     HBRUSH CachedSolidBrush(COLORREF color);
     HPEN CachedSolidPen(int width, COLORREF color);

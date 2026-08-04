@@ -5,7 +5,7 @@
 
 #include "LaneConfig.h"
 
-// One note extracted from an instrument's MIDI file for a single lane:
+// One note extracted from a clip's MIDI file for a single lane:
 // where it starts and how long it lasts, both in beats (quarter notes) -
 // ticks convert to beats via the file's own division only; no tempo
 // meta-events are read or applied anywhere, matching how quarter/eighth/
@@ -17,7 +17,7 @@ struct LaneNote
 };
 
 // Every lane's notes (independently sorted by startBeat) plus the file's
-// overall length in beats - this becomes the instrument's spanBeats, so a
+// overall length in beats - this becomes the clip's spanBeats, so a
 // repeating pattern loops on the author's own bar boundary instead of
 // shrinking to "last note's end" and swallowing trailing rest space.
 struct MidiLaneData

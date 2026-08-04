@@ -25,7 +25,7 @@ constexpr double kBeatsBehind = 1.0;
 // GameSession's judging for it.
 enum class NoteVisualState
 {
-    Normal, // not yet interacted with - a renderer colors this by instrumentIndex
+    Normal, // not yet interacted with - a renderer colors this by clipIndex
     Held,   // press judged correct, hold in progress or just resolved
     Hit,    // judged correct
     Miss,   // judged incorrect
@@ -42,7 +42,7 @@ struct SceneNote
     // This note's clip's stable position in ChartSong::clips, or -1 for
     // none - a renderer resolves this to an actual color via its own
     // palette, only consulted when state == Normal.
-    int instrumentIndex = -1;
+    int clipIndex = -1;
     // Whether this note's track has locked in - a renderer-chosen
     // supplementary cue (e.g. a glow outline), independent of state/color.
     bool lockedIn = false;
@@ -64,10 +64,10 @@ struct NoteLaneScene
     double nowBeat = 0.0;
     int beatsPerBar = 4;
 
-    // Rails/receptors' base color, as an instrument index (see
-    // SceneNote::instrumentIndex) - -1 means no current/preview instrument
-    // (Idle or Complete), which a renderer should show as a neutral color.
-    int primaryInstrumentIndex = -1;
+    // Rails/receptors' base color, as a clip index (see
+    // SceneNote::clipIndex) - -1 means no current/preview clip (Idle or
+    // Complete), which a renderer should show as a neutral color.
+    int primaryClipIndex = -1;
 
     SceneReceptor receptors[kLaneCount];
     std::vector<SceneNote> notes;
