@@ -157,6 +157,7 @@ bool LoadIntoDocument(const std::wstring& chartFilePath, EditorDocument& outDoc,
         }
         editorClip.spanBeats = clip.spanBeats;
         editorClip.hitsRequired = clip.hitsRequired;
+        editorClip.learnMode = clip.learnMode;
         // "Equals the song default" heuristic: ChartFile::Load assigns a
         // non-overriding clip's tolerance from song.startToleranceMs
         // verbatim, so an unset override is bit-identical to the song
@@ -212,6 +213,10 @@ std::wstring SerializeToText(const EditorDocument& doc)
         if (clip.hitsRequired != 16)
         {
             out += L"hits_required = " + std::to_wstring(clip.hitsRequired) + L"\r\n";
+        }
+        if (clip.learnMode != LearnMode::Pass)
+        {
+            out += L"learn_mode = dontfail\r\n";
         }
         if (clip.startToleranceMs.isOverridden)
         {
