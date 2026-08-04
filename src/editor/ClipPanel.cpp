@@ -282,6 +282,23 @@ void ClipPanel::DrawInspector(EditorDocument& doc, HWND owner)
         MarkDirty(doc);
     }
 
+    static const char* kLearnModeNames[] = {"Pass", "Don't Fail"};
+    int learnModeIndex = clip->learnMode == LearnMode::DontFail ? 1 : 0;
+    if (ImGui::Combo("Learn Mode", &learnModeIndex, kLearnModeNames, 2))
+    {
+        clip->learnMode = learnModeIndex == 1 ? LearnMode::DontFail : LearnMode::Pass;
+        MarkDirty(doc);
+    }
+    if (ImGui::IsItemHovered())
+    {
+        ImGui::SetTooltip(
+            "Pass: a streak of Hits Required correct hits in a row locks in\n"
+            "permanently - once reached, further misses never un-reach it.\n"
+            "Don't Fail: the same streak is reversible - any miss drops it back\n"
+            "to failing until Hits Required is re-earned. Only matters for a\n"
+            "clip used in a [learn] block.");
+    }
+
     float initVolume = static_cast<float>(clip->initVolume);
     if (ImGui::SliderFloat("Init Volume", &initVolume, 0.0f, 2.0f))
     {

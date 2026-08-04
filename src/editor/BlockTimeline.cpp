@@ -37,20 +37,37 @@ void DrawBoldText(ImDrawList* drawList, ImVec2 pos, ImU32 color, const char* tex
     drawList->AddText(font, fontSize, ImVec2(pos.x + 1.0f, pos.y), color, text);
 }
 
-ImVec4 BlockKindColor(SectionKind kind)
+// isDontFailLearn is only ever true for a Learn block whose clip declared
+// learn_mode = dontfail (see ChartFile.h's LearnMode) - darkening it a
+// little is enough to tell it apart from a Pass Learn block at a glance,
+// without needing a legend or crowding the block's own label.
+ImVec4 BlockKindColor(SectionKind kind, bool isDontFailLearn)
 {
+    ImVec4 color;
     switch (kind)
     {
         case SectionKind::Learn:
-            return ImVec4(0.35f, 0.65f, 1.0f, 1.0f);
+            color = ImVec4(0.35f, 0.65f, 1.0f, 1.0f);
+            break;
         case SectionKind::Break:
-            return ImVec4(1.0f, 0.6f, 0.25f, 1.0f);
+            color = ImVec4(1.0f, 0.6f, 0.25f, 1.0f);
+            break;
         case SectionKind::Reset:
-            return ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
+            color = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
+            break;
         case SectionKind::Background:
-            return ImVec4(0.5f, 0.9f, 0.5f, 1.0f);
+            color = ImVec4(0.5f, 0.9f, 0.5f, 1.0f);
+            break;
+        default:
+            return ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
     }
-    return ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+    if (isDontFailLearn)
+    {
+        color.x *= 0.65f;
+        color.y *= 0.65f;
+        color.z *= 0.65f;
+    }
+    return color;
 }
 
 } // namespace
@@ -205,8 +222,9 @@ void BlockTimeline::DrawBlockRow(EditorDocument& doc, const std::vector<BlockLay
 
         const EditorClip* clip = FindClipById(doc, block.clipId);
         bool missingClip = block.kind != SectionKind::Reset && clip == nullptr;
+        bool isDontFailLearn = block.kind == SectionKind::Learn && clip != nullptr && clip->learnMode == LearnMode::DontFail;
 
-        ImU32 fillColor = ImGui::ColorConvertFloat4ToU32(BlockKindColor(block.kind));
+        ImU32 fillColor = ImGui::ColorConvertFloat4ToU32(BlockKindColor(block.kind, isDontFailLearn));
         drawList->AddRectFilled(rectMin, rectMax, fillColor, 4.0f);
         if (missingClip)
         {
@@ -221,6 +239,11 @@ void BlockTimeline::DrawBlockRow(EditorDocument& doc, const std::vector<BlockLay
         drawList->PushClipRect(rectMin, rectMax, true);
         DrawBoldText(drawList, ImVec2(rectMin.x + 4.0f, rectMin.y + 4.0f), IM_COL32(10, 10, 10, 255), label.c_str());
         drawList->PopClipRect();
+
+        if (isDontFailLearn && ImGui::IsItemHovered())
+        {
+            ImGui::SetTooltip("Learn Mode: Don't Fail (darker fill) - a miss drops the streak\nback to failing instead of locking in permanently.");
+        }
 
         ImGui::PopID();
     }

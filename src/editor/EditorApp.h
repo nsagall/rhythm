@@ -13,6 +13,7 @@
 #include "EditorDocument.h"
 #include "EditorSettings.h"
 #include "EditorUndoHistory.h"
+#include "SongPropertiesPanel.h"
 
 // Top-level orchestrator: owns the audio engine, block player, the
 // currently-open document, its settings, and every panel; lays out the
@@ -54,6 +55,7 @@ private:
     };
 
     void DrawMenuBar();
+    void DrawSongPropertiesWindow(float x, float y, float w, float h);
     void DrawClipsWindow(float x, float y, float w, float h);
     void DrawBlockPropertiesWindow(float x, float y, float w, float h);
     void DrawBlockTimelineWindow(float x, float y, float w, float h);
@@ -61,6 +63,11 @@ private:
     void DrawDirtyGuardModal();
     void DrawErrorModal();
     void ApplyWindowTitleIfChanged();
+
+    // Persists the current pane splitter positions (see the layout block
+    // in Update()) to EditorSettings - called once a drag ends, not every
+    // frame while dragging, so resizing a pane doesn't hit disk per-frame.
+    void SaveLayoutSettings();
 
     void DoNew();
     void DoOpen();
@@ -89,6 +96,7 @@ private:
     BlockPlayer m_blockPlayer{m_audioEngine};
     EditorSettings m_settings;
 
+    SongPropertiesPanel m_songPropertiesPanel;
     ClipPanel m_clipPanel;
     BlockTimeline m_blockTimeline;
     BlockPropertiesPanel m_blockPropertiesPanel;
@@ -96,6 +104,20 @@ private:
     EditorDocument m_doc;
     bool m_hasDocument = false;
     EditorUndoHistory m_undoHistory;
+
+    // Resizable-pane layout (see Update()). All in pixels, loaded from/
+    // saved to EditorSettings so the arrangement survives a restart.
+    // m_leftColumnWidth <= 0 is a sentinel meaning "never saved yet" -
+    // Update() derives a default (40% of window width) from it once
+    // io.DisplaySize is known, which it isn't yet during Initialize().
+    float m_leftColumnWidth = -1.0f;
+    float m_songPaneHeight = 180.0f;
+    float m_timelineHeight = 220.0f;
+    float m_bottomHeight = 160.0f;
+    // Set while any splitter has moved since the last save; drained (and
+    // the layout saved) once the mouse button that was dragging it is
+    // released - see Update().
+    bool m_layoutDirty = false;
 
     PendingAction m_pendingAction = PendingAction::None;
     bool m_showDirtyGuardModal = false;

@@ -76,6 +76,8 @@ add_executable(RhythmEditor WIN32
     src/editor/BlockPropertiesPanel.cpp
     src/editor/FileDialogs.cpp
     src/editor/EditorSettings.cpp
+    src/editor/SongPropertiesPanel.cpp
+    src/editor/PaneSplitter.cpp
 )
 target_include_directories(RhythmEditor PRIVATE src)
 target_compile_definitions(RhythmEditor PRIVATE UNICODE _UNICODE)

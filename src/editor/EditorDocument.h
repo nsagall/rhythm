@@ -75,6 +75,10 @@ struct EditorClip
     double spanBeats = 4.0;
 
     int hitsRequired = 16;
+    // Declared per-clip only (no song-level default) - see ChartFile.h's
+    // LearnMode for the full semantics. Only meaningful for a clip used in
+    // a [learn] section; harmless but inert otherwise.
+    LearnMode learnMode = LearnMode::Pass;
     Overridable<double> startToleranceMs;
     Overridable<double> releaseToleranceMs;
     double initVolume = 1.0;
