@@ -7,11 +7,17 @@
 namespace
 {
 
-// When true, a section hands its dots off early to the next clip's
-// preview as soon as that clip's own notes are due to appear. False (the
-// current setting) keeps a section's dots/judging live for its whole
-// duration, right up to the scheduled advance. See nextClipShowing below.
-constexpr bool kPreviewNextClipBeforeHandoff = false;
+// When true (the current setting), a section hands its dots off early to
+// the next clip's preview as soon as that clip's own notes are due to
+// appear - so the upcoming clip's notes scroll down from the top like any
+// other, instead of its entire kBeatsAhead-deep window materializing at
+// once the instant it becomes current (confirmed real symptom: a note
+// landing near "now" at handoff read as already-past-the-judge-line,
+// since nothing had scrolled it into view first). False keeps a section's
+// dots/judging live for its whole duration, right up to the scheduled
+// advance, with no lead time for the next clip's own preview at all. See
+// nextClipShowing below.
+constexpr bool kPreviewNextClipBeforeHandoff = true;
 
 } // namespace
 
@@ -423,15 +429,30 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
     // pattern past the cap; or locked in, so the section is about to
     // advance - preview the real next clip instead. Both are unjudged and
     // layered on top of the still-live judged pass.
-    if (isLiveJudging && !session.IsLockedIn())
+    //
+    // Only when notesUpperBoundBeat is genuinely capped short of
+    // nowBeat+kBeatsAhead is there an actual gap to fill - the common case
+    // (nothing capping it) means the judged pass already reached the full
+    // kBeatsAhead reach on its own, so this range is empty. Calling
+    // CollectNotes anyway with a zero-width [notesUpperBoundBeat,
+    // notesUpperBoundBeat] range wouldn't just be a no-op: NotesInRange's
+    // own "look one bar back" tail-catch (see its own comment) would
+    // re-discover whatever note the judged pass already placed right at
+    // that shared boundary and duplicate it into the scene - confirmed
+    // real repro, a note whose span straddles nowBeat+kBeatsAhead gets
+    // counted twice for as long as that straddle lasts.
+    if (notesUpperBoundBeat < scene.nowBeat + kBeatsAhead - 1e-9)
     {
-        CollectNotes(session, m_currentClip.get(), session.CurrentClipOriginBeat(), /*judged=*/false,
-                     notesUpperBoundBeat, scene.nowBeat + kBeatsAhead, scene);
-    }
-    else if (isLiveJudging)
-    {
-        CollectNotes(session, m_nextClip.get(), nextOriginBeat, /*judged=*/false, nextFromBeat,
-                     scene.nowBeat + kBeatsAhead, scene);
+        if (isLiveJudging && !session.IsLockedIn())
+        {
+            CollectNotes(session, m_currentClip.get(), session.CurrentClipOriginBeat(), /*judged=*/false,
+                         notesUpperBoundBeat, scene.nowBeat + kBeatsAhead, scene);
+        }
+        else if (isLiveJudging)
+        {
+            CollectNotes(session, m_nextClip.get(), nextOriginBeat, /*judged=*/false, nextFromBeat,
+                         scene.nowBeat + kBeatsAhead, scene);
+        }
     }
 
     switch (session.Phase())
