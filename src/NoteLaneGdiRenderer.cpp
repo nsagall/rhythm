@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "ClipColor.h"
 #include "ColorUtil.h"
 
 using ColorUtil::ClampChannel;
@@ -57,32 +58,6 @@ constexpr COLORREF kBgBottom = RGB(15, 11, 42);
 constexpr COLORREF kBorderColor = RGB(120, 90, 190);
 constexpr COLORREF kTextColor = RGB(255, 250, 240);
 constexpr COLORREF kStreakColor = RGB(255, 205, 70); // still used as one of the confetti burst's colors
-
-// One accent color per clip, not per lane - a curated "candy" palette
-// rather than a literal rainbow, so it reads as matched instead of
-// clashing. Avoids red/green so a clip's own color is never mistaken for
-// the kNoteColorHit/kNoteColorMiss flash; entry 0 is pushed toward magenta
-// rather than a redder hue so it doesn't read as a near-miss of the
-// miss-red. Indexed by SceneNote::clip->index; cycles if a chart has more
-// clips than colors here.
-constexpr COLORREF kClipPalette[] = {
-    RGB(255, 70, 235),  // magenta
-    RGB(56, 219, 255),  // electric cyan
-    RGB(255, 205, 70),  // gold
-    RGB(190, 140, 255), // violet
-    RGB(70, 140, 255),  // azure
-    RGB(255, 90, 170),  // hot pink
-    RGB(255, 170, 40),  // amber
-    RGB(130, 110, 255), // periwinkle
-};
-constexpr int kClipPaletteSize = sizeof(kClipPalette) / sizeof(kClipPalette[0]);
-
-// Shown for the rails/receptors whenever there's no current or preview
-// clip to color them by (Idle before a chart's loaded, or Complete) - a
-// dim, desaturated neutral rather than any real clip's own color, so an
-// empty lane reads as "nothing playing" rather than implying a specific
-// clip that isn't actually there.
-constexpr COLORREF kNeutralClipColor = RGB(150, 150, 170);
 
 // Pass/fail feedback: saturated, high-contrast green/red, pushed toward
 // each color's most vivid extreme (rather than a softer pastel) so the
@@ -211,16 +186,7 @@ int NoteLaneGdiRenderer::YForBeatsFromNow(RECT laneRect, double beatsFromNow) co
     return laneRect.top + static_cast<int>((kBeatsAhead - beatsFromNow) * PixelsPerBeat(laneRect));
 }
 
-COLORREF NoteLaneGdiRenderer::ColorForClip(int clipIndex) const
-{
-    if (clipIndex < 0)
-    {
-        return kNeutralClipColor;
-    }
-    return kClipPalette[static_cast<size_t>(clipIndex) % kClipPaletteSize];
-}
-
-COLORREF NoteLaneGdiRenderer::ColorForNote(NoteVisualState state, int clipIndex) const
+COLORREF NoteLaneGdiRenderer::ColorForNote(NoteVisualState state, COLORREF clipColor) const
 {
     switch (state)
     {
@@ -231,7 +197,7 @@ COLORREF NoteLaneGdiRenderer::ColorForNote(NoteVisualState state, int clipIndex)
             return kNoteColorMiss;
         case NoteVisualState::Normal:
         default:
-            return ColorForClip(clipIndex);
+            return clipColor;
     }
 }
 
@@ -580,7 +546,7 @@ void NoteLaneGdiRenderer::DrawNotes(HDC hdc, RECT laneRect, const NoteLaneScene&
             continue;
         }
 
-        COLORREF color = ColorForNote(note.state, note.clip->index);
+        COLORREF color = ColorForNote(note.state, note.clip->color);
         bool emphasisGlow = note.state != NoteVisualState::Normal;
 
         DrawNoteBar(hdc, laneX, yTop, yBottom, barHalfWidth, color, note.clip->lockedIn);
@@ -742,7 +708,7 @@ void NoteLaneGdiRenderer::SpawnExplosion(RECT laneRect, const NoteLaneScene& sce
         {
             continue;
         }
-        COLORREF explosionColor = ColorForClip(note.clip->index);
+        COLORREF explosionColor = note.clip->color;
         for (int p = 0; p < kExplosionParticlesPerNote; ++p)
         {
             double angle = PseudoRandom(particleSeed++) * 6.283185307;
@@ -804,7 +770,7 @@ void NoteLaneGdiRenderer::Draw(HDC hdc, RECT laneRect, const NoteLaneScene& scen
 
     DrawMeasureLines(hdc, laneRect, scene);
 
-    COLORREF primaryColor = scene.primaryClip ? ColorForClip(scene.primaryClip->index) : kNeutralClipColor;
+    COLORREF primaryColor = scene.primaryClip ? scene.primaryClip->color : ClipColor::kNeutral;
     DrawRails(hdc, laneRect, primaryColor);
     DrawReceptors(hdc, laneRect, scene, primaryColor);
 

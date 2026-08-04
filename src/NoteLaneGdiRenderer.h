@@ -96,8 +96,10 @@ private:
     int LaneCenterX(RECT laneRect, int lane) const;
     int YForBeatsFromNow(RECT laneRect, double beatsFromNow) const;
 
-    COLORREF ColorForClip(int clipIndex) const;
-    COLORREF ColorForNote(NoteVisualState state, int clipIndex) const;
+    // Returns clipColor for a Normal note, or the fixed held/hit/miss color
+    // for anything else - clipColor comes from ClipInstance::color (see
+    // ClipColor.h), never from a palette of this renderer's own.
+    COLORREF ColorForNote(NoteVisualState state, COLORREF clipColor) const;
 
     HBRUSH CachedSolidBrush(COLORREF color);
     HPEN CachedSolidPen(int width, COLORREF color);

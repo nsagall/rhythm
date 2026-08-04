@@ -4,13 +4,19 @@
 #include <vector>
 #include <windows.h>
 
+#include "ClipColor.h"
 #include "LaneConfig.h"
 
 // The contract between NoteLaneModel (logic) and whatever draws it
 // (NoteLaneRenderer.h). Everything here is beats, lane indices, and
-// semantic state - no pixel positions, no HDC, no GDI - so a renderer can
-// turn it into pixels however it likes, and a different renderer can
-// consume the exact same struct without NoteLaneModel changing at all.
+// semantic/identity state - no pixel positions, no HDC, no GDI drawing
+// calls - so a renderer can turn it into pixels however it likes, and a
+// different renderer can consume the exact same struct without
+// NoteLaneModel changing at all. ClipInstance::color is the one exception
+// to "no colors here": a COLORREF is just a packed RGB value, not a
+// drawing operation, and which one identifies a given clip is treated as
+// part of that clip's identity (see ClipColor.h) rather than a rendering
+// decision - every renderer gets the same, consistent answer for free.
 
 // How far into the future/past of the pattern timeline is considered
 // "current" - shared between NoteLaneModel (which notes are even
@@ -33,9 +39,14 @@ struct ClipInstance
 {
     // This clip's stable position in ChartSong::clips, or -1 for the
     // "no clip" placeholder a null SceneNote::clip/NoteLaneScene::
-    // primaryClip stands in for - a renderer resolves this to an actual
-    // color via its own palette.
+    // primaryClip stands in for.
     int index = -1;
+
+    // This clip's accent color - part of its identity (see ClipColor.h),
+    // resolved once when NoteLaneModel builds this instance, so a renderer
+    // never needs its own palette or index-to-color scheme just to draw a
+    // clip in a consistent, recognizable color.
+    COLORREF color = ClipColor::kNeutral;
 
     // Whether the section currently judging this clip has locked in - a
     // renderer-chosen supplementary cue (e.g. a glow outline), independent
@@ -49,7 +60,7 @@ struct ClipInstance
 // GameSession's judging for it.
 enum class NoteVisualState
 {
-    Normal, // not yet interacted with - a renderer colors this by clip->index
+    Normal, // not yet interacted with - a renderer colors this by clip->color
     Held,   // press judged correct, hold in progress or just resolved
     Hit,    // judged correct
     Miss,   // judged incorrect

@@ -191,6 +191,7 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
     for (size_t i = 0; i < scene.clipInstances.size(); ++i)
     {
         scene.clipInstances[i].index = static_cast<int>(i);
+        scene.clipInstances[i].color = ClipColor::ForIndex(static_cast<int>(i));
     }
 
     const ChartClip* clip = session.CurrentClip();
