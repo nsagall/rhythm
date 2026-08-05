@@ -128,6 +128,20 @@ void BlockTimeline::DrawToolbar(EditorDocument& doc)
     }
     if (ImGui::BeginPopup("AddBlockPopup"))
     {
+        // Default to end-of-vector (append) - overwritten below only if
+        // the current selection still matches a live block, so a stale or
+        // absent selection (-1, or a block deleted elsewhere this frame)
+        // falls back to the old append-at-end behavior with no special-casing.
+        size_t insertPos = doc.blocks.size();
+        for (size_t i = 0; i < doc.blocks.size(); ++i)
+        {
+            if (doc.blocks[i].id == m_selectedBlockId)
+            {
+                insertPos = i + 1;
+                break;
+            }
+        }
+
         for (int k = 0; k < 4; ++k)
         {
             if (ImGui::Selectable(kKindNames[k]))
@@ -137,7 +151,7 @@ void BlockTimeline::DrawToolbar(EditorDocument& doc)
                 block.kind = static_cast<SectionKind>(k);
                 block.clipId = -1;
                 block.loopCount = 1;
-                doc.blocks.push_back(block);
+                doc.blocks.insert(doc.blocks.begin() + static_cast<long>(insertPos), block);
                 m_selectedBlockId = block.id;
                 MarkDirty(doc);
             }
