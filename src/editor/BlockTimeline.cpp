@@ -98,6 +98,25 @@ void BlockTimeline::Draw(EditorDocument& doc, BlockPlayer& player)
     ImGui::SetCursorScreenPos(ImVec2(origin.x, origin.y + kBlockHeight));
     ImGui::Dummy(ImVec2(std::max(totalWidth, 1.0f), 1.0f));
 
+    // Delete key removes the selected block without needing to reach for
+    // BlockPropertiesPanel's own Delete Block button - only while this
+    // scroll region itself has focus (i.e. the user just clicked a block
+    // here), and never while a text field elsewhere wants the keystroke.
+    if (m_selectedBlockId >= 0 && ImGui::IsWindowFocused() && !ImGui::GetIO().WantTextInput &&
+        ImGui::IsKeyPressed(ImGuiKey_Delete, false))
+    {
+        for (size_t i = 0; i < doc.blocks.size(); ++i)
+        {
+            if (doc.blocks[i].id == m_selectedBlockId)
+            {
+                doc.blocks.erase(doc.blocks.begin() + static_cast<long>(i));
+                MarkDirty(doc);
+                m_selectedBlockId = -1;
+                break;
+            }
+        }
+    }
+
     ImGui::EndChild();
 }
 

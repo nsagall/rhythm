@@ -8,8 +8,8 @@
 // inline per row (kind, clip, loop_count), plus a read-only readout of the
 // matching BlockSchedule::Entry's computed timing when one is available,
 // so loop_count/hits_required's effect on the schedule is directly
-// visible. Also owns the "Delete Block" and "Seek Here" actions for the
-// current selection.
+// visible. Also owns the "Delete Block", "Duplicate Block", and "Seek
+// Here" actions for the current selection.
 class BlockPropertiesPanel
 {
 public:
@@ -20,7 +20,10 @@ public:
     // Background/Reset block with no entry of its own - see
     // BlockSchedule::Entry's own comment). Mutates doc directly (via
     // MarkDirty) on edit, and player's playback position via "Seek Here" -
-    // not const. Returns true if the selected block was deleted this frame
-    // (caller should clear its own selection state).
-    bool Draw(EditorDocument& doc, int selectedBlockId, BlockPlayer& player);
+    // not const. Returns the block id that should be selected after this
+    // frame: selectedBlockId unchanged in the common case, -1 if the
+    // selection was just deleted, or the new block's id if it was just
+    // duplicated - the caller should feed this straight back into
+    // BlockTimeline::SetSelectedBlockId.
+    int Draw(EditorDocument& doc, int selectedBlockId, BlockPlayer& player);
 };

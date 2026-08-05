@@ -34,6 +34,15 @@ public:
         return m_selectedBlockId;
     }
 
+    // Lets BlockPropertiesPanel's own actions (Delete Block, Duplicate
+    // Block) update the selection this class owns - e.g. so a freshly
+    // duplicated block becomes the new selection instead of leaving the
+    // original selected. -1 clears the selection.
+    void SetSelectedBlockId(int blockId)
+    {
+        m_selectedBlockId = blockId;
+    }
+
 private:
     // On-screen geometry for one block, computed once per frame and shared
     // between the block row, the playhead, and the seek ruler so they can

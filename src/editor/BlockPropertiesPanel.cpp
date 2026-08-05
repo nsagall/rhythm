@@ -9,7 +9,7 @@ namespace
 const char* kKindNames[] = {"Learn", "Break", "Reset", "Background"};
 } // namespace
 
-bool BlockPropertiesPanel::Draw(EditorDocument& doc, int selectedBlockId, BlockPlayer& player)
+int BlockPropertiesPanel::Draw(EditorDocument& doc, int selectedBlockId, BlockPlayer& player)
 {
     EditorBlock* block = nullptr;
     int blockIndex = -1;
@@ -26,7 +26,7 @@ bool BlockPropertiesPanel::Draw(EditorDocument& doc, int selectedBlockId, BlockP
     if (block == nullptr)
     {
         ImGui::TextDisabled("Select a block on the timeline below.");
-        return false;
+        return selectedBlockId;
     }
 
     int kindIndex = static_cast<int>(block->kind);
@@ -158,12 +158,26 @@ bool BlockPropertiesPanel::Draw(EditorDocument& doc, int selectedBlockId, BlockP
     }
 
     ImGui::SameLine();
-    bool deleted = false;
+    if (ImGui::Button("Duplicate Block"))
+    {
+        EditorBlock copy = *block;
+        copy.id = doc.nextBlockId++;
+        doc.blocks.insert(doc.blocks.begin() + blockIndex + 1, copy);
+        MarkDirty(doc);
+        return copy.id;
+    }
+    if (ImGui::IsItemHovered())
+    {
+        ImGui::SetTooltip("Insert a copy of this block right after itself.");
+    }
+
+    ImGui::SameLine();
     if (ImGui::Button("Delete Block"))
     {
         doc.blocks.erase(doc.blocks.begin() + blockIndex);
         MarkDirty(doc);
-        deleted = true;
+        return -1;
     }
-    return deleted;
+
+    return selectedBlockId;
 }

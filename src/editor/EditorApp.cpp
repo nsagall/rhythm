@@ -108,6 +108,31 @@ void EditorApp::RequestQuit()
 
 void EditorApp::Update()
 {
+    // WantTextInput guard applies to every shortcut below, New/Open/Exit
+    // included: while a text field has keyboard focus, a bare Ctrl+letter
+    // should never be stolen out from under normal typing/selection (e.g.
+    // Ctrl+A to select-all in a text box).
+    ImGuiIO& earlyIo = ImGui::GetIO();
+    if (!earlyIo.WantTextInput)
+    {
+        if (earlyIo.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_N, false))
+        {
+            RequestActionWithGuard(PendingAction::New);
+        }
+        if (earlyIo.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_O, false))
+        {
+            RequestActionWithGuard(PendingAction::Open);
+        }
+        if (m_hasDocument && earlyIo.KeyCtrl && !earlyIo.KeyShift && ImGui::IsKeyPressed(ImGuiKey_S, false))
+        {
+            DoSave();
+        }
+        if (m_hasDocument && earlyIo.KeyCtrl && earlyIo.KeyShift && ImGui::IsKeyPressed(ImGuiKey_S, false))
+        {
+            DoSaveAs();
+        }
+    }
+
     if (m_hasDocument)
     {
         m_blockPlayer.Update(ImGui::GetIO().DeltaTime);
@@ -123,6 +148,21 @@ void EditorApp::Update()
         if (!io.WantTextInput && io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Y, false))
         {
             DoRedo();
+        }
+        // Spacebar: the universal transport convention (DAWs, video
+        // editors, chart tools) for toggling play/pause - WantTextInput
+        // guard so typing a literal space into a text field never doubles
+        // as a transport command.
+        if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Space, false))
+        {
+            if (m_blockPlayer.IsPlaying())
+            {
+                m_blockPlayer.Pause();
+            }
+            else
+            {
+                m_blockPlayer.Play();
+            }
         }
 
         if (m_doc.docVersion != m_observedVersion)
@@ -306,19 +346,19 @@ void EditorApp::DrawMenuBar()
     {
         if (ImGui::BeginMenu("File"))
         {
-            if (ImGui::MenuItem("New..."))
+            if (ImGui::MenuItem("New...", "Ctrl+N"))
             {
                 RequestActionWithGuard(PendingAction::New);
             }
-            if (ImGui::MenuItem("Open..."))
+            if (ImGui::MenuItem("Open...", "Ctrl+O"))
             {
                 RequestActionWithGuard(PendingAction::Open);
             }
-            if (ImGui::MenuItem("Save", nullptr, false, m_hasDocument))
+            if (ImGui::MenuItem("Save", "Ctrl+S", false, m_hasDocument))
             {
                 DoSave();
             }
-            if (ImGui::MenuItem("Save As...", nullptr, false, m_hasDocument))
+            if (ImGui::MenuItem("Save As...", "Ctrl+Shift+S", false, m_hasDocument))
             {
                 DoSaveAs();
             }
@@ -397,8 +437,8 @@ void EditorApp::DrawBlockPropertiesWindow(float x, float y, float w, float h)
     ImGui::Separator();
     if (m_hasDocument)
     {
-        bool deleted = m_blockPropertiesPanel.Draw(m_doc, m_blockTimeline.SelectedBlockId(), m_blockPlayer);
-        (void)deleted; // BlockTimeline re-checks SelectedBlockId() against doc.blocks every frame on its own, so a deleted selection simply stops matching anything next frame - nothing else to do here.
+        int newSelection = m_blockPropertiesPanel.Draw(m_doc, m_blockTimeline.SelectedBlockId(), m_blockPlayer);
+        m_blockTimeline.SetSelectedBlockId(newSelection);
     }
     else
     {
