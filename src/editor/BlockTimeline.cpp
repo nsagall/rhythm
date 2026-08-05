@@ -74,6 +74,8 @@ ImVec4 BlockKindColor(SectionKind kind, bool isDontFailLearn)
 
 void BlockTimeline::Draw(EditorDocument& doc, BlockPlayer& player)
 {
+    PruneStaleSelection(doc);
+
     DrawToolbar(doc);
     ImGui::Separator();
 
@@ -98,22 +100,25 @@ void BlockTimeline::Draw(EditorDocument& doc, BlockPlayer& player)
     ImGui::SetCursorScreenPos(ImVec2(origin.x, origin.y + kBlockHeight));
     ImGui::Dummy(ImVec2(std::max(totalWidth, 1.0f), 1.0f));
 
-    // Delete key removes the selected block without needing to reach for
-    // BlockPropertiesPanel's own Delete Block button - only while this
-    // scroll region itself has focus (i.e. the user just clicked a block
-    // here), and never while a text field elsewhere wants the keystroke.
-    if (m_selectedBlockId >= 0 && ImGui::IsWindowFocused() && !ImGui::GetIO().WantTextInput &&
-        ImGui::IsKeyPressed(ImGuiKey_Delete, false))
+    // Delete/Copy/Paste act on the current (possibly multi-block) selection
+    // without needing to reach for BlockPropertiesPanel's own buttons -
+    // only while this scroll region itself has focus (i.e. the user just
+    // clicked a block here), and never while a text field elsewhere wants
+    // the keystroke.
+    ImGuiIO& io = ImGui::GetIO();
+    if (ImGui::IsWindowFocused() && !io.WantTextInput)
     {
-        for (size_t i = 0; i < doc.blocks.size(); ++i)
+        if (!m_multiSelectedBlockIds.empty() && ImGui::IsKeyPressed(ImGuiKey_Delete, false))
         {
-            if (doc.blocks[i].id == m_selectedBlockId)
-            {
-                doc.blocks.erase(doc.blocks.begin() + static_cast<long>(i));
-                MarkDirty(doc);
-                m_selectedBlockId = -1;
-                break;
-            }
+            DeleteSelectedBlocks(doc);
+        }
+        if (!m_multiSelectedBlockIds.empty() && io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_C, false))
+        {
+            CopySelectedToClipboard(doc);
+        }
+        if (!m_clipboard.empty() && io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_V, false))
+        {
+            PasteClipboard(doc);
         }
     }
 
@@ -128,19 +133,7 @@ void BlockTimeline::DrawToolbar(EditorDocument& doc)
     }
     if (ImGui::BeginPopup("AddBlockPopup"))
     {
-        // Default to end-of-vector (append) - overwritten below only if
-        // the current selection still matches a live block, so a stale or
-        // absent selection (-1, or a block deleted elsewhere this frame)
-        // falls back to the old append-at-end behavior with no special-casing.
-        size_t insertPos = doc.blocks.size();
-        for (size_t i = 0; i < doc.blocks.size(); ++i)
-        {
-            if (doc.blocks[i].id == m_selectedBlockId)
-            {
-                insertPos = i + 1;
-                break;
-            }
-        }
+        size_t insertPos = InsertPositionAfterSelection(doc);
 
         for (int k = 0; k < 4; ++k)
         {
@@ -152,12 +145,189 @@ void BlockTimeline::DrawToolbar(EditorDocument& doc)
                 block.clipId = -1;
                 block.loopCount = 1;
                 doc.blocks.insert(doc.blocks.begin() + static_cast<long>(insertPos), block);
-                m_selectedBlockId = block.id;
+                SetSelectedBlockId(block.id);
                 MarkDirty(doc);
             }
         }
         ImGui::EndPopup();
     }
+}
+
+void BlockTimeline::HandleBlockClick(const EditorDocument& doc, int clickedId)
+{
+    ImGuiIO& io = ImGui::GetIO();
+
+    if (io.KeyShift && m_rangeAnchorBlockId >= 0)
+    {
+        int anchorIndex = -1;
+        int clickedIndex = -1;
+        for (size_t i = 0; i < doc.blocks.size(); ++i)
+        {
+            if (doc.blocks[i].id == m_rangeAnchorBlockId)
+            {
+                anchorIndex = static_cast<int>(i);
+            }
+            if (doc.blocks[i].id == clickedId)
+            {
+                clickedIndex = static_cast<int>(i);
+            }
+        }
+        if (anchorIndex >= 0 && clickedIndex >= 0)
+        {
+            int lo = std::min(anchorIndex, clickedIndex);
+            int hi = std::max(anchorIndex, clickedIndex);
+            m_multiSelectedBlockIds.clear();
+            for (int i = lo; i <= hi; ++i)
+            {
+                m_multiSelectedBlockIds.insert(doc.blocks[static_cast<size_t>(i)].id);
+            }
+            m_selectedBlockId = clickedId;
+            // Anchor deliberately untouched - see its own comment in the header.
+            return;
+        }
+        // Anchor no longer exists (e.g. deleted elsewhere) - fall through
+        // to plain-click behavior below instead of doing nothing.
+    }
+
+    if (io.KeyCtrl)
+    {
+        if (m_multiSelectedBlockIds.count(clickedId) != 0)
+        {
+            m_multiSelectedBlockIds.erase(clickedId);
+        }
+        else
+        {
+            m_multiSelectedBlockIds.insert(clickedId);
+        }
+        m_selectedBlockId = m_multiSelectedBlockIds.empty() ? -1 : *m_multiSelectedBlockIds.rbegin();
+        m_rangeAnchorBlockId = m_selectedBlockId;
+        return;
+    }
+
+    // Plain click: collapse to just this block.
+    m_selectedBlockId = clickedId;
+    m_rangeAnchorBlockId = clickedId;
+    m_multiSelectedBlockIds.clear();
+    m_multiSelectedBlockIds.insert(clickedId);
+}
+
+void BlockTimeline::PruneStaleSelection(const EditorDocument& doc)
+{
+    if (m_multiSelectedBlockIds.empty())
+    {
+        return;
+    }
+
+    bool anyStale = false;
+    for (auto it = m_multiSelectedBlockIds.begin(); it != m_multiSelectedBlockIds.end();)
+    {
+        bool stillExists = false;
+        for (const EditorBlock& block : doc.blocks)
+        {
+            if (block.id == *it)
+            {
+                stillExists = true;
+                break;
+            }
+        }
+        if (stillExists)
+        {
+            ++it;
+        }
+        else
+        {
+            it = m_multiSelectedBlockIds.erase(it);
+            anyStale = true;
+        }
+    }
+
+    if (!anyStale)
+    {
+        return;
+    }
+    if (m_multiSelectedBlockIds.count(m_selectedBlockId) == 0)
+    {
+        m_selectedBlockId = m_multiSelectedBlockIds.empty() ? -1 : *m_multiSelectedBlockIds.rbegin();
+    }
+    if (m_multiSelectedBlockIds.count(m_rangeAnchorBlockId) == 0)
+    {
+        m_rangeAnchorBlockId = m_selectedBlockId;
+    }
+}
+
+size_t BlockTimeline::InsertPositionAfterSelection(const EditorDocument& doc) const
+{
+    // Default to end-of-vector (append) - overwritten below only for each
+    // block that's actually selected, so a stale or absent selection falls
+    // back to plain append with no special-casing. Never breaks out early:
+    // the last (highest-index) match wins, so a multi-block selection
+    // inserts after its own last member regardless of click order.
+    size_t insertPos = doc.blocks.size();
+    for (size_t i = 0; i < doc.blocks.size(); ++i)
+    {
+        if (m_multiSelectedBlockIds.count(doc.blocks[i].id) != 0)
+        {
+            insertPos = i + 1;
+        }
+    }
+    return insertPos;
+}
+
+void BlockTimeline::DeleteSelectedBlocks(EditorDocument& doc)
+{
+    if (m_multiSelectedBlockIds.empty())
+    {
+        return;
+    }
+    for (size_t i = doc.blocks.size(); i-- > 0;)
+    {
+        if (m_multiSelectedBlockIds.count(doc.blocks[i].id) != 0)
+        {
+            doc.blocks.erase(doc.blocks.begin() + static_cast<long>(i));
+        }
+    }
+    MarkDirty(doc);
+    m_selectedBlockId = -1;
+    m_rangeAnchorBlockId = -1;
+    m_multiSelectedBlockIds.clear();
+}
+
+void BlockTimeline::CopySelectedToClipboard(const EditorDocument& doc)
+{
+    m_clipboard.clear();
+    for (const EditorBlock& block : doc.blocks)
+    {
+        if (m_multiSelectedBlockIds.count(block.id) != 0)
+        {
+            m_clipboard.push_back(block);
+        }
+    }
+}
+
+void BlockTimeline::PasteClipboard(EditorDocument& doc)
+{
+    if (m_clipboard.empty())
+    {
+        return;
+    }
+
+    size_t insertPos = InsertPositionAfterSelection(doc);
+
+    std::vector<EditorBlock> pasted = m_clipboard; // clipboard itself is left intact for a repeat paste
+    for (EditorBlock& block : pasted)
+    {
+        block.id = doc.nextBlockId++;
+    }
+    doc.blocks.insert(doc.blocks.begin() + static_cast<long>(insertPos), pasted.begin(), pasted.end());
+    MarkDirty(doc);
+
+    m_multiSelectedBlockIds.clear();
+    for (const EditorBlock& block : pasted)
+    {
+        m_multiSelectedBlockIds.insert(block.id);
+    }
+    m_selectedBlockId = pasted.back().id;
+    m_rangeAnchorBlockId = pasted.front().id;
 }
 
 std::vector<BlockTimeline::BlockLayout> BlockTimeline::ComputeLayout(const EditorDocument& doc,
@@ -217,7 +387,7 @@ void BlockTimeline::DrawBlockRow(EditorDocument& doc, const std::vector<BlockLay
 
         if (ImGui::IsItemClicked())
         {
-            m_selectedBlockId = block.id;
+            HandleBlockClick(doc, block.id);
         }
 
         if (ImGui::BeginDragDropSource())
@@ -263,9 +433,13 @@ void BlockTimeline::DrawBlockRow(EditorDocument& doc, const std::vector<BlockLay
         {
             drawList->AddRect(rectMin, rectMax, IM_COL32(255, 40, 40, 255), 4.0f, 0, 2.0f);
         }
-        if (block.id == m_selectedBlockId)
+        if (m_multiSelectedBlockIds.count(block.id) != 0)
         {
-            drawList->AddRect(rectMin, rectMax, IM_COL32(255, 255, 255, 255), 4.0f, 0, 2.0f);
+            // Primary gets a thicker outline than the rest of the
+            // selection, so it's clear at a glance which block
+            // BlockPropertiesPanel is currently showing/editing.
+            float thickness = block.id == m_selectedBlockId ? 3.0f : 2.0f;
+            drawList->AddRect(rectMin, rectMax, IM_COL32(255, 255, 255, 255), 4.0f, 0, thickness);
         }
 
         std::string label = clip != nullptr ? ToUtf8(clip->name) : kKindNames[static_cast<int>(block.kind)];
