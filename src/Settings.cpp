@@ -44,3 +44,19 @@ void Settings::SaveEasyMode(bool easyMode)
 {
     WritePrivateProfileStringW(L"App", L"EasyMode", easyMode ? L"1" : L"0", GetSettingsFilePath().c_str());
 }
+
+// Reads lane index `lane`'s saved custom input binding (empty if none saved yet).
+std::wstring Settings::LoadLaneBinding(int lane)
+{
+    wchar_t buffer[MAX_PATH] = L"";
+    std::wstring key = L"LaneBinding" + std::to_wstring(lane);
+    GetPrivateProfileStringW(L"App", key.c_str(), L"", buffer, MAX_PATH, GetSettingsFilePath().c_str());
+    return buffer;
+}
+
+// Saves lane index `lane`'s custom input binding so it's restored next launch.
+void Settings::SaveLaneBinding(int lane, const std::wstring& serialized)
+{
+    std::wstring key = L"LaneBinding" + std::to_wstring(lane);
+    WritePrivateProfileStringW(L"App", key.c_str(), serialized.c_str(), GetSettingsFilePath().c_str());
+}

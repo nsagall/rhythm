@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 
 #include <algorithm>
+#include <mmsystem.h>
 
 #include "ColorUtil.h"
 
@@ -32,6 +33,11 @@ constexpr int kToggleTrackWidth = 40;
 constexpr int kToggleTrackHeight = 20;
 constexpr int kToggleKnobRadius = 8;
 
+// The Assign Inputs button sits on the same header row, immediately to the
+// left of the Easy Mode toggle.
+constexpr int kAssignButtonWidth = 130;
+constexpr int kAssignButtonGap = 15;
+
 // The lane (while playing) and the song list (while selecting) both sit
 // below this same header row, filling the available space: each grows/
 // shrinks with the window but is clamped to a sane range so it never
@@ -62,11 +68,16 @@ constexpr int kMinClientWidth = 480;
 constexpr int kMinClientHeight = kToolbarHeight + kLaneMargin + kLaneMinHeight + kLaneMargin;
 
 constexpr int IDC_BUTTON_REFRESH = 110;
+constexpr int IDC_BUTTON_ASSIGN = 111;
 
-// Lane 0..3 keyboard bindings, left to right: j, k, l, ; . VK_OEM_1 is the
-// Win32 virtual-key constant for the US-layout ';'/':' key - there is no
-// named VK_SEMICOLON constant in the Windows headers.
-constexpr int kLaneKeys[kLaneCount] = {'J', 'K', 'L', VK_OEM_1};
+// Minimum MIDI velocity (0-127) a note-on must carry to count as a real
+// press, in gameplay or during input capture alike - a sensitive
+// pad/keyboard controller can send genuine note-on messages for a barely-
+// there touch, and those shouldn't register as a lane hit (or get captured
+// as a binding) any more than an accidental brush of a key would. Below
+// this, OnMidiData drops the message entirely rather than treating it as
+// either a press or a release.
+constexpr BYTE kMinMidiPressVelocity = 20;
 
 // Matches NoteLane's palette so the whole window reads as one theme
 // instead of a colorful game view floating in plain system-gray chrome.
@@ -74,6 +85,7 @@ constexpr COLORREF kWindowBgColor = RGB(15, 11, 30);
 constexpr COLORREF kFieldBgColor = RGB(30, 23, 56);
 constexpr COLORREF kLabelTextColor = RGB(230, 222, 245);
 constexpr COLORREF kRefreshButtonColor = RGB(255, 205, 70);
+constexpr COLORREF kAssignButtonColor = RGB(150, 220, 140);
 constexpr COLORREF kSongRowHighlightColor = RGB(56, 219, 255);
 constexpr COLORREF kSongRowHighlightTextColor = RGB(10, 10, 20);
 constexpr COLORREF kHintTextColor = RGB(150, 140, 175);
@@ -233,6 +245,9 @@ LRESULT MainWindow::HandleMessage(HWND hwnd, UINT message, WPARAM wParam, LPARAM
         case WM_KEYUP:
             OnKeyUp(wParam, lParam);
             return 0;
+        case MM_MIM_DATA:
+            OnMidiData(wParam, lParam);
+            return 0;
         case WM_ACTIVATE:
             OnActivate(wParam);
             return 0;
@@ -264,17 +279,27 @@ LRESULT MainWindow::HandleMessage(HWND hwnd, UINT message, WPARAM wParam, LPARAM
     return DefWindowProcW(hwnd, message, wParam, lParam);
 }
 
-// Creates the refresh button and the note lane, then does the initial song scan.
+// Creates the refresh/Assign Inputs buttons and the note lane, loads saved
+// lane bindings and opens any connected MIDI devices, then does the initial
+// song scan.
 void MainWindow::OnCreate(HWND hwnd)
 {
     m_hwnd = hwnd;
     m_easyMode = m_settings.LoadEasyMode();
+    m_laneBindings.Load(m_settings);
 
     m_hButtonRefresh = CreateWindowExW(
         0, L"BUTTON", L"Refresh",
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
         0, 0, 0, 0,
         hwnd, (HMENU)(INT_PTR)IDC_BUTTON_REFRESH, nullptr, nullptr
+    );
+
+    m_hButtonAssign = CreateWindowExW(
+        0, L"BUTTON", L"Assign Inputs",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW,
+        0, 0, 0, 0,
+        hwnd, (HMENU)(INT_PTR)IDC_BUTTON_ASSIGN, nullptr, nullptr
     );
 
     m_noteLane.Attach(hwnd);
@@ -286,13 +311,17 @@ void MainWindow::OnCreate(HWND hwnd)
         MessageBoxW(hwnd, L"Failed to initialize the audio engine.", kWindowTitle, MB_OK | MB_ICONWARNING);
     }
 
+    // Zero connected MIDI devices is the normal case (keyboard-only play) -
+    // no failure dialog, matching AudioEngine's own soft-failure style above.
+    m_midiInput.OpenAll(hwnd);
+
     RescanSongs();
 
     SetFocus(hwnd);
 }
 
-// Repositions the refresh button, and recomputes both the song list rect
-// and the note lane rect, to fit the current client area. Both the list and
+// Repositions the refresh and Assign Inputs buttons, and recomputes both the
+// song list rect and the note lane rect, to fit the current client area. Both the list and
 // the lane are centered, clamped-width columns below the same header row -
 // only one is ever visible at a time, but Layout() keeps both current so
 // switching screens never needs a re-layout of its own.
@@ -313,6 +342,10 @@ void MainWindow::Layout()
     int toggleRight = refreshLeft - kEasyModeToggleGap;
     int toggleLeft = toggleRight - kEasyModeToggleWidth;
     m_easyModeToggleRect = RECT{toggleLeft, kRowTop - 1, toggleRight, kRowTop - 1 + kControlHeight + 2};
+
+    int assignRight = toggleLeft - kAssignButtonGap;
+    int assignLeft = assignRight - kAssignButtonWidth;
+    MoveWindow(m_hButtonAssign, assignLeft, kRowTop - 1, kAssignButtonWidth, kControlHeight + 2, TRUE);
 
     int listWidth = std::min(std::max(width - 2 * kLaneMargin, kLaneMinWidth), kSongListMaxWidth);
     int listLeft = (width - listWidth) / 2;
@@ -368,7 +401,8 @@ void MainWindow::OnGetMinMaxInfo(LPARAM lParam)
     info.ptMinTrackSize.y = rect.bottom - rect.top;
 }
 
-// Routes a WM_COMMAND control ID to the refresh handler.
+// Routes a WM_COMMAND control ID to the refresh handler, or to
+// BeginCapture() for the Assign Inputs button.
 void MainWindow::OnCommand(HWND hwnd, int controlId)
 {
     if (controlId == IDC_BUTTON_REFRESH)
@@ -377,17 +411,31 @@ void MainWindow::OnCommand(HWND hwnd, int controlId)
         // The button would otherwise keep keyboard focus and steal lane/list keystrokes.
         SetFocus(hwnd);
     }
+    else if (controlId == IDC_BUTTON_ASSIGN)
+    {
+        BeginCapture();
+        SetFocus(hwnd);
+    }
 }
 
-// On the song list: Up/Down moves the highlight, any other key (besides a
-// pure modifier or Left/Right, neither of which mean anything for a single
-// vertical list) chooses the highlighted song. While playing: registers a
-// press on a non-repeated key-down for one of the lane keys (j/k/l/;).
+// While capturing an input assignment, every key goes to
+// HandleCaptureKeyDown instead. Otherwise, on the song list: Up/Down moves
+// the highlight, any other key (besides a pure modifier or Left/Right,
+// neither of which mean anything for a single vertical list) chooses the
+// highlighted song. While playing: registers a press on a non-repeated
+// key-down for whichever lane m_laneBindings resolves the key to (its
+// default key, or a custom binding).
 void MainWindow::OnKeyDown(WPARAM key, LPARAM flags)
 {
     bool isAutoRepeat = (flags & (1 << 30)) != 0;
     if (isAutoRepeat)
     {
+        return;
+    }
+
+    if (m_captureLane != -1)
+    {
+        HandleCaptureKeyDown(static_cast<int>(key));
         return;
     }
 
@@ -453,29 +501,100 @@ void MainWindow::OnKeyDown(WPARAM key, LPARAM flags)
         return; // lane keys do nothing while paused - only Space (above) does
     }
 
-    for (int lane = 0; lane < kLaneCount; ++lane)
+    int lane = m_laneBindings.LaneForKey(static_cast<int>(key));
+    if (lane != -1)
     {
-        if (static_cast<int>(key) == kLaneKeys[lane])
-        {
-            RegisterPress(lane);
-            return;
-        }
+        RegisterPress(lane);
     }
 }
 
-// Registers a release on key-up for one of the lane keys (j/k/l/;).
+// Registers a release on key-up for whichever lane m_laneBindings resolves
+// the key to (its default key, or a custom binding).
 void MainWindow::OnKeyUp(WPARAM key, LPARAM /*flags*/)
 {
     // WM_KEYUP never carries synthetic auto-repeat events (Windows only
     // auto-repeats WM_KEYDOWN), so every key-up handled here is a real
     // physical release - no debouncing needed.
-    for (int lane = 0; lane < kLaneCount; ++lane)
+    int lane = m_laneBindings.LaneForKey(static_cast<int>(key));
+    if (lane != -1)
     {
-        if (static_cast<int>(key) == kLaneKeys[lane])
+        RegisterRelease(lane);
+    }
+}
+
+// See the header's own comment.
+void MainWindow::HandleCaptureKeyDown(int vkCode)
+{
+    if (vkCode == VK_ESCAPE)
+    {
+        CancelCapture();
+        return;
+    }
+
+    if (vkCode == VK_SPACE || vkCode == 'D' || m_laneBindings.IsDefaultKey(vkCode))
+    {
+        m_captureRejectionMessage = L"That key is already used elsewhere - press a different one.";
+        InvalidateRect(m_hwnd, nullptr, FALSE);
+        return;
+    }
+
+    m_laneBindings.SetCustom(m_captureLane, InputBinding{InputKind::Keyboard, vkCode}, m_settings);
+    AdvanceCapture();
+}
+
+// See the header's own comment. wParam (the HMIDIIN handle the event came
+// from) is deliberately unused - lane matching only cares about the note
+// number, not which device sent it (see MidiInputManager's own comment on
+// "any input device").
+void MainWindow::OnMidiData(WPARAM /*wParam*/, LPARAM lParam)
+{
+    MidiInputManager::ShortMessage message = MidiInputManager::Unpack(lParam);
+    int command = message.status & 0xF0;
+    if (command != 0x90 && command != 0x80)
+    {
+        return; // only note-on/note-off matter for lane triggers
+    }
+
+    bool isNoteOnRaw = (command == 0x90 && message.data2 > 0);
+    if (isNoteOnRaw && message.data2 < kMinMidiPressVelocity)
+    {
+        return; // too light to count as a real press - not a press or a release
+    }
+
+    bool isNoteOn = isNoteOnRaw;
+    int note = message.data1;
+
+    if (m_captureLane != -1)
+    {
+        if (isNoteOn)
         {
-            RegisterRelease(lane);
-            return;
+            m_laneBindings.SetCustom(m_captureLane, InputBinding{InputKind::MidiNote, note}, m_settings);
+            AdvanceCapture();
         }
+        return;
+    }
+
+    if (m_screen != UiScreen::Playing)
+    {
+        return;
+    }
+
+    int lane = m_laneBindings.LaneForMidiNote(note);
+    if (lane == -1)
+    {
+        return;
+    }
+
+    if (isNoteOn)
+    {
+        if (!m_gameSession.IsPaused())
+        {
+            RegisterPress(lane);
+        }
+    }
+    else
+    {
+        RegisterRelease(lane);
     }
 }
 
@@ -508,11 +627,50 @@ void MainWindow::TogglePause()
     InvalidateRect(m_hwnd, nullptr, FALSE);
 }
 
+// See the header's own comment.
+void MainWindow::BeginCapture()
+{
+    if (m_screen != UiScreen::SongSelect)
+    {
+        return; // the Assign button is hidden outside SongSelect - defensive only
+    }
+
+    m_captureLane = 0;
+    m_captureRejectionMessage.clear();
+    EnableWindow(m_hButtonAssign, FALSE);
+    EnableWindow(m_hButtonRefresh, FALSE);
+    InvalidateRect(m_hwnd, nullptr, FALSE);
+}
+
+// See the header's own comment.
+void MainWindow::AdvanceCapture()
+{
+    ++m_captureLane;
+    m_captureRejectionMessage.clear();
+    if (m_captureLane >= kLaneCount)
+    {
+        m_captureLane = -1;
+        EnableWindow(m_hButtonAssign, TRUE);
+        EnableWindow(m_hButtonRefresh, TRUE);
+    }
+    InvalidateRect(m_hwnd, nullptr, FALSE);
+}
+
+// See the header's own comment.
+void MainWindow::CancelCapture()
+{
+    m_captureLane = -1;
+    m_captureRejectionMessage.clear();
+    EnableWindow(m_hButtonAssign, TRUE);
+    EnableWindow(m_hButtonRefresh, TRUE);
+    InvalidateRect(m_hwnd, nullptr, FALSE);
+}
+
 // On the song list, clicking the Easy Mode toggle flips it; clicking a row
 // chooses that song immediately.
 void MainWindow::OnLButtonDown(LPARAM lParam)
 {
-    if (m_screen != UiScreen::SongSelect)
+    if (m_screen != UiScreen::SongSelect || m_captureLane != -1)
     {
         return;
     }
@@ -586,6 +744,7 @@ void MainWindow::OnTimer(WPARAM timerId)
     {
         m_screen = UiScreen::SongSelect;
         ShowWindow(m_hButtonRefresh, SW_SHOW);
+        ShowWindow(m_hButtonAssign, SW_SHOW);
         InvalidateRect(m_hwnd, nullptr, TRUE);
     }
 
@@ -605,6 +764,7 @@ void MainWindow::QuitToSongSelect()
     m_gameSession.Stop();
     m_screen = UiScreen::SongSelect;
     ShowWindow(m_hButtonRefresh, SW_SHOW);
+    ShowWindow(m_hButtonAssign, SW_SHOW);
     InvalidateRect(m_hwnd, nullptr, TRUE);
 }
 
@@ -613,6 +773,7 @@ void MainWindow::OnDestroy()
 {
     m_gameSession.Stop();
     m_noteLane.StopAnimating();
+    m_midiInput.CloseAll();
     m_audioEngine.Shutdown();
     DeleteObject(m_windowBrush);
     DeleteObject(m_fieldBrush);
@@ -665,6 +826,7 @@ void MainWindow::OnPaint(HWND hwnd)
         {
             DrawSongList(m_backBufferDC);
             DrawEasyModeToggle(m_backBufferDC);
+            DrawCapturePrompt(m_backBufferDC);
         }
         else
         {
@@ -682,13 +844,17 @@ void MainWindow::OnEraseBkgnd()
 {
 }
 
-// Custom-paints the refresh button via DrawGameButton.
+// Custom-paints the refresh and Assign Inputs buttons via DrawGameButton.
 void MainWindow::OnDrawItem(LPARAM lParam)
 {
     const DRAWITEMSTRUCT& item = *reinterpret_cast<const DRAWITEMSTRUCT*>(lParam);
     if (item.CtlID == IDC_BUTTON_REFRESH)
     {
         DrawGameButton(item, kRefreshButtonColor, L"Refresh");
+    }
+    else if (item.CtlID == IDC_BUTTON_ASSIGN)
+    {
+        DrawGameButton(item, kAssignButtonColor, L"Assign Inputs");
     }
 }
 
@@ -757,6 +923,7 @@ void MainWindow::ChooseSong(int index)
     m_gameSession.Start();
     m_screen = UiScreen::Playing;
     ShowWindow(m_hButtonRefresh, SW_HIDE);
+    ShowWindow(m_hButtonAssign, SW_HIDE);
     SetFocus(m_hwnd); // a native control would otherwise keep keyboard focus and steal lane keystrokes
     InvalidateRect(m_hwnd, nullptr, TRUE);
 }
@@ -886,6 +1053,38 @@ void MainWindow::DrawEasyModeToggle(HDC hdc)
     SetBkMode(hdc, TRANSPARENT);
     SetTextColor(hdc, kLabelTextColor);
     DrawTextW(hdc, L"Easy Mode", -1, &labelRect, DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+    SelectObject(hdc, oldFont);
+}
+
+// See the header's own comment.
+void MainWindow::DrawCapturePrompt(HDC hdc)
+{
+    if (m_captureLane == -1)
+    {
+        return;
+    }
+
+    static HFONT promptFont =
+        CreateFontW(-16, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+                    CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
+
+    std::wstring text = L"Press a key or MIDI note for lane " + std::to_wstring(m_captureLane + 1) + L" of " +
+                         std::to_wstring(kLaneCount) + L" - Esc to stop";
+    if (!m_captureRejectionMessage.empty())
+    {
+        text += L"\r\n" + m_captureRejectionMessage;
+    }
+
+    // Deliberately tall enough to spill over the song list's own top rows -
+    // input is fully blocked while capturing (OnLButtonDown/OnKeyDown both
+    // guard on m_captureLane), so overlapping them briefly is harmless and
+    // keeps this from needing its own dedicated layout real estate.
+    int promptTop = kRowTop + kControlHeight + 10;
+    RECT rect{kRowLeft, promptTop, m_songListRect.right, promptTop + 60};
+    HFONT oldFont = (HFONT)SelectObject(hdc, promptFont);
+    SetBkMode(hdc, TRANSPARENT);
+    SetTextColor(hdc, kSongRowHighlightColor);
+    DrawTextW(hdc, text.c_str(), -1, &rect, DT_LEFT | DT_TOP | DT_WORDBREAK | DT_NOPREFIX);
     SelectObject(hdc, oldFont);
 }
 

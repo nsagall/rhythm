@@ -17,4 +17,14 @@ public:
 
     // Saves the Easy Mode toggle state so it's restored next launch.
     void SaveEasyMode(bool easyMode);
+
+    // Reads lane index `lane`'s saved custom input binding, serialized by
+    // LaneBindings (see src/LaneBindings.h) - Settings itself doesn't know or
+    // care what the string means, only that it round-trips. Empty if none
+    // saved yet.
+    std::wstring LoadLaneBinding(int lane);
+
+    // Saves lane index `lane`'s custom input binding, already serialized by
+    // LaneBindings, so it's restored next launch.
+    void SaveLaneBinding(int lane, const std::wstring& serialized);
 };

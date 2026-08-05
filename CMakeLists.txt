@@ -41,6 +41,8 @@ add_executable(Rhythm WIN32
     src/NoteLaneGdiRenderer.cpp
     src/Settings.cpp
     src/SongLibrary.cpp
+    src/LaneBindings.cpp
+    src/MidiInputManager.cpp
 )
 
 target_compile_definitions(Rhythm PRIVATE UNICODE _UNICODE)
