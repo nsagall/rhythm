@@ -279,6 +279,26 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int nCmdShow)
             break;
         }
 
+        // While minimized, GetClientRect (which ImGui_ImplWin32_NewFrame
+        // uses for io.DisplaySize every frame) reports a small placeholder
+        // rect rather than the real window size - historically around
+        // 160x28, the taskbar-icon-sized rect Windows substitutes for a
+        // minimized window's client area. Letting a frame through with that
+        // as io.DisplaySize would have EditorApp::Update()'s pane-splitter
+        // clamping logic shrink every persisted pane size down to fit it -
+        // permanently, since nothing ever grows them back except a manual
+        // drag, and the next splitter drag would even write the shrunken
+        // sizes to disk. WM_SIZE already skips the swapchain resize for the
+        // same SIZE_MINIMIZED quirk (see WndProc); skip the whole frame
+        // here for the same reason, and because there's nothing to usefully
+        // draw to an invisible window anyway. A short sleep keeps this from
+        // busy-spinning a CPU core the entire time the window is minimized.
+        if (IsIconic(hwnd))
+        {
+            Sleep(10);
+            continue;
+        }
+
         ImGui_ImplDX11_NewFrame();
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();

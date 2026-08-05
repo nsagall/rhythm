@@ -202,100 +202,119 @@ void EditorApp::Update()
         m_leftColumnWidth = contentWidth * 0.4f;
     }
 
-    // Clamp every persisted size against the current window dimensions
-    // before laying anything out - either can be stale (loaded from a
-    // previous, differently-sized session) or momentarily too big right
-    // after the window itself was shrunk.
-    if (m_timelineHeight < kMinPaneSize)
+    // Every pane size below is clamped into a *local* copy for this frame's
+    // layout only - never written back into the m_* members (SaveLayoutSettings'
+    // source of truth) except where a splitter is actually being dragged
+    // right now (see draggedThisFrame below). io.DisplaySize can be too
+    // small to fit the preferred sizes for a single transient frame without
+    // the window itself really having shrunk to that size - not just an
+    // intentional resize, but also the few frames Windows reports a small,
+    // not-yet-settled client rect while a minimize/restore animation is
+    // still playing (EditorMain.cpp's IsIconic guard only covers the
+    // steady-state minimized case, not that animated transition, and
+    // there's no reliable way to catch every such transient from this side
+    // instead). Clamping only a local copy means a transient frame renders
+    // a correctly-fitted-but-temporary layout without corrupting what's
+    // remembered - the preferred sizes are exactly what's still in m_* the
+    // moment io.DisplaySize is too, with no manual drag needed to recover
+    // them, and SaveLayoutSettings never sees the transient value at all.
+    float timelineHeight = m_timelineHeight;
+    float bottomHeight = m_bottomHeight;
+    float leftColumnWidth = m_leftColumnWidth;
+    float songPaneHeight = m_songPaneHeight;
+
+    if (timelineHeight < kMinPaneSize)
     {
-        m_timelineHeight = kMinPaneSize;
+        timelineHeight = kMinPaneSize;
     }
-    if (m_bottomHeight < kMinPaneSize)
+    if (bottomHeight < kMinPaneSize)
     {
-        m_bottomHeight = kMinPaneSize;
+        bottomHeight = kMinPaneSize;
     }
     float maxTimelinePlusBottom = contentHeight - kMinPaneSize - kSplitterThickness * 2.0f;
-    if (m_timelineHeight + m_bottomHeight > maxTimelinePlusBottom)
+    if (timelineHeight + bottomHeight > maxTimelinePlusBottom)
     {
-        float excess = (m_timelineHeight + m_bottomHeight) - maxTimelinePlusBottom;
-        float takeFromTimeline = m_timelineHeight - kMinPaneSize;
+        float excess = (timelineHeight + bottomHeight) - maxTimelinePlusBottom;
+        float takeFromTimeline = timelineHeight - kMinPaneSize;
         if (takeFromTimeline > excess)
         {
             takeFromTimeline = excess;
         }
         if (takeFromTimeline > 0.0f)
         {
-            m_timelineHeight -= takeFromTimeline;
+            timelineHeight -= takeFromTimeline;
             excess -= takeFromTimeline;
         }
         if (excess > 0.0f)
         {
-            m_bottomHeight -= excess;
-            if (m_bottomHeight < kMinPaneSize)
+            bottomHeight -= excess;
+            if (bottomHeight < kMinPaneSize)
             {
-                m_bottomHeight = kMinPaneSize;
+                bottomHeight = kMinPaneSize;
             }
         }
     }
 
-    float upperHeight = contentHeight - m_timelineHeight - m_bottomHeight - kSplitterThickness * 2.0f;
+    float upperHeight = contentHeight - timelineHeight - bottomHeight - kSplitterThickness * 2.0f;
     if (upperHeight < kMinPaneSize)
     {
         upperHeight = kMinPaneSize;
     }
 
-    if (m_leftColumnWidth < kMinPaneSize)
+    if (leftColumnWidth < kMinPaneSize)
     {
-        m_leftColumnWidth = kMinPaneSize;
+        leftColumnWidth = kMinPaneSize;
     }
     float maxLeftColumnWidth = contentWidth - kMinPaneSize - kSplitterThickness;
-    if (m_leftColumnWidth > maxLeftColumnWidth)
+    if (leftColumnWidth > maxLeftColumnWidth)
     {
-        m_leftColumnWidth = maxLeftColumnWidth > kMinPaneSize ? maxLeftColumnWidth : kMinPaneSize;
+        leftColumnWidth = maxLeftColumnWidth > kMinPaneSize ? maxLeftColumnWidth : kMinPaneSize;
     }
-    float rightColumnX = m_leftColumnWidth + kSplitterThickness;
+    float rightColumnX = leftColumnWidth + kSplitterThickness;
     float rightColumnWidth = contentWidth - rightColumnX;
 
-    if (m_songPaneHeight < kMinPaneSize)
+    if (songPaneHeight < kMinPaneSize)
     {
-        m_songPaneHeight = kMinPaneSize;
+        songPaneHeight = kMinPaneSize;
     }
     float maxSongPaneHeight = upperHeight - kMinPaneSize - kSplitterThickness;
-    if (m_songPaneHeight > maxSongPaneHeight)
+    if (songPaneHeight > maxSongPaneHeight)
     {
-        m_songPaneHeight = maxSongPaneHeight > kMinPaneSize ? maxSongPaneHeight : kMinPaneSize;
+        songPaneHeight = maxSongPaneHeight > kMinPaneSize ? maxSongPaneHeight : kMinPaneSize;
     }
-    float clipsY = contentY + m_songPaneHeight + kSplitterThickness;
-    float clipsHeight = upperHeight - m_songPaneHeight - kSplitterThickness;
+    float clipsY = contentY + songPaneHeight + kSplitterThickness;
+    float clipsHeight = upperHeight - songPaneHeight - kSplitterThickness;
 
     float timelineY = contentY + upperHeight + kSplitterThickness;
-    float bottomY = timelineY + m_timelineHeight + kSplitterThickness;
+    float bottomY = timelineY + timelineHeight + kSplitterThickness;
 
-    DrawSongPropertiesWindow(0.0f, contentY, m_leftColumnWidth, m_songPaneHeight);
-    DrawClipsWindow(0.0f, clipsY, m_leftColumnWidth, clipsHeight);
+    DrawSongPropertiesWindow(0.0f, contentY, leftColumnWidth, songPaneHeight);
+    DrawClipsWindow(0.0f, clipsY, leftColumnWidth, clipsHeight);
     DrawBlockPropertiesWindow(rightColumnX, contentY, rightColumnWidth, upperHeight);
-    DrawBlockTimelineWindow(0.0f, timelineY, contentWidth, m_timelineHeight);
-    DrawBottomWindow(0.0f, bottomY, contentWidth, m_bottomHeight);
+    DrawBlockTimelineWindow(0.0f, timelineY, contentWidth, timelineHeight);
+    DrawBottomWindow(0.0f, bottomY, contentWidth, bottomHeight);
 
     bool draggedThisFrame = false;
 
     // Left/right column boundary: left column is the stored value, right
-    // column absorbs the change as a remainder.
-    float leftRightDelta = DrawPaneSplitter("##SplitLeftRight", ImVec2(m_leftColumnWidth, contentY),
+    // column absorbs the change as a remainder. Deltas are applied on top
+    // of this frame's (possibly clamped) displayed position, since that's
+    // where the user visually grabbed the splitter from.
+    float leftRightDelta = DrawPaneSplitter("##SplitLeftRight", ImVec2(leftColumnWidth, contentY),
                                              ImVec2(kSplitterThickness, upperHeight), false);
     if (leftRightDelta != 0.0f)
     {
-        m_leftColumnWidth += leftRightDelta;
+        m_leftColumnWidth = leftColumnWidth + leftRightDelta;
         draggedThisFrame = true;
     }
 
     // Song/Clips boundary within the left column: Song is the stored
     // value, Clips absorbs the change as a remainder.
     float songClipsDelta = DrawPaneSplitter("##SplitSongClips", ImVec2(0.0f, clipsY - kSplitterThickness),
-                                             ImVec2(m_leftColumnWidth, kSplitterThickness), true);
+                                             ImVec2(leftColumnWidth, kSplitterThickness), true);
     if (songClipsDelta != 0.0f)
     {
-        m_songPaneHeight += songClipsDelta;
+        m_songPaneHeight = songPaneHeight + songClipsDelta;
         draggedThisFrame = true;
     }
 
@@ -306,7 +325,7 @@ void EditorApp::Update()
                                                  ImVec2(contentWidth, kSplitterThickness), true);
     if (upperTimelineDelta != 0.0f)
     {
-        m_timelineHeight -= upperTimelineDelta;
+        m_timelineHeight = timelineHeight - upperTimelineDelta;
         draggedThisFrame = true;
     }
 
@@ -316,8 +335,8 @@ void EditorApp::Update()
                                                   ImVec2(contentWidth, kSplitterThickness), true);
     if (timelineBottomDelta != 0.0f)
     {
-        m_timelineHeight += timelineBottomDelta;
-        m_bottomHeight -= timelineBottomDelta;
+        m_timelineHeight = timelineHeight + timelineBottomDelta;
+        m_bottomHeight = bottomHeight - timelineBottomDelta;
         draggedThisFrame = true;
     }
 
