@@ -332,10 +332,28 @@ Schedule Build(const ChartSong& song, const std::unordered_map<const ChartClip*,
                 // always eventually reaches hits_required given enough
                 // repeats, exactly like the live game's clip just keeps
                 // looping rather than being stopped.
-                if (stemDuration > 0.0 && lockInSeconds > entry.endSeconds)
+                //
+                // Beyond merely locking in somewhere before the boundary,
+                // this entry also can't end until the *next* clip's own
+                // preview (PreviewClip(), gated on IsPassing() in the real
+                // game) would have had a full tFallSeconds to actually show
+                // before the hand-off - locking in with less than that left
+                // gives the player little or no real on-screen warning
+                // about what's coming, even though this section technically
+                // passed (mirrors GameSession::Update's own
+                // m_currentSectionLockInAtSeconds check). Both conditions
+                // collapse into the same single floor below: the boundary
+                // must land at least tFallSeconds after lockInSeconds,
+                // extended by whole loops (mirroring ExtendPendingAdvance's
+                // own one-loop-at-a-time granularity) until that holds -
+                // which is a strict superset of the "doesn't fit in the
+                // natural window at all" case this replaced, not a
+                // separate check.
+                if (stemDuration > 0.0 && entry.endSeconds - lockInSeconds < tFallSeconds)
                 {
-                    double loopsNeeded = std::ceil((lockInSeconds - entry.endSeconds) / stemDuration - 1e-9);
-                    entry.endSeconds += std::max(0.0, loopsNeeded) * stemDuration;
+                    double loopsNeeded =
+                        std::ceil((lockInSeconds + tFallSeconds - entry.endSeconds) / stemDuration - 1e-9);
+                    entry.endSeconds += std::max(1.0, loopsNeeded) * stemDuration;
                 }
 
                 // Informational only - the total number of passes spanning

@@ -154,6 +154,35 @@ struct NoteLaneScene
     // check first, exactly as it would for NoteLaneScene::notes.
     std::vector<SceneNote> explodingNotes;
 
+    // Progress toward the current learn section's clip locking in - streak
+    // divided by hitsRequired, clamped to [0,1] - for the "hits meter" panel
+    // beside the playfield. Only meaningful while showHitsMeter is true.
+    double hitsMeterProgress = 0.0;
+
+    // True whenever the hits meter should be visible: there's a current
+    // learn section and it isn't passing right now. False for the entire
+    // rest of a Pass-mode section's run once it first locks in (that
+    // section's own justLockedIn frame is the moment the meter should pop
+    // instead of just vanishing - see INoteLaneRenderer::Draw). In DontFail
+    // mode this starts false (a track begins already passing) and only
+    // flips true on a justFailed frame, then back false on whichever later
+    // justLockedIn brings it back to passing - so the meter is otherwise
+    // invisible the whole time a DontFail section is behaving itself.
+    bool showHitsMeter = false;
+
+    // Which of the two disappearance treatments the hits meter should use
+    // on the justLockedIn frame it goes away: true for a DontFail clip
+    // (small spark burst - see NoteLaneRenderer's AppendHitsMeterExplosion
+    // - since the meter can reappear many times over one section's run),
+    // false for a Pass clip (a confetti burst instead - passing is a
+    // one-way latch, so this is the meter's one and only disappearance for
+    // the whole section). Meaningless (and left at its default) whenever
+    // showHitsMeter is false and no lock-in is happening this frame - a
+    // renderer only ever needs to read it on a justLockedIn frame, but it's
+    // populated any time there's a current learn clip so it's always
+    // correct by the time that frame arrives.
+    bool hitsMeterIsDontFail = false;
+
     std::wstring statusText;
 
     // Which ChartClip (by its .chart name, not displayName) each of NoteLaneModel's own

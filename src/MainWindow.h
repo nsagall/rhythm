@@ -65,8 +65,9 @@ private:
 
     // On the song list: Up/Down moves the highlight, any other key (besides
     // a pure modifier or Left/Right) chooses the highlighted song. While
-    // playing: registers a press on a non-repeated key-down for one of the
-    // lane keys (j/k/l/;), exactly as before.
+    // playing: Space toggles pause; the lane keys (j/k/l/;) register a press
+    // on a non-repeated key-down, but do nothing at all while paused (see
+    // TogglePause).
     void OnKeyDown(WPARAM key, LPARAM flags);
 
     // Registers a release on key-up for one of the lane keys (j/k/l/;). Only meaningful while playing.
@@ -75,15 +76,44 @@ private:
     // On the song list, clicking a row chooses that song immediately.
     void OnLButtonDown(LPARAM lParam);
 
-    // Sends a lane press to the game session and reflects any judgement in the note lane.
+    // Pauses the game the moment this window is deactivated (Alt-Tab,
+    // clicking another window, ...) - WM_ACTIVATE with WA_INACTIVE, not
+    // WM_KILLFOCUS, since the latter also fires when keyboard focus merely
+    // moves to a child control (e.g. the refresh button) without the window
+    // itself losing the user's attention. Only while Playing; a no-op
+    // otherwise, and never un-pauses on its own - regaining focus doesn't
+    // resume, only Space does (see TogglePause).
+    void OnActivate(WPARAM wParam);
+
+    // Toggles GameSession::Pause()/Resume() and repaints so the HUD's
+    // "Paused" text (or its absence) shows immediately. Only while Playing;
+    // a no-op on the song list.
+    void TogglePause();
+
+    // Sends a lane press to the game session, then drains and reflects any
+    // judgement it produced (see DrainJudgements) - or, if this lane has no
+    // note to press right now at all, shows the same miss feedback directly,
+    // since GameSession::OnPress itself would otherwise just silently
+    // ignore the tap (there being no judgement for DrainJudgements to find).
     void RegisterPress(int lane);
 
-    // Sends a lane release to the game session and reflects any judgement in the note lane.
+    // Sends a lane release to the game session, then drains and reflects
+    // any judgement it produced (see DrainJudgements).
     void RegisterRelease(int lane);
 
-    // Advances the game session, reflects any judgement in the note lane,
-    // and - once a song completes while it's the visible screen - switches
-    // back to the song list (playback itself is left running untouched).
+    // Forwards every judgement GameSession has recorded since the last call
+    // (see GameSession::ConsumeJudgementEvents) to the note lane - the one
+    // place a judgement's visual feedback happens, regardless of whether it
+    // came from an explicit key press/release (RegisterPress/
+    // RegisterRelease) or from one of Update()'s own timeout checks (a note
+    // never pressed, or held past its release window) - both are equally
+    // real misses and get exactly the same flash/ripple treatment.
+    void DrainJudgements();
+
+    // Advances the game session, drains and reflects any judgement it
+    // produced, and - once a song completes while it's the visible screen -
+    // switches back to the song list (playback itself is left running
+    // untouched).
     void OnTimer(WPARAM timerId);
 
     // Stops the session/animation/audio engine and quits the message loop.

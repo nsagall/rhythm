@@ -6,6 +6,7 @@
 void SongClock::Start(double bpm)
 {
     m_bpm = bpm;
+    m_paused = false;
     QueryPerformanceFrequency(&m_frequency);
     QueryPerformanceCounter(&m_startTime);
 }
@@ -13,6 +14,10 @@ void SongClock::Start(double bpm)
 // Seconds elapsed since Start() was called.
 double SongClock::ElapsedSeconds() const
 {
+    if (m_paused)
+    {
+        return m_pausedElapsedSeconds;
+    }
     LARGE_INTEGER now;
     QueryPerformanceCounter(&now);
     return static_cast<double>(now.QuadPart - m_startTime.QuadPart) / static_cast<double>(m_frequency.QuadPart);
@@ -51,4 +56,31 @@ void SongClock::Resync(double knownElapsedSeconds)
 double SongClock::Bpm() const
 {
     return m_bpm;
+}
+
+// See the header comment.
+void SongClock::Pause()
+{
+    if (m_paused)
+    {
+        return;
+    }
+    m_pausedElapsedSeconds = ElapsedSeconds();
+    m_paused = true;
+}
+
+// See the header comment.
+void SongClock::Resume()
+{
+    if (!m_paused)
+    {
+        return;
+    }
+    m_paused = false;
+    Resync(m_pausedElapsedSeconds);
+}
+
+bool SongClock::IsPaused() const
+{
+    return m_paused;
 }

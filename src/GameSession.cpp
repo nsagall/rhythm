@@ -141,6 +141,7 @@ void GameSession::Start()
     m_clipInstances.clear();
     m_queuedBackground = QueuedBackground{};
     m_lastJudgement = JudgementResult::None;
+    m_paused = false;
 
     m_clock.Start(m_song.bpm);
     m_phase = GamePhase::CountIn;
@@ -158,6 +159,36 @@ void GameSession::Stop()
     }
     m_queuedBackground = QueuedBackground{};
     m_lastJudgement = JudgementResult::None;
+    m_paused = false;
+}
+
+// See the header comment.
+void GameSession::Pause()
+{
+    if (m_paused)
+    {
+        return;
+    }
+    m_paused = true;
+    m_clock.Pause();
+    m_audioEngine.PauseAll();
+}
+
+// See the header comment.
+void GameSession::Resume()
+{
+    if (!m_paused)
+    {
+        return;
+    }
+    m_paused = false;
+    m_clock.Resume();
+    m_audioEngine.ResumeAll();
+}
+
+bool GameSession::IsPaused() const
+{
+    return m_paused;
 }
 
 // See the header comment - lets a press that lands right on the count-in's
@@ -178,8 +209,9 @@ void GameSession::CatchUpCountIn()
 }
 
 // True exactly when OnPress(lane) would actually judge a press right now -
-// mirrors every one of OnPress's own early-return guards, just without any
-// of its judging side effects.
+// mirrors every one of OnPress's own early-return guards except the pause
+// check (deliberately - see the header's own comment), without any of its
+// judging side effects.
 bool GameSession::IsLaneJudgeable(int lane) const
 {
     if (m_phase != GamePhase::Learning)
@@ -202,6 +234,10 @@ bool GameSession::IsLaneJudgeable(int lane) const
 // Registers a key-down for lane; judges it against that lane's next expected note if the current section is learning.
 void GameSession::OnPress(int lane)
 {
+    if (m_paused)
+    {
+        return;
+    }
     CatchUpCountIn();
     if (!IsLaneJudgeable(lane))
     {
@@ -233,8 +269,7 @@ void GameSession::OnPress(int lane)
             // itself is the final judgement - mirrors OnRelease's
             // in-tolerance branch below, the only other place a Hit gets
             // registered.
-            RegisterHit();
-            m_lastJudgement = JudgementResult::Hit;
+            RegisterHit(lane);
             RecordOnsetJudgement(startBeat, lane, JudgementResult::Hit);
         }
         else
@@ -252,8 +287,7 @@ void GameSession::OnPress(int lane)
         // Mistimed: fails immediately, but doesn't advance - this lane keeps
         // awaiting the same note until it's hit correctly or times out,
         // exactly like a mistimed tap did in the single-lane model.
-        RegisterMiss();
-        m_lastJudgement = JudgementResult::Miss;
+        RegisterMiss(lane);
         RecordOnsetJudgement(startBeat, lane, JudgementResult::Miss);
     }
 }
@@ -291,14 +325,12 @@ void GameSession::OnRelease(int lane)
 
     if (std::abs(nowSeconds - endSeconds) <= toleranceSeconds)
     {
-        RegisterHit();
-        m_lastJudgement = JudgementResult::Hit;
+        RegisterHit(lane);
         RecordOnsetJudgement(startBeat, lane, JudgementResult::Hit);
     }
     else
     {
-        RegisterMiss();
-        m_lastJudgement = JudgementResult::Miss;
+        RegisterMiss(lane);
         RecordOnsetJudgement(startBeat, lane, JudgementResult::Miss);
     }
 
@@ -308,6 +340,11 @@ void GameSession::OnRelease(int lane)
 // Advances count-in/miss-detection/hold-timeout timing; call once per frame.
 void GameSession::Update()
 {
+    if (m_paused)
+    {
+        return;
+    }
+
     // Keep the judging clock locked to actual audio playback. m_clock is a
     // free-running CPU timer, while the music is actually driven by
     // XAudio2's own hardware clock - the two can slowly drift apart over a
@@ -370,8 +407,7 @@ void GameSession::Update()
                 if (now > endSeconds + toleranceSeconds)
                 {
                     double startBeat = m_currentInstance.LaneHoldStartBeat(lane);
-                    RegisterMiss();
-                    m_lastJudgement = JudgementResult::Miss;
+                    RegisterMiss(lane);
                     RecordOnsetJudgement(startBeat, lane, JudgementResult::Miss);
                     m_currentInstance.ClearLaneHold(lane);
                 }
@@ -470,8 +506,7 @@ void GameSession::Update()
                 double onsetSeconds = expectedBeat * secondsPerBeat;
                 if (now > onsetSeconds + toleranceSeconds)
                 {
-                    RegisterMiss();
-                    m_lastJudgement = JudgementResult::Miss;
+                    RegisterMiss(lane);
                     RecordOnsetJudgement(expectedBeat, lane, JudgementResult::Miss);
                     AdvanceExpectedNote(lane);
                 }
@@ -738,6 +773,15 @@ JudgementResult GameSession::ConsumeLastJudgement()
     return result;
 }
 
+// Returns and clears every judgement recorded since the last call - see the
+// header's own comment.
+std::vector<GameSession::JudgementEvent> GameSession::ConsumeJudgementEvents()
+{
+    std::vector<JudgementEvent> events = std::move(m_judgementEvents);
+    m_judgementEvents.clear();
+    return events;
+}
+
 // Returns how a specific lane note was judged, or None if untracked.
 JudgementResult GameSession::OnsetJudgement(double startBeat, int lane) const
 {
@@ -978,7 +1022,7 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
 // longer drive anything - in Pass mode that's permanent; in DontFail mode
 // a later miss (see RegisterMiss) can still drop back to failing and start
 // the streak over.
-void GameSession::RegisterHit()
+void GameSession::RegisterHit(int lane)
 {
     const ChartSection& section = m_song.sections[m_currentInstance.SectionIndex()];
     const ChartClip& clip = m_song.clips[section.clipIndex];
@@ -986,8 +1030,43 @@ void GameSession::RegisterHit()
     if (m_currentInstance.RegisterHit(clip.hitsRequired))
     {
         m_audioEngine.SetVolume(m_stemHandles[section.clipIndex], static_cast<float>(clip.volume));
+
+        // The section just (re-)started passing - make sure its already-
+        // scheduled candidate advance still leaves the next section's
+        // preview (PreviewClip(), gated on IsPassing() - see
+        // PreviewSectionIndex()) a full kNoteFallBeats to actually show
+        // before hand-off, extending it right now if not, rather than
+        // waiting for Update() to notice later once "now" has already
+        // caught up to a too-close advance instant. Fixing it up eagerly,
+        // right here, keeps PendingAdvanceAtSeconds() always correct from
+        // the instant it's read by anything - critically, NoteLaneModel's
+        // own early-handoff math (BuildScene's kPreviewNextClipBeforeHandoff
+        // branch), which starts trusting PreviewClip()'s onsets the moment
+        // IsPassing() flips true, same as PreviewClip() itself. A reactive
+        // fix-up in Update() instead (extend only once "now" reaches the
+        // stale instant) would leave a real window of frames where
+        // PendingAdvanceAtSeconds() is still the old, too-close value -
+        // during which the note lane would already start showing the next
+        // section's notes early, then visibly snap back the instant
+        // Update() finally corrects it. See ChartTiming::
+        // ComputeLearnAdvanceSeconds's own doc comment for why a candidate
+        // advance is otherwise never revisited once scheduled.
+        double now = m_clock.ElapsedSeconds();
+        double secondsPerBeat = 60.0 / m_song.bpm;
+        double tFallSeconds = kNoteFallBeats * secondsPerBeat;
+        double stemDuration = m_audioEngine.GetStemDurationSeconds(m_stemHandles[section.clipIndex]);
+        if (stemDuration > 0.0)
+        {
+            while (m_currentInstance.PendingAdvanceAtSeconds() - now < tFallSeconds)
+            {
+                m_currentInstance.ExtendPendingAdvance(stemDuration);
+            }
+        }
     }
     StartClipLoop(section.clipIndex, clip.initVolume);
+
+    m_lastJudgement = JudgementResult::Hit;
+    m_judgementEvents.push_back({JudgementResult::Hit, lane, m_currentInstance.IsPassing()});
 }
 
 // Starts clipIndex's stem looping now (phase-aligned to the beat grid, at
@@ -1071,7 +1150,7 @@ void GameSession::StopClipLoop(int clipIndex)
 }
 
 // Records a miss: resets the shared streak, and stops the current section's clip loop after 3 in a row - unchanged in both modes. In Pass mode, a no-op once already passing - further misses shouldn't stop the clip or unfreeze the streak display once it's proven itself, though the section's own advance timing was never affected by any of this either way. In DontFail mode, a miss while passing additionally drops the section back to failing and reverts the clip's volume to init_volume (the mirror of RegisterHit's own switch to volume on newly passing). In easy mode, the first miss each section is instead fully forgiven regardless of mode (see SectionInstance's own easy-grace comment) - streak and consecutive-miss count both left untouched, and neither of the above fires, as if it never happened.
-void GameSession::RegisterMiss()
+void GameSession::RegisterMiss(int lane)
 {
     const ChartSection& section = m_song.sections[m_currentInstance.SectionIndex()];
     const ChartClip& clip = m_song.clips[section.clipIndex];
@@ -1085,6 +1164,9 @@ void GameSession::RegisterMiss()
     {
         m_audioEngine.SetVolume(m_stemHandles[section.clipIndex], static_cast<float>(clip.initVolume));
     }
+
+    m_lastJudgement = JudgementResult::Miss;
+    m_judgementEvents.push_back({JudgementResult::Miss, lane, m_currentInstance.IsPassing()});
 }
 
 // Moves this lane's next-expected-note pointer forward to the next note

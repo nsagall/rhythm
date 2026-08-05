@@ -25,6 +25,12 @@ public:
     // Sets the screen-space rect the lane is drawn and animated within.
     void SetLaneRect(RECT rect);
 
+    // Sets the screen-space rect the hits meter panel (see
+    // NoteLaneScene::showHitsMeter) is drawn and animated within - separate
+    // from the lane rect itself, since MainWindow positions it beside the
+    // playfield rather than inside it.
+    void SetHitsMeterRect(RECT rect);
+
     // Starts the redraw timer.
     void StartAnimating();
 
@@ -48,6 +54,7 @@ public:
 private:
     HWND m_hwnd = nullptr;
     RECT m_laneRect{};
+    RECT m_hitsMeterRect{};
 
     NoteLaneModel m_model;
     std::unique_ptr<INoteLaneRenderer> m_renderer;

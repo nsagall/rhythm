@@ -27,6 +27,19 @@ constexpr double kExplosionMinSpeedPxPerSec = 90.0;
 constexpr double kExplosionMaxSpeedPxPerSec = 260.0;
 constexpr double kExplosionDragPerSec = 2.5; // exponential slowdown - a burst outward that settles, not a straight-line fly-off
 
+// The hits meter's own little "lock-in" burst - a single celebration point
+// rather than one burst per note, so it gets a bit more than one note's
+// worth of sparks (kExplosionParticlesPerNote) to still read as an event
+// worth noticing beside the (possibly much larger) note-explosion burst
+// firing at the very same instant.
+constexpr int kHitsMeterExplosionParticleCount = 16;
+
+// The hits meter's own confetti burst (Pass mode only - see
+// AppendHitsMeterConfetti) - fewer pieces than the full-width playfield
+// burst (kConfettiPieceCount), scaled down to match the meter's own much
+// narrower width.
+constexpr int kHitsMeterConfettiPieceCount = 18;
+
 // Hit ripples grow twice as fast as miss ripples, which are themselves a
 // bit faster than a plain 260 px/sec so they fully fade before leaving the lane.
 constexpr double kMissRippleSpeedPxPerSec = 260.0 / 0.75;
@@ -671,6 +684,49 @@ void NoteLaneGdiRenderer::DrawHud(HDC hdc, RECT laneRect, const std::wstring& st
     SelectObject(hdc, oldFont);
 }
 
+// The hits meter panel: a translucent rounded track, same visual language
+// as DrawHud's panel, with a colored fill anchored to the bottom that grows
+// upward as scene.hitsMeterProgress climbs toward 1 - so it reads as
+// filling "up towards passing," matching notes falling down into the judge
+// line right beside it. Drawn only while scene.showHitsMeter is true; the
+// instant that flips false (a lock-in), the panel simply stops being drawn
+// here at all - Draw() spawns AppendHitsMeterExplosion's burst on that same
+// frame instead, so it disappears with a little celebration rather than
+// just popping away with nothing.
+void NoteLaneGdiRenderer::DrawHitsMeter(HDC hdc, RECT hitsMeterRect, const NoteLaneScene& scene)
+{
+    if (!scene.showHitsMeter || hitsMeterRect.right <= hitsMeterRect.left ||
+        hitsMeterRect.bottom <= hitsMeterRect.top)
+    {
+        return;
+    }
+
+    constexpr int kCornerRadius = 8;
+    constexpr int kInsetPx = 3;
+
+    DrawAlphaRoundRect(hdc, hitsMeterRect, kCornerRadius, RGB(12, 8, 28), 175);
+
+    HPEN oldPen = (HPEN)SelectObject(hdc, CachedSolidPen(2, kBorderColor));
+    HBRUSH oldBrush = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
+    RoundRect(hdc, hitsMeterRect.left, hitsMeterRect.top, hitsMeterRect.right, hitsMeterRect.bottom, kCornerRadius,
+              kCornerRadius);
+    SelectObject(hdc, oldBrush);
+    SelectObject(hdc, oldPen);
+
+    RECT innerRect{hitsMeterRect.left + kInsetPx, hitsMeterRect.top + kInsetPx, hitsMeterRect.right - kInsetPx,
+                    hitsMeterRect.bottom - kInsetPx};
+    int innerHeight = innerRect.bottom - innerRect.top;
+    int fillHeight = static_cast<int>(innerHeight * scene.hitsMeterProgress);
+    if (innerRect.right <= innerRect.left || fillHeight <= 0)
+    {
+        return;
+    }
+
+    COLORREF fillColor = scene.primaryClip ? scene.primaryClip->color : kStreakColor;
+    RECT fillRect{innerRect.left, innerRect.bottom - fillHeight, innerRect.right, innerRect.bottom};
+    DrawAlphaRoundRect(hdc, fillRect, kCornerRadius - 2, fillColor, 235);
+}
+
 void NoteLaneGdiRenderer::ToggleDebugOverlay()
 {
     m_debugOverlayEnabled = !m_debugOverlayEnabled;
@@ -731,6 +787,33 @@ void NoteLaneGdiRenderer::SpawnConfetti(RECT laneRect)
     m_confettiStartMs = GetTickCount();
 }
 
+// Adds a smaller confetti burst scattered across hitsMeterRect's own width
+// into m_confetti, on top of whatever SpawnConfetti just put there - meant
+// to be called right after it, on the same justLockedIn frame (Pass mode
+// only), so both bursts animate and clear together on SpawnConfetti's own
+// timer (m_confettiStartMs) with no extra state of their own. i's own seed
+// range starts well clear of SpawnConfetti's (i*7+1..5 up to
+// kConfettiPieceCount) so the two bursts don't scatter identically.
+void NoteLaneGdiRenderer::AppendHitsMeterConfetti(RECT hitsMeterRect)
+{
+    if (hitsMeterRect.right <= hitsMeterRect.left)
+    {
+        return;
+    }
+    double width = hitsMeterRect.right - hitsMeterRect.left;
+    int seedBase = kConfettiPieceCount * 7 + 100;
+    for (int i = 0; i < kHitsMeterConfettiPieceCount; ++i)
+    {
+        double spawnX = hitsMeterRect.left + PseudoRandom(seedBase + i * 7 + 1) * width;
+        double spawnY = hitsMeterRect.top - PseudoRandom(seedBase + i * 7 + 2) * 40.0;
+        double velX = (PseudoRandom(seedBase + i * 7 + 3) - 0.5) * 100.0;
+        double velY = 50.0 + PseudoRandom(seedBase + i * 7 + 4) * 70.0;
+        double spinPhase = PseudoRandom(seedBase + i * 7 + 5) * 6.283185307;
+        COLORREF color = kConfettiPalette[i % kConfettiPaletteSize];
+        m_confetti.push_back({spawnX, spawnY, velX, velY, spinPhase, color});
+    }
+}
+
 // Bursts each of scene.explodingNotes that's actually on screen right now
 // apart into a handful of sparks flying outward from its own position,
 // instead of a generic confetti celebration or just vanishing with no
@@ -760,6 +843,33 @@ void NoteLaneGdiRenderer::SpawnExplosion(RECT laneRect, const NoteLaneScene& sce
     m_explosionStartMs = GetTickCount();
 }
 
+// Adds a burst of sparks flying outward from hitsMeterRect's own center
+// into m_explosion, on top of whatever SpawnExplosion just put there -
+// meant to be called right after it, on the same justLockedIn frame, so
+// both bursts animate and clear together on SpawnExplosion's own timer
+// (m_explosionStartMs) with no extra state of their own. particleSeed
+// starts well clear of SpawnExplosion's own seed range (bounded by
+// kExplosionParticlesPerNote times however many exploding notes there are)
+// so the two bursts don't happen to scatter in an identical pattern.
+void NoteLaneGdiRenderer::AppendHitsMeterExplosion(RECT hitsMeterRect, COLORREF color)
+{
+    if (hitsMeterRect.right <= hitsMeterRect.left || hitsMeterRect.bottom <= hitsMeterRect.top)
+    {
+        return;
+    }
+    int cx = (hitsMeterRect.left + hitsMeterRect.right) / 2;
+    int cy = (hitsMeterRect.top + hitsMeterRect.bottom) / 2;
+    int particleSeed = 9000;
+    for (int p = 0; p < kHitsMeterExplosionParticleCount; ++p)
+    {
+        double angle = PseudoRandom(particleSeed++) * 6.283185307;
+        double speed = kExplosionMinSpeedPxPerSec +
+                       PseudoRandom(particleSeed++) * (kExplosionMaxSpeedPxPerSec - kExplosionMinSpeedPxPerSec);
+        m_explosion.push_back(
+            {static_cast<double>(cx), static_cast<double>(cy), std::cos(angle) * speed, std::sin(angle) * speed, color});
+    }
+}
+
 // Flashes a brief hit/miss indicator at the judge line for one lane's
 // column, and spawns an expanding judgement ripple: green for a hit
 // (always, even while passing), red for a miss while not yet/no longer
@@ -785,8 +895,9 @@ void NoteLaneGdiRenderer::OnJudgement(JudgementResult result, int lane, bool pas
     }
 }
 
-// Paints the background, columns, receptors, notes, and status text for one scene.
-void NoteLaneGdiRenderer::Draw(HDC hdc, RECT laneRect, const NoteLaneScene& scene)
+// Paints the background, columns, receptors, notes, and status text for one
+// scene, plus the hits meter panel beside it.
+void NoteLaneGdiRenderer::Draw(HDC hdc, RECT laneRect, RECT hitsMeterRect, const NoteLaneScene& scene)
 {
     // A percussive pulse value that's brightest right on the beat and
     // decays before the next one.
@@ -821,6 +932,24 @@ void NoteLaneGdiRenderer::Draw(HDC hdc, RECT laneRect, const NoteLaneScene& scen
     if (scene.justHandedOff || scene.justLockedIn || scene.justFailed)
     {
         SpawnExplosion(laneRect, scene);
+    }
+    if (scene.justLockedIn)
+    {
+        // The hits meter is about to stop being drawn this same frame (see
+        // DrawHitsMeter) - give it a burst of its own instead of just
+        // vanishing. DontFail gets the small spark burst every time (it can
+        // reappear and disappear many times over one section's run); Pass
+        // only ever disappears once for the whole section (passing is a
+        // one-way latch), so it gets its own confetti burst instead - on
+        // top of, not instead of, SpawnConfetti's playfield-wide one above.
+        if (scene.hitsMeterIsDontFail)
+        {
+            AppendHitsMeterExplosion(hitsMeterRect, kNoteColorHit);
+        }
+        else
+        {
+            AppendHitsMeterConfetti(hitsMeterRect);
+        }
     }
 
     // A newly-spawned note's top edge extends above the lane by its own
@@ -863,6 +992,7 @@ void NoteLaneGdiRenderer::Draw(HDC hdc, RECT laneRect, const NoteLaneScene& scen
 
     DrawRipples(hdc, laneRect);
     DrawHud(hdc, laneRect, scene.statusText);
+    DrawHitsMeter(hdc, hitsMeterRect, scene);
     if (m_debugOverlayEnabled)
     {
         DrawDebugOverlay(hdc, laneRect, scene);

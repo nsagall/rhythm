@@ -44,6 +44,16 @@ constexpr int kLaneMaxWidth = 480;
 constexpr int kLaneMinHeight = 320;
 constexpr int kSongListMaxWidth = 560;
 constexpr int kSongRowHeight = 46;
+
+// The hits meter panel sits to the lane's right as its own small, separate
+// widget - fixed-size (unlike the lane itself) since it only ever shows a
+// single fill bar, no need to grow with the window. A wide gap and a
+// height shorter than the lane's own (vertically centered - see Layout())
+// keep it reading as clearly detached from the playfield rather than an
+// extra column welded onto it.
+constexpr int kHitsMeterWidth = 16;
+constexpr int kHitsMeterGap = 34;
+constexpr double kHitsMeterHeightFraction = 0.5;
 constexpr int kHintAreaHeight = 34; // reserved below the song list rect for DrawSongList's hint line
 
 // Smallest client area the header row + a minimally-usable lane/list can
@@ -223,6 +233,9 @@ LRESULT MainWindow::HandleMessage(HWND hwnd, UINT message, WPARAM wParam, LPARAM
         case WM_KEYUP:
             OnKeyUp(wParam, lParam);
             return 0;
+        case WM_ACTIVATE:
+            OnActivate(wParam);
+            return 0;
         case WM_LBUTTONDOWN:
             OnLButtonDown(lParam);
             return 0;
@@ -310,12 +323,27 @@ void MainWindow::Layout()
     int listBottom = std::max(listTop + kLaneMinHeight, height - kLaneMargin - kHintAreaHeight);
     m_songListRect = RECT{listLeft, listTop, listLeft + listWidth, listBottom};
 
-    int laneWidth = std::min(std::max(width - 2 * kLaneMargin, kLaneMinWidth), kLaneMaxWidth);
-    int laneLeft = (width - laneWidth) / 2;
+    // The lane and the hits meter beside it are laid out as one combined,
+    // centered unit - the lane itself still clamps to the same
+    // min/max width it always has, just computed against the width left
+    // over once the meter's own fixed footprint is reserved, so the pair
+    // together stays centered instead of the lane alone.
+    int hitsMeterFootprint = kHitsMeterGap + kHitsMeterWidth;
+    int laneAvailableWidth = width - 2 * kLaneMargin - hitsMeterFootprint;
+    int laneWidth = std::min(std::max(laneAvailableWidth, kLaneMinWidth), kLaneMaxWidth);
+    int combinedWidth = laneWidth + hitsMeterFootprint;
+    int laneLeft = (width - combinedWidth) / 2;
     int laneTop = kToolbarHeight + kLaneMargin;
     int laneBottom = std::max(laneTop + kLaneMinHeight, height - kLaneMargin);
     RECT laneRect{laneLeft, laneTop, laneLeft + laneWidth, laneBottom};
     m_noteLane.SetLaneRect(laneRect);
+
+    int laneHeight = laneBottom - laneTop;
+    int hitsMeterHeight = static_cast<int>(laneHeight * kHitsMeterHeightFraction);
+    int hitsMeterTop = laneTop + (laneHeight - hitsMeterHeight) / 2;
+    RECT hitsMeterRect{laneRect.right + kHitsMeterGap, hitsMeterTop, laneRect.right + hitsMeterFootprint,
+                        hitsMeterTop + hitsMeterHeight};
+    m_noteLane.SetHitsMeterRect(hitsMeterRect);
 
     InvalidateRect(m_hwnd, nullptr, TRUE);
 }
@@ -407,11 +435,22 @@ void MainWindow::OnKeyDown(WPARAM key, LPARAM flags)
         return;
     }
 
+    if (static_cast<int>(key) == VK_SPACE)
+    {
+        TogglePause();
+        return;
+    }
+
     if (static_cast<int>(key) == 'D')
     {
         m_noteLane.ToggleDebugOverlay();
         InvalidateRect(m_hwnd, nullptr, FALSE);
         return;
+    }
+
+    if (m_gameSession.IsPaused())
+    {
+        return; // lane keys do nothing while paused - only Space (above) does
     }
 
     for (int lane = 0; lane < kLaneCount; ++lane)
@@ -438,6 +477,35 @@ void MainWindow::OnKeyUp(WPARAM key, LPARAM /*flags*/)
             return;
         }
     }
+}
+
+// Pauses on deactivation (Alt-Tab, clicking another window) while Playing.
+void MainWindow::OnActivate(WPARAM wParam)
+{
+    if (LOWORD(wParam) != WA_INACTIVE || m_screen != UiScreen::Playing)
+    {
+        return;
+    }
+    m_gameSession.Pause();
+    InvalidateRect(m_hwnd, nullptr, FALSE);
+}
+
+// See the header comment.
+void MainWindow::TogglePause()
+{
+    if (m_screen != UiScreen::Playing)
+    {
+        return;
+    }
+    if (m_gameSession.IsPaused())
+    {
+        m_gameSession.Resume();
+    }
+    else
+    {
+        m_gameSession.Pause();
+    }
+    InvalidateRect(m_hwnd, nullptr, FALSE);
 }
 
 // On the song list, clicking the Easy Mode toggle flips it; clicking a row
@@ -486,21 +554,22 @@ void MainWindow::RegisterPress(int lane)
     }
 
     m_gameSession.OnPress(lane);
-    JudgementResult result = m_gameSession.ConsumeLastJudgement();
-    if (result != JudgementResult::None)
-    {
-        m_noteLane.ShowJudgement(result, lane, m_gameSession.IsPassing());
-    }
+    DrainJudgements();
 }
 
 // Sends a lane release to the game session and reflects any judgement in the note lane.
 void MainWindow::RegisterRelease(int lane)
 {
     m_gameSession.OnRelease(lane);
-    JudgementResult result = m_gameSession.ConsumeLastJudgement();
-    if (result != JudgementResult::None)
+    DrainJudgements();
+}
+
+// See the header's own comment.
+void MainWindow::DrainJudgements()
+{
+    for (const GameSession::JudgementEvent& event : m_gameSession.ConsumeJudgementEvents())
     {
-        m_noteLane.ShowJudgement(result, lane, m_gameSession.IsPassing());
+        m_noteLane.ShowJudgement(event.result, event.lane, event.passing);
     }
 }
 
@@ -511,13 +580,7 @@ void MainWindow::RegisterRelease(int lane)
 void MainWindow::OnTimer(WPARAM timerId)
 {
     m_gameSession.Update();
-
-    // A judgement from Update() (a timeout miss) isn't tied to a specific
-    // key the player just pressed, so there's no single lane to flash the
-    // judge line for - the missed note's own bar color already shows it.
-    // Still have to drain it so it doesn't linger and get misattributed to
-    // the next real press/release's ConsumeLastJudgement() call.
-    m_gameSession.ConsumeLastJudgement();
+    DrainJudgements();
 
     if (m_screen == UiScreen::Playing && m_gameSession.Phase() == GamePhase::Complete)
     {

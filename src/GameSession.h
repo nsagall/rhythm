@@ -101,9 +101,25 @@ public:
     // Stops all playback and returns to Idle.
     void Stop();
 
+    // Freezes the judging clock and every currently-playing clip's audio in
+    // place - Update() becomes a no-op, and OnPress ignores new presses,
+    // until Resume(). A no-op if already paused. Doesn't touch Phase() or
+    // any judging state (streak/passing/holds) - pausing is purely "stop
+    // time from advancing," not a phase of its own, so a caller mid-Learning
+    // stays mid-Learning across a pause exactly as it was.
+    void Pause();
+
+    // Resumes from Pause(): re-anchors the clock so no time appears to have
+    // passed during the pause, and resumes every clip's audio from exactly
+    // where Pause() left it (see SongClock::Resume/AudioEngine::ResumeAll).
+    // A no-op if not currently paused.
+    void Resume();
+
+    bool IsPaused() const;
+
     // Registers a key-down for the given lane at the current moment;
     // judges it against that lane's next expected note if the current
-    // section is a "learn" section.
+    // section is a "learn" section. A no-op while paused (see Pause()).
     void OnPress(int lane);
 
     // True exactly when OnPress(lane) would actually judge a press right
@@ -111,10 +127,14 @@ public:
     // false whenever there's structurally nothing to press: outside a
     // Learn section's live judging (count-in, break/reset/
     // background, or no chart loaded at all), or a lane the current clip
-    // never places any notes in at all. Lets the caller show its own "no note there"
-    // feedback for a press this lane will otherwise just silently ignore.
-    // Call CatchUpCountIn() first if a real press just happened - see its
-    // own comment for why.
+    // never places any notes in at all. Deliberately NOT false while paused
+    // (unlike OnPress itself) - a caller gating lane input on pause (see
+    // MainWindow::OnKeyDown) should do so before ever reaching this, rather
+    // than through it, so a paused press stays silently ignored instead of
+    // reading as "no note there" and flashing a miss. Lets the caller show
+    // its own "no note there" feedback for a press this lane will otherwise
+    // just silently ignore. Call CatchUpCountIn() first if a real press
+    // just happened - see its own comment for why.
     bool IsLaneJudgeable(int lane) const;
 
     // If still in the count-in but real elapsed time has already reached
@@ -131,13 +151,17 @@ public:
     void CatchUpCountIn();
 
     // Registers a key-up for the given lane at the current moment; judges it
-    // against the note that lane was holding, if any. Not gated by phase or
-    // play mode - a hold already in flight resolves on its own merits even
-    // if the section has since started passing, so it still paints its true
-    // outcome instead of being abandoned mid-air.
+    // against the note that lane was holding, if any. Not gated by phase,
+    // play mode, or pause - a hold already in flight resolves on its own
+    // merits even if the section has since started passing, so it still
+    // paints its true outcome instead of being abandoned mid-air; releasing
+    // one while paused judges it against the clock's frozen instant, same
+    // as any other read of it while paused.
     void OnRelease(int lane);
 
-    // Advances count-in/miss-detection/hold-timeout timing; call once per frame.
+    // Advances count-in/miss-detection/hold-timeout timing; call once per
+    // frame. A complete no-op while paused (see Pause()) - nothing about
+    // judging, timeouts, or section advancement progresses until Resume().
     void Update();
 
     GamePhase Phase() const;
@@ -174,6 +198,31 @@ public:
 
     // Returns and clears the most recent judgement (Hit/Miss/None).
     JudgementResult ConsumeLastJudgement();
+
+    // One judgement (Hit or Miss - RegisterHit/RegisterMiss are the only
+    // producers, so None never appears here), on a specific lane, exactly as
+    // it was at the instant it happened - passing is captured then rather
+    // than left for the caller to re-query later, since IsPassing() may have
+    // already moved on (e.g. a DontFail miss flipping it) by the time this
+    // event is actually drained.
+    struct JudgementEvent
+    {
+        JudgementResult result = JudgementResult::None;
+        int lane = -1;
+        bool passing = false;
+    };
+
+    // Returns and clears every judgement RegisterHit/RegisterMiss recorded
+    // since the last call - unlike ConsumeLastJudgement (a single scalar,
+    // overwritten by whichever judgement happens to land last), this never
+    // drops one: OnPress/OnRelease produce at most one each, but Update()'s
+    // press-phase/hold timeouts can judge several lanes in a single call.
+    // The intended reader is whatever's responsible for a judgement's visual
+    // feedback (see NoteLane::ShowJudgement) - draining this after every
+    // OnPress/OnRelease/Update call makes a timeout-driven miss go through
+    // that exact same feedback path as an explicit mistimed press/release,
+    // instead of the two being handled differently.
+    std::vector<JudgementEvent> ConsumeJudgementEvents();
 
     // Returns how a specific lane note (identified by its start beat) was
     // judged, for the note lane to color it once it's passed the line.
@@ -319,8 +368,11 @@ private:
     // are left alone once already passing, in Pass mode (frozen at their
     // passing value) - they no longer drive anything at that point. In
     // DontFail mode a hit while already passing is equally a no-op (there's
-    // nothing further to earn until a miss drops it back to failing).
-    void RegisterHit();
+    // nothing further to earn until a miss drops it back to failing). lane
+    // is only for the JudgementEvent this pushes (see ConsumeJudgementEvents) -
+    // every caller already knows it, since a hit is always judged against a
+    // specific lane's own note.
+    void RegisterHit(int lane);
 
     // Starts clipIndex's stem looping now (phase-aligned to its own
     // persistent origin - see EnsureClipInstance/ClipInstance::
@@ -366,8 +418,11 @@ private:
     // only effect on the section's own advance timing is indirect:
     // resetting the streak makes passing (and therefore advancing) take
     // longer to reach, possibly costing the clip another full loop's
-    // repeat - see Update()'s own comment.
-    void RegisterMiss();
+    // repeat - see Update()'s own comment. lane is only for the
+    // JudgementEvent this pushes (see ConsumeJudgementEvents) - every caller
+    // already knows it, since a miss is always judged against a specific
+    // lane's own note.
+    void RegisterMiss(int lane);
 
     // Moves this lane's next-expected-note pointer forward to the next note after it.
     void AdvanceExpectedNote(int lane);
@@ -467,6 +522,9 @@ private:
     SongClock m_clock;
     GamePhase m_phase = GamePhase::Idle;
 
+    // See Pause()/Resume()/IsPaused().
+    bool m_paused = false;
+
     // Set once from LoadChart's easyMode argument and left alone for the
     // rest of this chart's lifetime - see ApplyEasyModeTransform,
     // OnPress/OnRelease's judging differences, and RegisterMiss's grace check.
@@ -488,4 +546,7 @@ private:
 
     QueuedBackground m_queuedBackground;
     JudgementResult m_lastJudgement = JudgementResult::None;
+    // See ConsumeJudgementEvents - populated by RegisterHit/RegisterMiss,
+    // drained (and cleared) there.
+    std::vector<JudgementEvent> m_judgementEvents;
 };
