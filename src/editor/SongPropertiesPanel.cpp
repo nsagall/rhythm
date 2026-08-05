@@ -3,10 +3,25 @@
 #include <imgui.h>
 
 #include <cstring>
+#include <cwchar>
 
 #include "Utf8.h"
 
-void SongPropertiesPanel::Draw(EditorDocument& doc)
+std::wstring FormatMinutesSeconds(double seconds)
+{
+    int totalSeconds = static_cast<int>(seconds + 0.5);
+    if (totalSeconds < 0)
+    {
+        totalSeconds = 0;
+    }
+    int minutes = totalSeconds / 60;
+    int secs = totalSeconds % 60;
+    wchar_t buf[32];
+    swprintf(buf, 32, L"%d:%02d", minutes, secs);
+    return buf;
+}
+
+void SongPropertiesPanel::Draw(EditorDocument& doc, BlockPlayer& player)
 {
     if (!m_titleSynced)
     {
@@ -62,6 +77,19 @@ void SongPropertiesPanel::Draw(EditorDocument& doc)
         }
         doc.timeSignatureDenominator = denominator;
         MarkDirty(doc);
+    }
+
+    ImGui::Separator();
+    const BlockSchedule::Schedule* schedule = player.CurrentSchedule();
+    if (schedule != nullptr && !schedule->entries.empty())
+    {
+        // Assumes perfect learning - the same assumption the whole block
+        // schedule/playhead is built on (see BlockSchedule.h).
+        ImGui::Text("Estimated Length (perfect play): %s", ToUtf8(FormatMinutesSeconds(schedule->totalSeconds)).c_str());
+    }
+    else
+    {
+        ImGui::TextDisabled("Estimated Length: (unavailable - fix validation problems first)");
     }
 
     ImGui::Separator();

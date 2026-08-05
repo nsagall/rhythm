@@ -30,22 +30,6 @@ std::wstring LastPathComponent(const std::wstring& path)
     return slash == std::wstring::npos ? stripped : stripped.substr(slash + 1);
 }
 
-// "3:45" - never plain seconds, so a long song doesn't read as an
-// implausible three-digit number.
-std::wstring FormatMinutesSeconds(double seconds)
-{
-    int totalSeconds = static_cast<int>(seconds + 0.5);
-    if (totalSeconds < 0)
-    {
-        totalSeconds = 0;
-    }
-    int minutes = totalSeconds / 60;
-    int secs = totalSeconds % 60;
-    wchar_t buf[32];
-    swprintf(buf, 32, L"%d:%02d", minutes, secs);
-    return buf;
-}
-
 } // namespace
 
 bool EditorApp::Initialize(HWND hwnd)
@@ -420,7 +404,7 @@ void EditorApp::DrawSongPropertiesWindow(float x, float y, float w, float h)
     ImGui::Separator();
     if (m_hasDocument)
     {
-        m_songPropertiesPanel.Draw(m_doc);
+        m_songPropertiesPanel.Draw(m_doc, m_blockPlayer);
     }
     else
     {
@@ -456,6 +440,17 @@ void EditorApp::DrawBlockPropertiesWindow(float x, float y, float w, float h)
     ImGui::Separator();
     if (m_hasDocument)
     {
+        // BlockPropertiesPanel only ever shows/edits the primary selection
+        // below - call that out explicitly when more blocks than that are
+        // highlighted, so it's clear Delete/Copy on the timeline act on the
+        // whole group even though the fields shown here are just the one.
+        size_t selectedCount = m_blockTimeline.MultiSelectedBlockIds().size();
+        if (selectedCount > 1)
+        {
+            ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.4f, 1.0f), "%d blocks selected - Delete/Copy act on all of them",
+                                static_cast<int>(selectedCount));
+            ImGui::Separator();
+        }
         int newSelection = m_blockPropertiesPanel.Draw(m_doc, m_blockTimeline.SelectedBlockId(), m_blockPlayer);
         m_blockTimeline.SetSelectedBlockId(newSelection);
     }
