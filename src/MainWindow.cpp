@@ -45,11 +45,15 @@ constexpr int kLaneMinHeight = 320;
 constexpr int kSongListMaxWidth = 560;
 constexpr int kSongRowHeight = 46;
 
-// The hits meter panel sits immediately to the lane's right, sharing its
-// top/bottom edges - fixed-width (unlike the lane itself) since it only
-// ever shows a single fill bar, no need to grow with the window.
-constexpr int kHitsMeterWidth = 28;
-constexpr int kHitsMeterGap = 16;
+// The hits meter panel sits to the lane's right as its own small, separate
+// widget - fixed-size (unlike the lane itself) since it only ever shows a
+// single fill bar, no need to grow with the window. A wide gap and a
+// height shorter than the lane's own (vertically centered - see Layout())
+// keep it reading as clearly detached from the playfield rather than an
+// extra column welded onto it.
+constexpr int kHitsMeterWidth = 16;
+constexpr int kHitsMeterGap = 34;
+constexpr double kHitsMeterHeightFraction = 0.5;
 constexpr int kHintAreaHeight = 34; // reserved below the song list rect for DrawSongList's hint line
 
 // Smallest client area the header row + a minimally-usable lane/list can
@@ -334,7 +338,11 @@ void MainWindow::Layout()
     RECT laneRect{laneLeft, laneTop, laneLeft + laneWidth, laneBottom};
     m_noteLane.SetLaneRect(laneRect);
 
-    RECT hitsMeterRect{laneRect.right + kHitsMeterGap, laneTop, laneRect.right + hitsMeterFootprint, laneBottom};
+    int laneHeight = laneBottom - laneTop;
+    int hitsMeterHeight = static_cast<int>(laneHeight * kHitsMeterHeightFraction);
+    int hitsMeterTop = laneTop + (laneHeight - hitsMeterHeight) / 2;
+    RECT hitsMeterRect{laneRect.right + kHitsMeterGap, hitsMeterTop, laneRect.right + hitsMeterFootprint,
+                        hitsMeterTop + hitsMeterHeight};
     m_noteLane.SetHitsMeterRect(hitsMeterRect);
 
     InvalidateRect(m_hwnd, nullptr, TRUE);

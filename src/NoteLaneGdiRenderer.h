@@ -144,10 +144,19 @@ private:
     void SpawnExplosion(RECT laneRect, const NoteLaneScene& scene);
     // Adds a burst of sparks at hitsMeterRect's own center into the same
     // m_explosion vector (and sharing its timer) that SpawnExplosion just
-    // populated - called alongside it, only on scene.justLockedIn, so the
-    // hits meter's disappearance gets its own little celebration instead of
-    // just vanishing the instant showHitsMeter flips false.
+    // populated - called alongside it, only on scene.justLockedIn for a
+    // DontFail clip (see NoteLaneScene::hitsMeterIsDontFail), so the hits
+    // meter's disappearance gets its own little celebration instead of just
+    // vanishing the instant showHitsMeter flips false.
     void AppendHitsMeterExplosion(RECT hitsMeterRect, COLORREF color);
+    // Adds a small confetti burst scattered across hitsMeterRect's own
+    // width into the same m_confetti vector (and sharing its timer) that
+    // SpawnConfetti just populated - called alongside it, only on
+    // scene.justLockedIn for a Pass clip (see NoteLaneScene::
+    // hitsMeterIsDontFail), since that's the meter's one and only
+    // disappearance for the whole section (passing is a one-way latch),
+    // unlike DontFail's own AppendHitsMeterExplosion above.
+    void AppendHitsMeterConfetti(RECT hitsMeterRect);
 
     std::unordered_map<COLORREF, HBRUSH> m_brushCache;
     std::unordered_map<UINT64, HPEN> m_penCache;

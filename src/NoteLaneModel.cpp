@@ -304,6 +304,10 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
     bool nowPassing = isLearnSection && session.IsPassing();
 
     scene.showHitsMeter = isLearnSection && !nowPassing;
+    if (isLearnSection)
+    {
+        scene.hitsMeterIsDontFail = clip->learnMode == LearnMode::DontFail;
+    }
     if (scene.showHitsMeter && clip->hitsRequired > 0)
     {
         scene.hitsMeterProgress =
