@@ -141,6 +141,7 @@ void GameSession::Start()
     m_clipInstances.clear();
     m_queuedBackground = QueuedBackground{};
     m_lastJudgement = JudgementResult::None;
+    m_paused = false;
 
     m_clock.Start(m_song.bpm);
     m_phase = GamePhase::CountIn;
@@ -158,6 +159,36 @@ void GameSession::Stop()
     }
     m_queuedBackground = QueuedBackground{};
     m_lastJudgement = JudgementResult::None;
+    m_paused = false;
+}
+
+// See the header comment.
+void GameSession::Pause()
+{
+    if (m_paused)
+    {
+        return;
+    }
+    m_paused = true;
+    m_clock.Pause();
+    m_audioEngine.PauseAll();
+}
+
+// See the header comment.
+void GameSession::Resume()
+{
+    if (!m_paused)
+    {
+        return;
+    }
+    m_paused = false;
+    m_clock.Resume();
+    m_audioEngine.ResumeAll();
+}
+
+bool GameSession::IsPaused() const
+{
+    return m_paused;
 }
 
 // See the header comment - lets a press that lands right on the count-in's
@@ -178,8 +209,9 @@ void GameSession::CatchUpCountIn()
 }
 
 // True exactly when OnPress(lane) would actually judge a press right now -
-// mirrors every one of OnPress's own early-return guards, just without any
-// of its judging side effects.
+// mirrors every one of OnPress's own early-return guards except the pause
+// check (deliberately - see the header's own comment), without any of its
+// judging side effects.
 bool GameSession::IsLaneJudgeable(int lane) const
 {
     if (m_phase != GamePhase::Learning)
@@ -202,6 +234,10 @@ bool GameSession::IsLaneJudgeable(int lane) const
 // Registers a key-down for lane; judges it against that lane's next expected note if the current section is learning.
 void GameSession::OnPress(int lane)
 {
+    if (m_paused)
+    {
+        return;
+    }
     CatchUpCountIn();
     if (!IsLaneJudgeable(lane))
     {
@@ -304,6 +340,11 @@ void GameSession::OnRelease(int lane)
 // Advances count-in/miss-detection/hold-timeout timing; call once per frame.
 void GameSession::Update()
 {
+    if (m_paused)
+    {
+        return;
+    }
+
     // Keep the judging clock locked to actual audio playback. m_clock is a
     // free-running CPU timer, while the music is actually driven by
     // XAudio2's own hardware clock - the two can slowly drift apart over a

@@ -223,6 +223,9 @@ LRESULT MainWindow::HandleMessage(HWND hwnd, UINT message, WPARAM wParam, LPARAM
         case WM_KEYUP:
             OnKeyUp(wParam, lParam);
             return 0;
+        case WM_ACTIVATE:
+            OnActivate(wParam);
+            return 0;
         case WM_LBUTTONDOWN:
             OnLButtonDown(lParam);
             return 0;
@@ -407,11 +410,22 @@ void MainWindow::OnKeyDown(WPARAM key, LPARAM flags)
         return;
     }
 
+    if (static_cast<int>(key) == VK_SPACE)
+    {
+        TogglePause();
+        return;
+    }
+
     if (static_cast<int>(key) == 'D')
     {
         m_noteLane.ToggleDebugOverlay();
         InvalidateRect(m_hwnd, nullptr, FALSE);
         return;
+    }
+
+    if (m_gameSession.IsPaused())
+    {
+        return; // lane keys do nothing while paused - only Space (above) does
     }
 
     for (int lane = 0; lane < kLaneCount; ++lane)
@@ -438,6 +452,35 @@ void MainWindow::OnKeyUp(WPARAM key, LPARAM /*flags*/)
             return;
         }
     }
+}
+
+// Pauses on deactivation (Alt-Tab, clicking another window) while Playing.
+void MainWindow::OnActivate(WPARAM wParam)
+{
+    if (LOWORD(wParam) != WA_INACTIVE || m_screen != UiScreen::Playing)
+    {
+        return;
+    }
+    m_gameSession.Pause();
+    InvalidateRect(m_hwnd, nullptr, FALSE);
+}
+
+// See the header comment.
+void MainWindow::TogglePause()
+{
+    if (m_screen != UiScreen::Playing)
+    {
+        return;
+    }
+    if (m_gameSession.IsPaused())
+    {
+        m_gameSession.Resume();
+    }
+    else
+    {
+        m_gameSession.Pause();
+    }
+    InvalidateRect(m_hwnd, nullptr, FALSE);
 }
 
 // On the song list, clicking the Easy Mode toggle flips it; clicking a row

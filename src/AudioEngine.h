@@ -80,6 +80,17 @@ public:
     // Stops every currently loaded stem.
     void StopAll();
 
+    // Pauses every currently loaded stem in place - unlike Stop()/StopAll(),
+    // doesn't flush each voice's queued buffer, so its playback position is
+    // preserved for ResumeAll() to continue from exactly where it left off,
+    // rather than needing to reseek/restart via StartLooping. A no-op for a
+    // stem with nothing queued (never started, or already Stop()'d).
+    void PauseAll();
+
+    // Resumes every stem paused by PauseAll(), from exactly where it left
+    // off. A no-op for a stem with nothing queued.
+    void ResumeAll();
+
     // Returns how many seconds of audio have played for a stem, for clock resync.
     double GetPositionSeconds(StemHandle stemHandle) const;
 

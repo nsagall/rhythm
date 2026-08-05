@@ -30,8 +30,28 @@ public:
     // The tempo this clock was started with.
     double Bpm() const;
 
+    // Freezes ElapsedSeconds()/BeatPosition() at their current value until
+    // Resume() - QueryPerformanceCounter itself never stops, so this is
+    // purely a matter of ElapsedSeconds() returning a cached value instead
+    // of a fresh read while paused. A no-op if already paused.
+    void Pause();
+
+    // Resumes from Pause(): re-anchors the clock (via Resync) so
+    // ElapsedSeconds() continues from exactly the value it was frozen at,
+    // as if no wall-clock time had passed during the pause. A no-op if not
+    // currently paused.
+    void Resume();
+
+    bool IsPaused() const;
+
 private:
     LARGE_INTEGER m_frequency{};
     LARGE_INTEGER m_startTime{};
     double m_bpm = 120.0;
+
+    bool m_paused = false;
+    // ElapsedSeconds() at the instant Pause() was called - what
+    // ElapsedSeconds() itself returns while m_paused, and what Resume()
+    // re-anchors the clock to.
+    double m_pausedElapsedSeconds = 0.0;
 };

@@ -549,5 +549,16 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
             break;
     }
 
+    // Overrides whatever the switch above chose - the phase/clip itself
+    // hasn't changed while paused (see GameSession::Pause's own comment),
+    // just what the HUD should say about it. scene.nowBeat (and everything
+    // derived from it - notes, receptor pulse, beat-synced background glow)
+    // is already frozen for free, since it's read from the now-paused
+    // session.Clock() same as any other frame.
+    if (session.IsPaused())
+    {
+        scene.statusText = L"Paused";
+    }
+
     return scene;
 }

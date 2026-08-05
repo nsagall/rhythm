@@ -283,6 +283,33 @@ void AudioEngine::StopAll()
     }
 }
 
+// Pauses every currently loaded stem in place, without flushing its queued
+// buffer.
+void AudioEngine::PauseAll()
+{
+    for (Stem& stem : m_stems)
+    {
+        if (stem.voice)
+        {
+            stem.voice->Stop();
+        }
+    }
+}
+
+// Resumes every stem paused by PauseAll() - Start() on a voice whose buffer
+// is still queued (never flushed) simply continues submitting from wherever
+// XAudio2 left off, with no reseek needed.
+void AudioEngine::ResumeAll()
+{
+    for (Stem& stem : m_stems)
+    {
+        if (stem.voice)
+        {
+            stem.voice->Start();
+        }
+    }
+}
+
 // Returns a stem's current voice volume (1.0 = unity gain), or -1.0 if the handle is invalid.
 float AudioEngine::GetVolume(StemHandle stemHandle) const
 {

@@ -101,9 +101,25 @@ public:
     // Stops all playback and returns to Idle.
     void Stop();
 
+    // Freezes the judging clock and every currently-playing clip's audio in
+    // place - Update() becomes a no-op, and OnPress ignores new presses,
+    // until Resume(). A no-op if already paused. Doesn't touch Phase() or
+    // any judging state (streak/passing/holds) - pausing is purely "stop
+    // time from advancing," not a phase of its own, so a caller mid-Learning
+    // stays mid-Learning across a pause exactly as it was.
+    void Pause();
+
+    // Resumes from Pause(): re-anchors the clock so no time appears to have
+    // passed during the pause, and resumes every clip's audio from exactly
+    // where Pause() left it (see SongClock::Resume/AudioEngine::ResumeAll).
+    // A no-op if not currently paused.
+    void Resume();
+
+    bool IsPaused() const;
+
     // Registers a key-down for the given lane at the current moment;
     // judges it against that lane's next expected note if the current
-    // section is a "learn" section.
+    // section is a "learn" section. A no-op while paused (see Pause()).
     void OnPress(int lane);
 
     // True exactly when OnPress(lane) would actually judge a press right
@@ -111,10 +127,14 @@ public:
     // false whenever there's structurally nothing to press: outside a
     // Learn section's live judging (count-in, break/reset/
     // background, or no chart loaded at all), or a lane the current clip
-    // never places any notes in at all. Lets the caller show its own "no note there"
-    // feedback for a press this lane will otherwise just silently ignore.
-    // Call CatchUpCountIn() first if a real press just happened - see its
-    // own comment for why.
+    // never places any notes in at all. Deliberately NOT false while paused
+    // (unlike OnPress itself) - a caller gating lane input on pause (see
+    // MainWindow::OnKeyDown) should do so before ever reaching this, rather
+    // than through it, so a paused press stays silently ignored instead of
+    // reading as "no note there" and flashing a miss. Lets the caller show
+    // its own "no note there" feedback for a press this lane will otherwise
+    // just silently ignore. Call CatchUpCountIn() first if a real press
+    // just happened - see its own comment for why.
     bool IsLaneJudgeable(int lane) const;
 
     // If still in the count-in but real elapsed time has already reached
@@ -131,13 +151,17 @@ public:
     void CatchUpCountIn();
 
     // Registers a key-up for the given lane at the current moment; judges it
-    // against the note that lane was holding, if any. Not gated by phase or
-    // play mode - a hold already in flight resolves on its own merits even
-    // if the section has since started passing, so it still paints its true
-    // outcome instead of being abandoned mid-air.
+    // against the note that lane was holding, if any. Not gated by phase,
+    // play mode, or pause - a hold already in flight resolves on its own
+    // merits even if the section has since started passing, so it still
+    // paints its true outcome instead of being abandoned mid-air; releasing
+    // one while paused judges it against the clock's frozen instant, same
+    // as any other read of it while paused.
     void OnRelease(int lane);
 
-    // Advances count-in/miss-detection/hold-timeout timing; call once per frame.
+    // Advances count-in/miss-detection/hold-timeout timing; call once per
+    // frame. A complete no-op while paused (see Pause()) - nothing about
+    // judging, timeouts, or section advancement progresses until Resume().
     void Update();
 
     GamePhase Phase() const;
@@ -497,6 +521,9 @@ private:
 
     SongClock m_clock;
     GamePhase m_phase = GamePhase::Idle;
+
+    // See Pause()/Resume()/IsPaused().
+    bool m_paused = false;
 
     // Set once from LoadChart's easyMode argument and left alone for the
     // rest of this chart's lifetime - see ApplyEasyModeTransform,

@@ -65,8 +65,9 @@ private:
 
     // On the song list: Up/Down moves the highlight, any other key (besides
     // a pure modifier or Left/Right) chooses the highlighted song. While
-    // playing: registers a press on a non-repeated key-down for one of the
-    // lane keys (j/k/l/;), exactly as before.
+    // playing: Space toggles pause; the lane keys (j/k/l/;) register a press
+    // on a non-repeated key-down, but do nothing at all while paused (see
+    // TogglePause).
     void OnKeyDown(WPARAM key, LPARAM flags);
 
     // Registers a release on key-up for one of the lane keys (j/k/l/;). Only meaningful while playing.
@@ -74,6 +75,20 @@ private:
 
     // On the song list, clicking a row chooses that song immediately.
     void OnLButtonDown(LPARAM lParam);
+
+    // Pauses the game the moment this window is deactivated (Alt-Tab,
+    // clicking another window, ...) - WM_ACTIVATE with WA_INACTIVE, not
+    // WM_KILLFOCUS, since the latter also fires when keyboard focus merely
+    // moves to a child control (e.g. the refresh button) without the window
+    // itself losing the user's attention. Only while Playing; a no-op
+    // otherwise, and never un-pauses on its own - regaining focus doesn't
+    // resume, only Space does (see TogglePause).
+    void OnActivate(WPARAM wParam);
+
+    // Toggles GameSession::Pause()/Resume() and repaints so the HUD's
+    // "Paused" text (or its absence) shows immediately. Only while Playing;
+    // a no-op on the song list.
+    void TogglePause();
 
     // Sends a lane press to the game session, then drains and reflects any
     // judgement it produced (see DrainJudgements) - or, if this lane has no
