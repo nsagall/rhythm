@@ -18,7 +18,7 @@ public:
     ~NoteLaneGdiRenderer() override;
 
     void OnJudgement(JudgementResult result, int lane, bool passing) override;
-    void Draw(HDC hdc, RECT laneRect, const NoteLaneScene& scene) override;
+    void Draw(HDC hdc, RECT laneRect, RECT hitsMeterRect, const NoteLaneScene& scene) override;
     void ToggleDebugOverlay() override;
 
 private:
@@ -131,12 +131,23 @@ private:
     void DrawHud(HDC hdc, RECT laneRect, const std::wstring& statusText);
     // Only called when m_debugOverlayEnabled - see ToggleDebugOverlay.
     void DrawDebugOverlay(HDC hdc, RECT laneRect, const NoteLaneScene& scene);
+    // The "hits meter" panel beside the playfield - a bottom-anchored fill
+    // tracking scene.hitsMeterProgress. Draws nothing while
+    // scene.showHitsMeter is false (see AppendHitsMeterExplosion for what
+    // plays instead, right as it flips false on a lock-in).
+    void DrawHitsMeter(HDC hdc, RECT hitsMeterRect, const NoteLaneScene& scene);
 
     // Spawns a lock-in confetti burst across laneRect's width.
     void SpawnConfetti(RECT laneRect);
     // Spawns an explosion burst for each of scene's exploding notes that's
     // actually within laneRect right now.
     void SpawnExplosion(RECT laneRect, const NoteLaneScene& scene);
+    // Adds a burst of sparks at hitsMeterRect's own center into the same
+    // m_explosion vector (and sharing its timer) that SpawnExplosion just
+    // populated - called alongside it, only on scene.justLockedIn, so the
+    // hits meter's disappearance gets its own little celebration instead of
+    // just vanishing the instant showHitsMeter flips false.
+    void AppendHitsMeterExplosion(RECT hitsMeterRect, COLORREF color);
 
     std::unordered_map<COLORREF, HBRUSH> m_brushCache;
     std::unordered_map<UINT64, HPEN> m_penCache;

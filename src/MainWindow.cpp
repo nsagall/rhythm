@@ -44,6 +44,12 @@ constexpr int kLaneMaxWidth = 480;
 constexpr int kLaneMinHeight = 320;
 constexpr int kSongListMaxWidth = 560;
 constexpr int kSongRowHeight = 46;
+
+// The hits meter panel sits immediately to the lane's right, sharing its
+// top/bottom edges - fixed-width (unlike the lane itself) since it only
+// ever shows a single fill bar, no need to grow with the window.
+constexpr int kHitsMeterWidth = 28;
+constexpr int kHitsMeterGap = 16;
 constexpr int kHintAreaHeight = 34; // reserved below the song list rect for DrawSongList's hint line
 
 // Smallest client area the header row + a minimally-usable lane/list can
@@ -313,12 +319,23 @@ void MainWindow::Layout()
     int listBottom = std::max(listTop + kLaneMinHeight, height - kLaneMargin - kHintAreaHeight);
     m_songListRect = RECT{listLeft, listTop, listLeft + listWidth, listBottom};
 
-    int laneWidth = std::min(std::max(width - 2 * kLaneMargin, kLaneMinWidth), kLaneMaxWidth);
-    int laneLeft = (width - laneWidth) / 2;
+    // The lane and the hits meter beside it are laid out as one combined,
+    // centered unit - the lane itself still clamps to the same
+    // min/max width it always has, just computed against the width left
+    // over once the meter's own fixed footprint is reserved, so the pair
+    // together stays centered instead of the lane alone.
+    int hitsMeterFootprint = kHitsMeterGap + kHitsMeterWidth;
+    int laneAvailableWidth = width - 2 * kLaneMargin - hitsMeterFootprint;
+    int laneWidth = std::min(std::max(laneAvailableWidth, kLaneMinWidth), kLaneMaxWidth);
+    int combinedWidth = laneWidth + hitsMeterFootprint;
+    int laneLeft = (width - combinedWidth) / 2;
     int laneTop = kToolbarHeight + kLaneMargin;
     int laneBottom = std::max(laneTop + kLaneMinHeight, height - kLaneMargin);
     RECT laneRect{laneLeft, laneTop, laneLeft + laneWidth, laneBottom};
     m_noteLane.SetLaneRect(laneRect);
+
+    RECT hitsMeterRect{laneRect.right + kHitsMeterGap, laneTop, laneRect.right + hitsMeterFootprint, laneBottom};
+    m_noteLane.SetHitsMeterRect(hitsMeterRect);
 
     InvalidateRect(m_hwnd, nullptr, TRUE);
 }

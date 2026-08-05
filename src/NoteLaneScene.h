@@ -154,6 +154,22 @@ struct NoteLaneScene
     // check first, exactly as it would for NoteLaneScene::notes.
     std::vector<SceneNote> explodingNotes;
 
+    // Progress toward the current learn section's clip locking in - streak
+    // divided by hitsRequired, clamped to [0,1] - for the "hits meter" panel
+    // beside the playfield. Only meaningful while showHitsMeter is true.
+    double hitsMeterProgress = 0.0;
+
+    // True whenever the hits meter should be visible: there's a current
+    // learn section and it isn't passing right now. False for the entire
+    // rest of a Pass-mode section's run once it first locks in (that
+    // section's own justLockedIn frame is the moment the meter should pop
+    // instead of just vanishing - see INoteLaneRenderer::Draw). In DontFail
+    // mode this starts false (a track begins already passing) and only
+    // flips true on a justFailed frame, then back false on whichever later
+    // justLockedIn brings it back to passing - so the meter is otherwise
+    // invisible the whole time a DontFail section is behaving itself.
+    bool showHitsMeter = false;
+
     std::wstring statusText;
 
     // Which ChartClip (by its .chart name, not displayName) each of NoteLaneModel's own

@@ -21,10 +21,11 @@ public:
     // ripple, nothing at all. Purely cosmetic; never affects scoring.
     virtual void OnJudgement(JudgementResult result, int lane, bool passing) = 0;
 
-    // Draws one frame of scene into laneRect on hdc, and advances any of
-    // the renderer's own continuous animations by however much wall-clock
-    // time has passed since its last call.
-    virtual void Draw(HDC hdc, RECT laneRect, const NoteLaneScene& scene) = 0;
+    // Draws one frame of scene into laneRect on hdc - plus, beside it,
+    // hitsMeterRect (see NoteLaneScene::showHitsMeter/hitsMeterProgress) -
+    // and advances any of the renderer's own continuous animations by
+    // however much wall-clock time has passed since its last call.
+    virtual void Draw(HDC hdc, RECT laneRect, RECT hitsMeterRect, const NoteLaneScene& scene) = 0;
 
     // Flips whether Draw() also shows scene's debugPreviousClipName/
     // debugCurrentClipName/debugNextClipName - off by default. Purely a

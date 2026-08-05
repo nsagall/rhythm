@@ -303,6 +303,13 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
         clip && session.Phase() == GamePhase::Learning && session.CurrentSectionKind() == SectionKind::Learn;
     bool nowPassing = isLearnSection && session.IsPassing();
 
+    scene.showHitsMeter = isLearnSection && !nowPassing;
+    if (scene.showHitsMeter && clip->hitsRequired > 0)
+    {
+        scene.hitsMeterProgress =
+            std::clamp(static_cast<double>(session.CurrentStreak()) / clip->hitsRequired, 0.0, 1.0);
+    }
+
     // DontFail mode only: detect a passing->failing reversal for the SAME
     // clip already tracked as m_currentClip last frame (ruling out an
     // ordinary section/loop change - a different event UpdateClipInstances'
