@@ -6,6 +6,8 @@
 
 #include "AudioEngine.h"
 #include "GameSession.h"
+#include "LaneBindings.h"
+#include "MidiInputManager.h"
 #include "NoteLane.h"
 #include "Settings.h"
 #include "SongLibrary.h"
@@ -60,20 +62,55 @@ private:
     // Keeps the window from being resized smaller than the note lane can fit in.
     void OnGetMinMaxInfo(LPARAM lParam);
 
-    // Routes a WM_COMMAND control ID to the refresh handler.
+    // Routes a WM_COMMAND control ID to the refresh handler, or to
+    // BeginCapture() for the Assign Inputs button.
     void OnCommand(HWND hwnd, int controlId);
 
-    // On the song list: Up/Down moves the highlight, any other key (besides
-    // a pure modifier or Left/Right) chooses the highlighted song. While
-    // playing: Space toggles pause; the lane keys (j/k/l/;) register a press
-    // on a non-repeated key-down, but do nothing at all while paused (see
+    // While capturing an input assignment (m_captureLane != -1), every key
+    // is owned by HandleCaptureKeyDown instead - see its own comment.
+    // Otherwise, on the song list: Up/Down moves the highlight, any other
+    // key (besides a pure modifier or Left/Right) chooses the highlighted
+    // song. While playing: Space toggles pause; whichever lane
+    // m_laneBindings resolves the key to (its default key, or a custom
+    // binding - see LaneBindings::LaneForKey) registers a press on a
+    // non-repeated key-down, but does nothing at all while paused (see
     // TogglePause).
     void OnKeyDown(WPARAM key, LPARAM flags);
 
-    // Registers a release on key-up for one of the lane keys (j/k/l/;). Only meaningful while playing.
+    // Registers a release on key-up for whichever lane m_laneBindings
+    // resolves the key to. Only meaningful while playing; a no-op during
+    // capture (key-up mid-capture carries no meaning - only the next
+    // key-down/MIDI note-on commits a binding).
     void OnKeyUp(WPARAM key, LPARAM flags);
 
-    // On the song list, clicking a row chooses that song immediately.
+    // Routes one physical key-down to the input-assignment capture flow
+    // instead of normal gameplay: Escape cancels the remaining (not yet
+    // captured) lanes via CancelCapture(); a reserved key (Escape/Space/D,
+    // or any lane's own hardcoded default - see LaneBindings::IsDefaultKey)
+    // is rejected with a re-prompt instead of being bound, since none of
+    // those could ever actually reach OnKeyDown's own lane-matching once
+    // bound (Escape/Space/D are handled earlier, unconditionally, and a
+    // default key is already every lane's own fallback); any other key
+    // commits as this lane's new custom binding via
+    // LaneBindings::SetCustom, then AdvanceCapture() moves on.
+    void HandleCaptureKeyDown(int vkCode);
+
+    // Routes one live MIDI note-on/note-off (unpacked from an MM_MIM_DATA
+    // message - see HandleMessage) the same way OnKeyDown/OnKeyUp handle a
+    // physical key: during capture, a note-on commits this lane's new
+    // custom MIDI binding (note-off is ignored - only the down edge
+    // matters for capture); otherwise, only while Playing, a note-on/
+    // note-off resolved via LaneBindings::LaneForMidiNote registers a press/
+    // release exactly like a keyboard lane would. A note-on below
+    // kMinMidiPressVelocity (MainWindow.cpp) is dropped entirely first -
+    // neither a press nor a release - to filter out a sensitive
+    // controller's accidental light taps.
+    void OnMidiData(WPARAM wParam, LPARAM lParam);
+
+    // On the song list, clicking a row chooses that song immediately. A
+    // no-op entirely while capturing (m_captureLane != -1) - a click can't
+    // supply an input binding, and letting one through to ChooseSong would
+    // leave the capture prompt dangling while a song starts underneath it.
     void OnLButtonDown(LPARAM lParam);
 
     // Pauses the game the moment this window is deactivated (Alt-Tab,
@@ -89,6 +126,33 @@ private:
     // "Paused" text (or its absence) shows immediately. Only while Playing;
     // a no-op on the song list.
     void TogglePause();
+
+    // Starts the "Assign Inputs" capture flow from the Song Select screen:
+    // sets m_captureLane to 0 (the first lane to prompt for) and disables
+    // the Assign/Refresh buttons for the run's duration, so neither a
+    // second capture nor a song-list refresh can interleave with one
+    // already in progress.
+    void BeginCapture();
+
+    // Moves capture to the next lane, or - once every lane has been
+    // prompted - ends the run: resets m_captureLane to -1 and re-enables
+    // the Assign/Refresh buttons.
+    void AdvanceCapture();
+
+    // Cancels the remaining (not yet captured) lanes on Escape. Lanes
+    // already committed this run stay committed - each one is saved to
+    // m_laneBindings/Settings immediately as it's captured (see
+    // HandleCaptureKeyDown/OnMidiData), not batched until the whole run
+    // finishes - so canceling partway through keeps whatever was already
+    // assigned.
+    void CancelCapture();
+
+    // Draws the "press an input for lane N" prompt (naming the lane by its
+    // 1-based index, not its default key) plus any rejection message from a
+    // reserved-key attempt, on the Song Select screen while
+    // m_captureLane != -1. Drawn from OnPaint right after DrawEasyModeToggle, using the same
+    // CreateFontW/DrawTextW idiom as DrawSongList's own hint line.
+    void DrawCapturePrompt(HDC hdc);
 
     // Sends a lane press to the game session, then drains and reflects any
     // judgement it produced (see DrainJudgements) - or, if this lane has no
@@ -172,6 +236,7 @@ private:
 
     HWND m_hwnd = nullptr;
     HWND m_hButtonRefresh = nullptr;
+    HWND m_hButtonAssign = nullptr;
     HBRUSH m_windowBrush = nullptr;
     HBRUSH m_fieldBrush = nullptr;
 
@@ -192,8 +257,30 @@ private:
     bool m_easyMode = false;
     RECT m_easyModeToggleRect{};
 
+    // Which lane (0..kLaneCount-1) is currently awaiting an input for the
+    // "Assign Inputs" flow, or -1 when not capturing at all - see
+    // BeginCapture/AdvanceCapture/CancelCapture. Only ever non-(-1) on the
+    // SongSelect screen.
+    int m_captureLane = -1;
+
+    // Set by HandleCaptureKeyDown when a reserved key is pressed during
+    // capture, shown by DrawCapturePrompt, cleared the next time a lane's
+    // prompt is (re)shown for a fresh attempt.
+    std::wstring m_captureRejectionMessage;
+
     AudioEngine m_audioEngine;
     GameSession m_gameSession;
     NoteLane m_noteLane;
     Settings m_settings;
+
+    // Custom per-lane input bindings (keyboard or live MIDI note), on top of
+    // kLaneDefaultKeys - see LaneBindings.h. Loaded from m_settings in
+    // OnCreate, mutated (and persisted) by HandleCaptureKeyDown/OnMidiData
+    // via LaneBindings::SetCustom.
+    LaneBindings m_laneBindings;
+
+    // Opens every connected MIDI input device on startup and delivers their
+    // note events as MM_MIM_DATA window messages - see MidiInputManager.h
+    // and OnMidiData.
+    MidiInputManager m_midiInput;
 };
