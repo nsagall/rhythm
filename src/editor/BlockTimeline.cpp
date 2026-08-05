@@ -211,7 +211,7 @@ void BlockTimeline::DrawBlockRow(EditorDocument& doc, const std::vector<BlockLay
             int sourceIndex = static_cast<int>(i);
             ImGui::SetDragDropPayload("BLOCK_REORDER", &sourceIndex, sizeof(int));
             const EditorClip* dragClip = FindClipById(doc, block.clipId);
-            std::string dragLabel = dragClip != nullptr ? ToUtf8(dragClip->displayName) : kKindNames[static_cast<int>(block.kind)];
+            std::string dragLabel = dragClip != nullptr ? ToUtf8(dragClip->name) : kKindNames[static_cast<int>(block.kind)];
             ImGui::Text("%s", dragLabel.c_str());
             ImGui::EndDragDropSource();
         }
@@ -254,7 +254,7 @@ void BlockTimeline::DrawBlockRow(EditorDocument& doc, const std::vector<BlockLay
             drawList->AddRect(rectMin, rectMax, IM_COL32(255, 255, 255, 255), 4.0f, 0, 2.0f);
         }
 
-        std::string label = clip != nullptr ? ToUtf8(clip->displayName) : kKindNames[static_cast<int>(block.kind)];
+        std::string label = clip != nullptr ? ToUtf8(clip->name) : kKindNames[static_cast<int>(block.kind)];
         drawList->PushClipRect(rectMin, rectMax, true);
         DrawBoldText(drawList, ImVec2(rectMin.x + 4.0f, rectMin.y + 4.0f), IM_COL32(10, 10, 10, 255), label.c_str());
         drawList->PopClipRect();

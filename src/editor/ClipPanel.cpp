@@ -201,7 +201,7 @@ void ClipPanel::DrawList(EditorDocument& doc)
             }
         }
 
-        std::string label = ToUtf8(clip.displayName.empty() ? std::wstring(L"(unnamed)") : clip.displayName);
+        std::string label = ToUtf8(clip.name.empty() ? std::wstring(L"(unnamed)") : clip.name);
         if (!clip.hasWav)
         {
             label += " [no wav]";

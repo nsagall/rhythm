@@ -44,13 +44,13 @@ int BlockPropertiesPanel::Draw(EditorDocument& doc, int selectedBlockId, BlockPl
     if (block->kind != SectionKind::Reset)
     {
         const EditorClip* currentClip = FindClipById(doc, block->clipId);
-        std::string previewLabel = currentClip != nullptr ? ToUtf8(currentClip->displayName) : "(choose clip)";
+        std::string previewLabel = currentClip != nullptr ? ToUtf8(currentClip->name) : "(choose clip)";
         if (ImGui::BeginCombo("Clip", previewLabel.c_str()))
         {
             for (const EditorClip& clip : doc.clips)
             {
                 bool selected = clip.id == block->clipId;
-                if (ImGui::Selectable(ToUtf8(clip.displayName).c_str(), selected))
+                if (ImGui::Selectable(ToUtf8(clip.name).c_str(), selected))
                 {
                     block->clipId = clip.id;
                     MarkDirty(doc);

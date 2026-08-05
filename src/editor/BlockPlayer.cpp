@@ -340,7 +340,7 @@ std::wstring BlockPlayer::NowPlayingText() const
     const wchar_t* kindName = entry.kind == SectionKind::Break ? L"Break" : L"Learn";
     const ChartClip& clip = *entry.clip;
 
-    std::wstring text = clip.displayName + L", " + kindName + L" (#" + std::to_wstring(result.entryIndex + 1) +
+    std::wstring text = clip.name + L", " + kindName + L" (#" + std::to_wstring(result.entryIndex + 1) +
                          L" of " + std::to_wstring(m_schedule.entries.size()) + L")";
     if (result.loopIndex >= 1)
     {
@@ -354,7 +354,7 @@ std::wstring BlockPlayer::NowPlayingText() const
         {
             if (voice.clip != entry.clip)
             {
-                text += L" " + voice.clip->displayName;
+                text += L" " + voice.clip->name;
             }
         }
     }
