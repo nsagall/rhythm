@@ -6,33 +6,140 @@ start_tolerance_ms = 100
 release_tolerance_ms = 600
 
 [clip]
-display_name = Drums 1
-name = drums_1
-hits_required = 25
+display_name = Drums
+name = drums_chorus
+hits_required = 4
+learn_mode = dontfail
 
 [clip]
-display_name = Drums 2
-name = drums_2
-hits_required = 25
+display_name = Bass Intro
+name = bass_intro
 
 [clip]
-display_name = Bass
-name = bass
+display_name = Bridge 1
+name = bridge_1
 
 [clip]
-display_name = Background 2
-name = background_2
+display_name = Bridge 2
+name = bridge_2
+
+[clip]
+display_name = Bridge 3
+name = bridge_3
+
+[clip]
+display_name = Bridge 4
+name = bridge_4
+
+[clip]
+display_name = Chorus
+name = chorus
+
+[clip]
+display_name = Chorus 2
+name = chorus_2
+
+[clip]
+display_name = Drums Verse
+name = drums_verse
+hits_required = 4
+learn_mode = dontfail
+
+[clip]
+display_name = Verse 1
+name = verse_1
+
+[clip]
+display_name = Verse 2
+name = verse_2
+
+[clip]
+display_name = Drums Bridge
+name = drums_bridge
+hits_required = 4
+learn_mode = dontfail
+
+[clip]
+display_name = Drums
+name = drums_bridge_2
+hits_required = 4
+learn_mode = dontfail
 
 [background]
-clip = bass
+clip = bass_intro
 
 [learn]
-clip = drums_1
+clip = drums_chorus
 
 [reset]
 
 [background]
-clip = background_2
+clip = verse_1
 
 [learn]
-clip = drums_2
+clip = drums_verse
+
+[reset]
+
+[background]
+clip = chorus
+
+[learn]
+clip = drums_chorus
+
+[reset]
+
+[background]
+clip = verse_2
+
+[learn]
+clip = drums_verse
+
+[reset]
+
+[background]
+clip = chorus_2
+
+[learn]
+clip = drums_chorus
+
+[reset]
+
+[background]
+clip = bridge_1
+
+[learn]
+clip = drums_bridge
+
+[reset]
+
+[background]
+clip = bridge_2
+
+[learn]
+clip = drums_bridge_2
+
+[reset]
+
+[background]
+clip = bridge_3
+
+[learn]
+clip = drums_bridge
+
+[reset]
+
+[background]
+clip = bridge_4
+
+[learn]
+clip = drums_bridge_2
+
+[reset]
+
+[background]
+clip = chorus_2
+
+[learn]
+clip = drums_chorus
+
