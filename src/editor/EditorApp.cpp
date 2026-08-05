@@ -30,22 +30,6 @@ std::wstring LastPathComponent(const std::wstring& path)
     return slash == std::wstring::npos ? stripped : stripped.substr(slash + 1);
 }
 
-// "3:45" - never plain seconds, so a long song doesn't read as an
-// implausible three-digit number.
-std::wstring FormatMinutesSeconds(double seconds)
-{
-    int totalSeconds = static_cast<int>(seconds + 0.5);
-    if (totalSeconds < 0)
-    {
-        totalSeconds = 0;
-    }
-    int minutes = totalSeconds / 60;
-    int secs = totalSeconds % 60;
-    wchar_t buf[32];
-    swprintf(buf, 32, L"%d:%02d", minutes, secs);
-    return buf;
-}
-
 } // namespace
 
 bool EditorApp::Initialize(HWND hwnd)
@@ -420,7 +404,7 @@ void EditorApp::DrawSongPropertiesWindow(float x, float y, float w, float h)
     ImGui::Separator();
     if (m_hasDocument)
     {
-        m_songPropertiesPanel.Draw(m_doc);
+        m_songPropertiesPanel.Draw(m_doc, m_blockPlayer);
     }
     else
     {
