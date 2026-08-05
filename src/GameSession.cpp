@@ -1030,6 +1030,38 @@ void GameSession::RegisterHit(int lane)
     if (m_currentInstance.RegisterHit(clip.hitsRequired))
     {
         m_audioEngine.SetVolume(m_stemHandles[section.clipIndex], static_cast<float>(clip.volume));
+
+        // The section just (re-)started passing - make sure its already-
+        // scheduled candidate advance still leaves the next section's
+        // preview (PreviewClip(), gated on IsPassing() - see
+        // PreviewSectionIndex()) a full kNoteFallBeats to actually show
+        // before hand-off, extending it right now if not, rather than
+        // waiting for Update() to notice later once "now" has already
+        // caught up to a too-close advance instant. Fixing it up eagerly,
+        // right here, keeps PendingAdvanceAtSeconds() always correct from
+        // the instant it's read by anything - critically, NoteLaneModel's
+        // own early-handoff math (BuildScene's kPreviewNextClipBeforeHandoff
+        // branch), which starts trusting PreviewClip()'s onsets the moment
+        // IsPassing() flips true, same as PreviewClip() itself. A reactive
+        // fix-up in Update() instead (extend only once "now" reaches the
+        // stale instant) would leave a real window of frames where
+        // PendingAdvanceAtSeconds() is still the old, too-close value -
+        // during which the note lane would already start showing the next
+        // section's notes early, then visibly snap back the instant
+        // Update() finally corrects it. See ChartTiming::
+        // ComputeLearnAdvanceSeconds's own doc comment for why a candidate
+        // advance is otherwise never revisited once scheduled.
+        double now = m_clock.ElapsedSeconds();
+        double secondsPerBeat = 60.0 / m_song.bpm;
+        double tFallSeconds = kNoteFallBeats * secondsPerBeat;
+        double stemDuration = m_audioEngine.GetStemDurationSeconds(m_stemHandles[section.clipIndex]);
+        if (stemDuration > 0.0)
+        {
+            while (m_currentInstance.PendingAdvanceAtSeconds() - now < tFallSeconds)
+            {
+                m_currentInstance.ExtendPendingAdvance(stemDuration);
+            }
+        }
     }
     StartClipLoop(section.clipIndex, clip.initVolume);
 
