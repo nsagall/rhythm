@@ -8,26 +8,33 @@ release_tolerance_ms = 250
 [clip]
 display_name = Drum Intro
 name = drum_intro
-hits_required = 22
+hits_required = 6
 
 [clip]
 display_name = Full Beat
 name = drums
+volume = 0.85
 
 [clip]
 display_name = Bass
 name = bass
-hits_required = 16
+hits_required = 6
+init_volume = 0.5
+volume = 0.55
 
 [clip]
 display_name = Arp
 name = arp
-hits_required = 22
+hits_required = 6
+init_volume = 0.75
+volume = 0.8
 
 [clip]
 display_name = Lead
 name = lead
-hits_required = 10
+hits_required = 6
+init_volume = 0.7
+volume = 0.75
 
 [clip]
 display_name = Bell Bridge
@@ -39,12 +46,14 @@ release_tolerance_ms = 600
 [clip]
 display_name = Drums 2
 name = drums_2
-hits_required = 28
+hits_required = 8
 
 [clip]
 display_name = Lead 2
 name = lead_2
-hits_required = 10
+hits_required = 6
+init_volume = 0.7
+volume = 0.75
 
 [learn]
 clip = drum_intro

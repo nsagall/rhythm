@@ -321,6 +321,12 @@ enum class Timbre
     Square,
     Triangle,
     Bell,
+    // A soft sub-register voice for a bassline: triangle+sine blend (far
+    // fewer/weaker harmonics than Square - see RenderMelodicNote), then
+    // run through an extra low-pass pass of its own on top of the shared
+    // envelope, so it reads as warm low end instead of competing with the
+    // lead/arp's own brighter timbres up in the mix.
+    Bass,
 };
 
 // Melodic note - length follows the chart's own note duration (in
@@ -361,6 +367,10 @@ std::vector<double> RenderMelodicNote(double freqHz, double durationSeconds, Tim
         {
             sample = Triangle(t * freqHz) * 0.6;
         }
+        else if (timbre == Timbre::Bass)
+        {
+            sample = (Triangle(t * freqHz) * 0.6 + std::sin(2.0 * 3.14159265358979 * freqHz * t) * 0.4) * 0.6;
+        }
         else // Bell
         {
             sample = std::sin(2.0 * 3.14159265358979 * freqHz * t) * 0.5 +
@@ -368,6 +378,18 @@ std::vector<double> RenderMelodicNote(double freqHz, double durationSeconds, Tim
                      std::sin(2.0 * 3.14159265358979 * freqHz * 3.0 * t) * 0.08;
         }
         v[static_cast<size_t>(i)] = sample * env;
+    }
+
+    if (timbre == Timbre::Bass)
+    {
+        // A second low-pass pass smooths off whatever edge the
+        // triangle+sine blend still has, so it reads as round low end
+        // rather than a synth tone that merely happens to be pitched low.
+        double state = 0.0;
+        for (double& s : v)
+        {
+            s = OnePoleLowPass(s, state, 0.18);
+        }
     }
     return v;
 }
@@ -396,18 +418,21 @@ struct MelodicEvent
     double freqHz;
 };
 
-// Renders a drum-pattern clip's audio and (unless backgroundOnly) its note
-// chart, both derived from the same event list so what the player sees is
-// exactly what they hear.
-void GenerateDrumClip(const std::string& dir, const std::string& name, const std::vector<DrumHit>& hits,
-                       double totalBeats, bool emitMidi, uint32_t noiseSeed)
+// Renders a drum-pattern clip's audio from audioHits (the "real"
+// performance - as busy/musical as sounds good) and, unless
+// chartHits is empty, a SEPARATE note chart from chartHits - deliberately
+// not the same list. The audio is what the arrangement actually needs to
+// sound good; the chart is what the player actually needs to judge, and
+// the two don't have to agree on density at all (see GenerateMelodicClip's
+// own comment for why this split exists).
+void GenerateDrumClip(const std::string& dir, const std::string& name, const std::vector<DrumHit>& audioHits,
+                       const std::vector<DrumHit>& chartHits, double totalBeats, uint32_t noiseSeed)
 {
     int totalSamples = static_cast<int>(std::lround(totalBeats * kSecondsPerBeat * kSampleRate));
     Mixer mixer(totalSamples);
     uint32_t noiseState = noiseSeed;
 
-    std::vector<MidiNote> notes;
-    for (const DrumHit& h : hits)
+    for (const DrumHit& h : audioHits)
     {
         int startSample = static_cast<int>(std::lround(h.beat * kSecondsPerBeat * kSampleRate));
         std::vector<double> voice;
@@ -427,58 +452,68 @@ void GenerateDrumClip(const std::string& dir, const std::string& name, const std
                 break;
         }
         mixer.Add(startSample, voice);
+    }
+    WriteWavMono16(dir + "/" + name + ".wav", mixer.ToPcm16());
 
-        if (emitMidi)
+    if (!chartHits.empty())
+    {
+        std::vector<MidiNote> notes;
+        for (const DrumHit& h : chartHits)
         {
             int startTick = static_cast<int>(std::lround(h.beat * kTicksPerQuarter));
             int endTick = startTick + static_cast<int>(std::lround(0.15 * kTicksPerQuarter));
             notes.push_back({startTick, endTick, kLaneMidiPitches[h.lane]});
         }
-    }
-
-    WriteWavMono16(dir + "/" + name + ".wav", mixer.ToPcm16());
-    if (emitMidi)
-    {
         int totalTicks = static_cast<int>(std::lround(totalBeats * kTicksPerQuarter));
         WriteMidiFile(dir + "/" + name + ".mid", notes, totalTicks);
-        printf("  %s: %d drum hits, %.2fs, %d ticks\n", name.c_str(), (int)hits.size(),
-               totalBeats * kSecondsPerBeat, totalTicks);
+        printf("  %s: %d audio hits / %d chart hits, %.2fs, %d ticks\n", name.c_str(), (int)audioHits.size(),
+               (int)chartHits.size(), totalBeats * kSecondsPerBeat, totalTicks);
     }
     else
     {
-        printf("  %s: %d drum hits (background, no chart), %.2fs\n", name.c_str(), (int)hits.size(),
+        printf("  %s: %d audio hits (background, no chart), %.2fs\n", name.c_str(), (int)audioHits.size(),
                totalBeats * kSecondsPerBeat);
     }
 }
 
-void GenerateMelodicClip(const std::string& dir, const std::string& name, const std::vector<MelodicEvent>& events,
-                          double totalBeats, Timbre timbre)
+// audioEvents drives the actual musical arrangement (the WAV) - as dense
+// or intricate as sounds good, e.g. a fast 16th-note arpeggio. chartEvents
+// drives the judged note chart, authored independently and typically much
+// sparser: a section's clip is picked, at BeginSection, purely by index
+// into ChartSong::clips/laneNotes (see GameSession.h) - it never inspects
+// the audio at all - so nothing requires the two to have matching density.
+// Keeping the chart easy while the audio stays full-arrangement is exactly
+// the intended use of that decoupling.
+void GenerateMelodicClip(const std::string& dir, const std::string& name, const std::vector<MelodicEvent>& audioEvents,
+                          const std::vector<MelodicEvent>& chartEvents, double totalBeats, Timbre timbre)
 {
     int totalSamples = static_cast<int>(std::lround(totalBeats * kSecondsPerBeat * kSampleRate));
     Mixer mixer(totalSamples);
-
-    std::vector<MidiNote> notes;
-    for (const MelodicEvent& e : events)
+    for (const MelodicEvent& e : audioEvents)
     {
         int startSample = static_cast<int>(std::lround(e.beat * kSecondsPerBeat * kSampleRate));
         std::vector<double> voice = RenderMelodicNote(e.freqHz, e.durationBeats * kSecondsPerBeat, timbre);
         mixer.Add(startSample, voice);
+    }
+    WriteWavMono16(dir + "/" + name + ".wav", mixer.ToPcm16());
 
+    std::vector<MidiNote> notes;
+    for (const MelodicEvent& e : chartEvents)
+    {
         int startTick = static_cast<int>(std::lround(e.beat * kTicksPerQuarter));
         int endTick = static_cast<int>(std::lround((e.beat + e.durationBeats) * kTicksPerQuarter));
         notes.push_back({startTick, endTick, kLaneMidiPitches[e.lane]});
     }
-
-    WriteWavMono16(dir + "/" + name + ".wav", mixer.ToPcm16());
     int totalTicks = static_cast<int>(std::lround(totalBeats * kTicksPerQuarter));
     WriteMidiFile(dir + "/" + name + ".mid", notes, totalTicks);
-    printf("  %s: %d notes, %.2fs, %d ticks\n", name.c_str(), (int)events.size(), totalBeats * kSecondsPerBeat,
-           totalTicks);
+    printf("  %s: %d audio notes / %d chart notes, %.2fs, %d ticks\n", name.c_str(), (int)audioEvents.size(),
+           (int)chartEvents.size(), totalBeats * kSecondsPerBeat, totalTicks);
 }
 
 // ---------- Note-name frequency helpers (A4 = 440Hz equal temperament) ----------
-constexpr double kC2 = 65.406, kG2 = 97.999, kA2 = 110.000, kB2 = 123.471, kC3 = 130.813, kD3 = 146.832,
-                  kE3 = 164.814, kF3 = 174.614, kG3 = 195.998, kA3 = 220.000;
+constexpr double kG1 = 48.999, kB1 = 61.735;
+constexpr double kC2 = 65.406, kD2 = 73.416, kE2 = 82.407, kG2 = 97.999, kA2 = 110.000, kB2 = 123.471,
+                  kC3 = 130.813, kD3 = 146.832, kE3 = 164.814, kF3 = 174.614, kG3 = 195.998, kA3 = 220.000;
 constexpr double kC4 = 261.626, kD4 = 293.665, kE4 = 329.628, kF4 = 349.228, kG4 = 391.995, kA4 = 440.000,
                   kB4 = 493.883;
 constexpr double kC5 = 523.251, kD5 = 587.330, kE5 = 659.255, kG5 = 783.991;
@@ -489,6 +524,9 @@ int main()
 {
     std::string dir = "Content/Byte Blaster (AI Slop)";
 
+    // --- drum_intro: full musical fill for audio, a plain on/off-beat
+    // alternation for the chart - the easiest possible pattern, fitting
+    // for the song's own tutorial/first section.
     printf("Generating drum_intro...\n");
     GenerateDrumClip(dir, "drum_intro",
                       {
@@ -496,7 +534,10 @@ int main()
                           {4.00, 0}, {4.50, 0}, {5.00, 1}, {5.50, 2}, {6.00, 0}, {6.50, 2},
                           {7.00, 1}, {7.25, 3}, {7.50, 3}, {7.75, 0},
                       },
-                      8.0, /*emitMidi=*/true, 1001u);
+                      {
+                          {0.00, 0}, {1.00, 1}, {2.00, 0}, {3.00, 1}, {4.00, 0}, {5.00, 1}, {6.00, 0}, {7.00, 1},
+                      },
+                      8.0, 1001u);
 
     printf("Generating drums (background only, no chart)...\n");
     GenerateDrumClip(dir, "drums",
@@ -505,8 +546,10 @@ int main()
                           {4.00, 0}, {4.50, 2}, {5.00, 1}, {5.50, 2}, {6.00, 0}, {6.50, 2}, {7.00, 1}, {7.25, 3},
                           {7.50, 3}, {7.75, 3},
                       },
-                      8.0, /*emitMidi=*/false, 2002u);
+                      {}, 8.0, 2002u);
 
+    // drums_2 chart: a simple 4-lane rotation with one syncopated moment -
+    // busier-feeling than drum_intro's chart without actually being hard.
     printf("Generating drums_2...\n");
     GenerateDrumClip(dir, "drums_2",
                       {
@@ -514,20 +557,37 @@ int main()
                           {3.50, 2}, {3.75, 0}, {4.00, 0}, {4.50, 2}, {5.00, 1}, {5.25, 3}, {5.50, 2}, {6.00, 0},
                           {6.50, 0}, {6.75, 2}, {7.00, 1}, {7.25, 3}, {7.50, 3}, {7.75, 0},
                       },
-                      8.0, /*emitMidi=*/true, 3003u);
+                      {
+                          {0.00, 0}, {1.00, 1}, {2.00, 2}, {3.00, 3}, {4.00, 0}, {4.50, 0}, {5.00, 1}, {6.00, 2},
+                          {7.00, 3}, {7.50, 0},
+                      },
+                      8.0, 3003u);
 
+    // Bass: audio keeps the full moving line, an octave lower than before
+    // and on the new Bass timbre (soft triangle+sine blend, extra low-
+    // pass) instead of Square, so it actually sits underneath instead of
+    // buzzing in the same register as everything else. Chart is a plain
+    // once-per-beat pulse, easy to lock into.
     printf("Generating bass...\n");
     GenerateMelodicClip(dir, "bass",
                          {
-                             {0.00, 0.40, 0, kC3}, {0.75, 0.40, 0, kC3}, {1.50, 0.40, 1, kG2}, {2.00, 0.40, 0, kC3},
-                             {2.75, 0.40, 2, kE3}, {3.50, 0.40, 0, kC3}, {4.00, 0.40, 2, kG2}, {4.75, 0.40, 2, kG2},
-                             {5.50, 0.40, 3, kD3}, {6.00, 0.40, 2, kG2}, {6.75, 0.40, 1, kB2}, {7.50, 0.40, 2, kG2},
+                             {0.00, 0.40, 0, kC2}, {0.75, 0.40, 0, kC2}, {1.50, 0.40, 1, kG1}, {2.00, 0.40, 0, kC2},
+                             {2.75, 0.40, 2, kE2}, {3.50, 0.40, 0, kC2}, {4.00, 0.40, 2, kG1}, {4.75, 0.40, 2, kG1},
+                             {5.50, 0.40, 3, kD2}, {6.00, 0.40, 2, kG1}, {6.75, 0.40, 1, kB1}, {7.50, 0.40, 2, kG1},
                          },
-                         8.0, Timbre::Square);
+                         {
+                             {0.00, 0.6, 0, kC2}, {1.00, 0.6, 1, kG1}, {2.00, 0.6, 0, kC2}, {3.00, 0.6, 2, kE2},
+                             {4.00, 0.6, 0, kG1}, {5.00, 0.6, 1, kD2}, {6.00, 0.6, 0, kG1}, {7.00, 0.6, 3, kB1},
+                         },
+                         8.0, Timbre::Bass);
 
+    // Arp: audio stays the full fast 16th-note run (that's what makes it
+    // sound like an arpeggio) - the chart instead asks for just one press
+    // per beat, cycling through all four lanes, so the player never has to
+    // actually keep up with the 16ths.
     printf("Generating arp...\n");
     {
-        std::vector<MelodicEvent> arpEvents;
+        std::vector<MelodicEvent> arpAudio;
         double cChord[4] = {kC4, kE4, kG4, kC5};
         double gChord[4] = {kG4, kB4, kD5, kC5 * (783.991 / 523.251)}; // G4,B4,D5,G5
         for (int bar = 0; bar < 2; ++bar)
@@ -537,12 +597,22 @@ int main()
             {
                 double beat = bar * 4.0 + step * 0.25;
                 int lane = step % 4;
-                arpEvents.push_back({beat, 0.18, lane, chord[lane]});
+                arpAudio.push_back({beat, 0.18, lane, chord[lane]});
             }
         }
-        GenerateMelodicClip(dir, "arp", arpEvents, 8.0, Timbre::Triangle);
+        std::vector<MelodicEvent> arpChart;
+        for (int beat = 0; beat < 8; ++beat)
+        {
+            const double* chord = (beat < 4) ? cChord : gChord;
+            int lane = beat % 4;
+            arpChart.push_back({static_cast<double>(beat), 0.5, lane, chord[lane]});
+        }
+        GenerateMelodicClip(dir, "arp", arpAudio, arpChart, 8.0, Timbre::Triangle);
     }
 
+    // Lead: audio keeps the full melodic phrase; chart keeps only its
+    // strongest/most memorable notes (the two held hook landings plus a
+    // handful of on-the-beat pickups), evenly spaced and easy to follow.
     printf("Generating lead...\n");
     GenerateMelodicClip(dir, "lead",
                          {
@@ -550,6 +620,10 @@ int main()
                              {2.00, 1.0, 3, kC5}, {3.00, 0.75, 2, kB4}, {3.75, 0.25, 2, kA4}, {4.00, 0.5, 1, kG4},
                              {4.50, 0.5, 0, kE4}, {5.00, 0.5, 0, kD4}, {5.50, 0.5, 0, kE4}, {6.00, 1.0, 1, kG4},
                              {7.00, 0.5, 1, kF4}, {7.50, 0.5, 0, kE4},
+                         },
+                         {
+                             {0.00, 0.8, 0, kE4}, {1.00, 0.8, 1, kG4}, {2.00, 1.5, 3, kC5}, {3.50, 0.4, 2, kB4},
+                             {4.00, 0.8, 1, kG4}, {5.00, 0.8, 0, kE4}, {6.00, 1.5, 1, kG4}, {7.50, 0.4, 0, kE4},
                          },
                          8.0, Timbre::Square);
 
@@ -561,17 +635,24 @@ int main()
                              {4.50, 0.5, 2, kA4}, {5.00, 0.5, 3, kC5}, {5.50, 0.5, 2, kA4}, {6.00, 1.0, 0, kF4},
                              {7.00, 0.5, 1, kG4}, {7.50, 0.5, 2, kA4},
                          },
+                         {
+                             {0.00, 0.8, 2, kA4}, {1.00, 0.8, 3, kC5}, {2.00, 1.5, 2, kA4}, {3.50, 0.4, 1, kG4},
+                             {4.00, 0.8, 0, kF4}, {5.00, 0.8, 2, kA4}, {6.00, 1.5, 0, kF4}, {7.50, 0.4, 1, kG4},
+                         },
                          8.0, Timbre::Square);
 
+    // Bell Bridge is already sparse and DontFail (forgiving) - chart
+    // matches the audio unchanged, no simplification needed.
     printf("Generating bell_bridge (DontFail)...\n");
-    GenerateMelodicClip(dir, "bell_bridge",
-                         {
-                             {0.00, 0.8, 2, kA4}, {1.00, 0.8, 3, kC5}, {2.00, 1.8, 3, kE5},
-                             {4.00, 0.8, 1, kF4}, {5.00, 0.8, 2, kA4}, {6.00, 1.8, 3, kC5},
-                             {8.00, 0.8, 0, kC4}, {9.00, 0.8, 1, kE4}, {10.00, 1.8, 1, kG4},
-                             {12.00, 0.8, 1, kG4}, {13.00, 0.8, 2, kB4}, {14.00, 1.8, 3, kD5},
-                         },
-                         16.0, Timbre::Bell);
+    {
+        std::vector<MelodicEvent> bellEvents{
+            {0.00, 0.8, 2, kA4}, {1.00, 0.8, 3, kC5}, {2.00, 1.8, 3, kE5},
+            {4.00, 0.8, 1, kF4}, {5.00, 0.8, 2, kA4}, {6.00, 1.8, 3, kC5},
+            {8.00, 0.8, 0, kC4}, {9.00, 0.8, 1, kE4}, {10.00, 1.8, 1, kG4},
+            {12.00, 0.8, 1, kG4}, {13.00, 0.8, 2, kB4}, {14.00, 1.8, 3, kD5},
+        };
+        GenerateMelodicClip(dir, "bell_bridge", bellEvents, bellEvents, 16.0, Timbre::Bell);
+    }
 
     printf("Done.\n");
     return 0;
