@@ -18,7 +18,7 @@ hits_required = 12
 [clip]
 display_name = Bass
 name = bass
-hits_required = 14
+hits_required = 12
 
 [clip]
 display_name = Piano
