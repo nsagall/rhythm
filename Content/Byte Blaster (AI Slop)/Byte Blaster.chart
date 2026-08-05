@@ -1,0 +1,93 @@
+[song]
+title = Byte Blaster (AI Slop)
+bpm = 150
+time_signature = 4/4
+start_tolerance_ms = 120
+release_tolerance_ms = 250
+
+[clip]
+display_name = Drum Intro
+name = drum_intro
+hits_required = 22
+
+[clip]
+display_name = Full Beat
+name = drums
+
+[clip]
+display_name = Bass
+name = bass
+hits_required = 16
+
+[clip]
+display_name = Arp
+name = arp
+hits_required = 22
+
+[clip]
+display_name = Lead
+name = lead
+hits_required = 10
+
+[clip]
+display_name = Bell Bridge
+name = bell_bridge
+hits_required = 6
+learn_mode = dontfail
+release_tolerance_ms = 600
+
+[clip]
+display_name = Drums 2
+name = drums_2
+hits_required = 28
+
+[clip]
+display_name = Lead 2
+name = lead_2
+hits_required = 10
+
+[learn]
+clip = drum_intro
+
+[reset]
+
+[background]
+clip = drums
+
+[learn]
+clip = bass
+
+[learn]
+clip = arp
+
+[learn]
+clip = lead
+
+[break]
+clip = arp
+
+[background]
+clip = arp
+
+[learn]
+clip = bell_bridge
+
+[reset]
+
+[background]
+clip = drums_2
+
+[background]
+clip = bass
+
+[learn]
+clip = lead_2
+
+[break]
+clip = arp
+
+[background]
+clip = arp
+
+[learn]
+clip = drum_intro
