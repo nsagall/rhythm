@@ -197,6 +197,12 @@ struct NoteLaneScene
 
     std::wstring statusText;
 
+    // The running score, already formatted for display (e.g. L"Score 12,340") -
+    // see GameSession::CurrentScore(). Drawn by INoteLaneRenderer::DrawHud
+    // alongside statusText, right-aligned in the same HUD panel so it's
+    // visible for the whole song, not just after it ends.
+    std::wstring scoreText;
+
     // Which ChartClip (by its .chart name, not displayName) each of NoteLaneModel's own
     // m_previousClip/m_currentClip/m_nextClip currently identifies, or
     // L"(none)" for a null slot - always populated (cheap; a handful of

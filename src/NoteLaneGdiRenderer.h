@@ -128,7 +128,7 @@ private:
     void DrawConfetti(HDC hdc, double elapsedSeconds, double t);
     void DrawExplosion(HDC hdc, double elapsedSeconds, double t);
     void DrawRipples(HDC hdc, RECT laneRect);
-    void DrawHud(HDC hdc, RECT laneRect, const std::wstring& statusText);
+    void DrawHud(HDC hdc, RECT laneRect, const std::wstring& statusText, const std::wstring& scoreText);
     // Only called when m_debugOverlayEnabled - see ToggleDebugOverlay.
     void DrawDebugOverlay(HDC hdc, RECT laneRect, const NoteLaneScene& scene);
     // The "hits meter" panel beside the playfield - a bottom-anchored fill

@@ -653,7 +653,11 @@ void NoteLaneGdiRenderer::DrawRipples(HDC hdc, RECT laneRect)
 
 // HUD: a translucent rounded panel with bold, drop-shadowed status text so
 // it stays readable over the busy, colorful background beneath it.
-void NoteLaneGdiRenderer::DrawHud(HDC hdc, RECT laneRect, const std::wstring& statusText)
+// scoreText (right-aligned) gets first claim on the panel's width - status
+// text (left-aligned) has its own rect shrunk to end before it starts (and
+// ellipsizes via DT_END_ELLIPSIS if it still doesn't fit), so the two can
+// never overlap regardless of how long either one is.
+void NoteLaneGdiRenderer::DrawHud(HDC hdc, RECT laneRect, const std::wstring& statusText, const std::wstring& scoreText)
 {
     RECT panelRect{laneRect.left + 8, laneRect.top + 8, laneRect.right - 8, laneRect.top + 44};
     DrawAlphaRoundRect(hdc, panelRect, 14, RGB(12, 8, 28), 175);
@@ -670,7 +674,15 @@ void NoteLaneGdiRenderer::DrawHud(HDC hdc, RECT laneRect, const std::wstring& st
     textRect.left += 10;
     textRect.right -= 10;
 
+    RECT scoreRect = textRect;
+    if (!scoreText.empty())
+    {
+        scoreRect.left = std::max(scoreRect.left, scoreRect.right - 150);
+        textRect.right = scoreRect.left - 8;
+    }
+
     constexpr UINT kTextFlags = DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX;
+    constexpr UINT kScoreFlags = DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX;
 
     // Cheap drop shadow: draw the text once in near-black offset a pixel, then again on top.
     RECT shadowRect = textRect;
@@ -680,6 +692,17 @@ void NoteLaneGdiRenderer::DrawHud(HDC hdc, RECT laneRect, const std::wstring& st
     DrawTextW(hdc, statusText.c_str(), -1, &shadowRect, kTextFlags);
     SetTextColor(hdc, kTextColor);
     DrawTextW(hdc, statusText.c_str(), -1, &textRect, kTextFlags);
+
+    if (!scoreText.empty())
+    {
+        RECT scoreShadowRect = scoreRect;
+        scoreShadowRect.left += 1;
+        scoreShadowRect.top += 1;
+        SetTextColor(hdc, RGB(0, 0, 0));
+        DrawTextW(hdc, scoreText.c_str(), -1, &scoreShadowRect, kScoreFlags);
+        SetTextColor(hdc, kTextColor);
+        DrawTextW(hdc, scoreText.c_str(), -1, &scoreRect, kScoreFlags);
+    }
 
     SelectObject(hdc, oldFont);
 }
@@ -1004,7 +1027,7 @@ void NoteLaneGdiRenderer::Draw(HDC hdc, RECT laneRect, RECT hitsMeterRect, const
     }
 
     DrawRipples(hdc, laneRect);
-    DrawHud(hdc, laneRect, scene.statusText);
+    DrawHud(hdc, laneRect, scene.statusText, scene.scoreText);
     DrawHitsMeter(hdc, hitsMeterRect, scene);
     if (m_debugOverlayEnabled)
     {

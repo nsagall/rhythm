@@ -179,6 +179,13 @@ public:
 
     int CurrentStreak() const;
 
+    // Returns the running score for the song currently loaded/playing - see
+    // RegisterHit/RegisterMiss for how it accumulates. Reset to 0 by every
+    // Start(); persists across a Pause()/Resume() and past GamePhase::Complete
+    // (the caller reads it once the session reaches Complete, before the next
+    // Start() zeroes it again).
+    int CurrentScore() const;
+
     // Returns the beat of the next note this lane is awaiting a press for.
     double NextExpectedBeatForLane(int lane) const;
 
@@ -550,6 +557,14 @@ private:
 
     QueuedBackground m_queuedBackground;
     JudgementResult m_lastJudgement = JudgementResult::None;
+
+    // See CurrentScore(). m_comboCount is the running count of consecutive
+    // hits with no intervening real miss (a miss that doesn't even produce a
+    // JudgementEvent - see RegisterMiss's alreadyPassingInPassMode case -
+    // leaves it untouched, since the player was never shown a miss for it
+    // either); RegisterHit scores each hit off of it, then increments it.
+    int m_score = 0;
+    int m_comboCount = 0;
     // See ConsumeJudgementEvents - populated by RegisterHit/RegisterMiss,
     // drained (and cleared) there.
     std::vector<JudgementEvent> m_judgementEvents;

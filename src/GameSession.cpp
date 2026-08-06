@@ -33,6 +33,20 @@ constexpr double kEasyModeNoteDurationBeats = 0.5;
 // every single frame over nothing.
 constexpr double kClockResyncThresholdSeconds = 0.008;
 
+// Score awarded for a single hit, given the running combo count *after*
+// counting that hit (so the first hit of a fresh combo scores the base
+// value, and every consecutive hit after it scores progressively more) -
+// rewards sustained accuracy over isolated hits without needing a separate
+// multiplier field anywhere. A miss doesn't subtract score, only resets the
+// combo (see RegisterMiss), so a player's score never goes backwards.
+constexpr int kBaseHitScore = 100;
+constexpr int kComboBonusPerHit = 10;
+
+int ScoreForHit(int comboAfterHit)
+{
+    return kBaseHitScore + (comboAfterHit - 1) * kComboBonusPerHit;
+}
+
 } // namespace
 
 // Binds this session to the audio engine it will drive.
@@ -142,6 +156,9 @@ void GameSession::Start()
     m_queuedBackground = QueuedBackground{};
     m_lastJudgement = JudgementResult::None;
     m_paused = false;
+
+    m_score = 0;
+    m_comboCount = 0;
 
     m_clock.Start(m_song.bpm);
     m_phase = GamePhase::CountIn;
@@ -581,6 +598,12 @@ SectionKind GameSession::CurrentSectionKind() const
 int GameSession::CurrentStreak() const
 {
     return m_currentInstance.Streak();
+}
+
+// See the header's own comment.
+int GameSession::CurrentScore() const
+{
+    return m_score;
 }
 
 // Returns the beat of the next note this lane is awaiting a press for.
@@ -1037,6 +1060,9 @@ void GameSession::RegisterHit(int lane)
     const ChartSection& section = m_song.sections[m_currentInstance.SectionIndex()];
     const ChartClip& clip = m_song.clips[section.clipIndex];
 
+    ++m_comboCount;
+    m_score += ScoreForHit(m_comboCount);
+
     if (m_currentInstance.RegisterHit(clip.hitsRequired))
     {
         m_audioEngine.SetVolume(m_stemHandles[section.clipIndex], static_cast<float>(clip.volume));
@@ -1191,6 +1217,8 @@ void GameSession::RegisterMiss(int lane)
     {
         return;
     }
+
+    m_comboCount = 0;
 
     m_lastJudgement = JudgementResult::Miss;
     m_judgementEvents.push_back({JudgementResult::Miss, lane, m_currentInstance.IsPassing()});
