@@ -923,6 +923,19 @@ void NoteLaneGdiRenderer::Draw(HDC hdc, RECT laneRect, RECT hitsMeterRect, const
 
     COLORREF primaryColor = scene.primaryClip ? scene.primaryClip->color : ClipColor::kNeutral;
     DrawRails(hdc, laneRect, primaryColor);
+
+    // A Pass-mode section's own already-exploded notes (see
+    // NoteLaneScene::passLineHitLanes) still get a real "hit" flash at the
+    // judge line as each one crosses it - routed through the exact same
+    // OnJudgement path a real judged Hit would use, so it reuses that
+    // flash/ripple treatment verbatim instead of needing a visual
+    // treatment of its own. Must run before DrawReceptors below, which is
+    // what actually reads the flash state this sets.
+    for (int lane : scene.passLineHitLanes)
+    {
+        OnJudgement(JudgementResult::Hit, lane, true);
+    }
+
     DrawReceptors(hdc, laneRect, scene, primaryColor);
 
     if (scene.justLockedIn)

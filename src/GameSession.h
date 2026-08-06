@@ -410,18 +410,22 @@ private:
 
     // Records a miss: resets the shared streak, and stops the current
     // section's clip loop after 3 in a row (unchanged in both modes). In
-    // Pass mode, a no-op once already passing - further misses shouldn't
-    // stop the clip or unfreeze the streak display once it's proven
-    // itself. In DontFail mode, a miss while passing instead drops the
-    // section back to failing (see SectionInstance::RegisterMiss) and
-    // reverts the clip's volume to init_volume. Before passing, a miss's
-    // only effect on the section's own advance timing is indirect:
-    // resetting the streak makes passing (and therefore advancing) take
-    // longer to reach, possibly costing the clip another full loop's
-    // repeat - see Update()'s own comment. lane is only for the
-    // JudgementEvent this pushes (see ConsumeJudgementEvents) - every caller
-    // already knows it, since a miss is always judged against a specific
-    // lane's own note.
+    // Pass mode, a full no-op once already passing - further misses
+    // shouldn't stop the clip or unfreeze the streak display once it's
+    // proven itself, and (unlike every other case) this call doesn't even
+    // push a JudgementEvent: the note lane already flashes its own
+    // synthetic "hit" for these notes instead (see NoteLaneModel::
+    // BuildScene's passLineHitLanes), so a real Miss event here would just
+    // fight it for the same lane's flash. In DontFail mode, a miss while
+    // passing instead drops the section back to failing (see
+    // SectionInstance::RegisterMiss) and reverts the clip's volume to
+    // init_volume. Before passing, a miss's only effect on the section's
+    // own advance timing is indirect: resetting the streak makes passing
+    // (and therefore advancing) take longer to reach, possibly costing the
+    // clip another full loop's repeat - see Update()'s own comment. lane is
+    // only for the JudgementEvent this pushes (see ConsumeJudgementEvents) -
+    // every caller already knows it, since a miss is always judged against
+    // a specific lane's own note.
     void RegisterMiss(int lane);
 
     // Moves this lane's next-expected-note pointer forward to the next note after it.

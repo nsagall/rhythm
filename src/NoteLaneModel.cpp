@@ -282,6 +282,7 @@ void NoteLaneModel::ResetIfSongChanged(const GameSession& session)
     // justHandedOff edge (nowX && !m_prevX never firing once for it).
     m_prevPassing = false;
     m_prevNotesHandoff = false;
+    m_prevNowBeat = 0.0;
 }
 
 NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
@@ -417,6 +418,22 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
         }
     }
 
+    // Pass mode only: passing is a one-way latch, so once reached this
+    // stays forced true for the rest of the section's run - overriding
+    // whichever branch above just computed nextClipShowing, and regardless
+    // of whether there's even a real next section to hand off to yet. This
+    // makes justHandedOff below fire on the exact same frame as
+    // justLockedIn, so the exploding-range logic further down clears this
+    // clip's *entire* currently-visible window at once instead of leaving
+    // its notes live and judged until the next section's own notes happen
+    // to scroll into view. DontFail mode is untouched - the branch above
+    // already keeps its notes live all the way to the real advance
+    // regardless of preview state (see its own comment for why).
+    if (isLearnSection && nowPassing && clip->learnMode == LearnMode::Pass)
+    {
+        nextClipShowing = true;
+    }
+
     bool isLiveJudging = isLearnSection && !nextClipShowing;
 
     for (int lane = 0; lane < kLaneCount; ++lane)
@@ -471,6 +488,35 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
             addExplodingRange(notesUpperBoundBeat, scene.nowBeat + kBeatsAhead);
         }
     }
+
+    // Pass mode only: once locked in, this clip's own notes explode
+    // immediately (see the nextClipShowing override above) and never draw
+    // again for the rest of this section's run - but its audio keeps
+    // looping in the background regardless (to build up the arrangement),
+    // so give the judge line a synthetic "hit" flash every time one of its
+    // pattern's onsets crosses it anyway, so the beat still visibly lands
+    // on something instead of the judge line going dark for however long
+    // the section has left. Compared against last frame's own nowBeat
+    // (m_prevNowBeat) so each onset only fires once, right as it crosses;
+    // skipped if nowBeat has gone backwards since last frame (a fresh
+    // Start()/Stop() - nothing to catch up on, and a descending range
+    // would confuse NotesInRange's own bar-tiling math).
+    if (isLearnSection && nowPassing && clip->learnMode == LearnMode::Pass && scene.nowBeat >= m_prevNowBeat)
+    {
+        double passOriginBeat = session.CurrentClipOriginBeat();
+        for (int lane = 0; lane < kLaneCount; ++lane)
+        {
+            for (const SceneNote& crossed : NotesInRange(lane, passOriginBeat, m_prevNowBeat, scene.nowBeat + 1e-6,
+                                                           clip->laneNotes[lane], clip->spanBeats))
+            {
+                if (crossed.startBeat > m_prevNowBeat + 1e-9 && crossed.startBeat <= scene.nowBeat + 1e-9)
+                {
+                    scene.passLineHitLanes.push_back(lane);
+                }
+            }
+        }
+    }
+    m_prevNowBeat = scene.nowBeat;
 
     m_prevPassing = nowPassing;
     m_prevNotesHandoff = nextClipShowing;

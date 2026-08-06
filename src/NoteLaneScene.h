@@ -154,6 +154,18 @@ struct NoteLaneScene
     // check first, exactly as it would for NoteLaneScene::notes.
     std::vector<SceneNote> explodingNotes;
 
+    // Lanes where a Pass-mode section's own notes - already exploded away
+    // and never drawn again for the rest of its run (see
+    // NoteLaneModel::BuildScene's nextClipShowing override) - crossed the
+    // judge line this frame anyway, since that clip's audio keeps looping
+    // in the background regardless. A renderer should flash a "hit" at the
+    // judge line for each of these exactly as it would for a real judged
+    // Hit, even though there's no on-screen note to point at. May repeat
+    // the same lane more than once if more than one note crossed within a
+    // single frame - reacting to each is idempotent (just re-triggers the
+    // same flash), so no de-duplication is needed here.
+    std::vector<int> passLineHitLanes;
+
     // Progress toward the current learn section's clip locking in - streak
     // divided by hitsRequired, clamped to [0,1] - for the "hits meter" panel
     // beside the playfield. Only meaningful while showHitsMeter is true.

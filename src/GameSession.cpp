@@ -282,9 +282,19 @@ void GameSession::OnPress(int lane)
             m_lastJudgement = JudgementResult::None;
         }
     }
+    else if (nowSeconds < startSeconds - toleranceSeconds)
+    {
+        // Too early to judge against this note at all - silently ignored
+        // rather than failed immediately, so a stray early tap doesn't
+        // cost the player a note they haven't actually reached yet. The
+        // lane keeps awaiting this same note exactly as if the press never
+        // happened: a real press later, on time, still resolves it
+        // normally, and one that never comes still times out via Update()'s
+        // own press-phase timeout, same as always.
+    }
     else
     {
-        // Mistimed: fails immediately, but doesn't advance - this lane keeps
+        // Too late: fails immediately, but doesn't advance - this lane keeps
         // awaiting the same note until it's hit correctly or times out,
         // exactly like a mistimed tap did in the single-lane model.
         RegisterMiss(lane);
@@ -1155,6 +1165,18 @@ void GameSession::RegisterMiss(int lane)
     const ChartSection& section = m_song.sections[m_currentInstance.SectionIndex()];
     const ChartClip& clip = m_song.clips[section.clipIndex];
 
+    // Captured before m_currentInstance.RegisterMiss() runs (it can't
+    // change IsPassing() in this case - see below - but reads cleaner
+    // captured up front): mirrors SectionInstance::RegisterMiss's own
+    // early-return for this exact condition. Once a Pass-mode section is
+    // already passing, a miss is a genuine no-op there, not just for the
+    // streak/clip-stopping consequences below - so it shouldn't produce a
+    // judgement event either. The note lane instead flashes its own
+    // synthetic "hit" for these notes (see NoteLaneModel::BuildScene's
+    // passLineHitLanes) - a real Miss event here would just fight it for
+    // the same lane's flash.
+    bool alreadyPassingInPassMode = m_currentInstance.IsPassing() && clip.learnMode == LearnMode::Pass;
+
     SectionInstance::MissResult result = m_currentInstance.RegisterMiss(m_easyMode);
     if (result.shouldStopClip)
     {
@@ -1163,6 +1185,11 @@ void GameSession::RegisterMiss(int lane)
     if (result.justEnteredFailState)
     {
         m_audioEngine.SetVolume(m_stemHandles[section.clipIndex], static_cast<float>(clip.initVolume));
+    }
+
+    if (alreadyPassingInPassMode)
+    {
+        return;
     }
 
     m_lastJudgement = JudgementResult::Miss;

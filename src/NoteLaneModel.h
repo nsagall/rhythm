@@ -20,7 +20,11 @@ public:
     // Call once per frame; internally tracks passing/handoff edges across
     // calls (see NoteLaneScene::justLockedIn/justFailed/justHandedOff), so
     // calls must be sequential real frames of the same session, not
-    // arbitrary replays.
+    // arbitrary replays. Also tracks last frame's beat position (see
+    // m_prevNowBeat) to detect exactly which onsets of an already-exploded
+    // Pass-mode clip crossed the judge line this frame (see
+    // NoteLaneScene::passLineHitLanes) - same sequential-real-frames
+    // requirement.
     NoteLaneScene BuildScene(const GameSession& session);
 
 private:
@@ -122,6 +126,14 @@ private:
     // frame-to-frame edge tracker.
     bool m_prevPassing = false;
     bool m_prevNotesHandoff = false;
+
+    // Last frame's scene.nowBeat, purely so a Pass-mode section that's
+    // already locked in (and so had its notes explode immediately - see
+    // BuildScene's nextClipShowing override) can detect exactly which of
+    // its own onsets crossed the judge line since last frame, to populate
+    // NoteLaneScene::passLineHitLanes - a plain snapshot, not an edge flag
+    // like m_prevPassing/m_prevNotesHandoff above.
+    double m_prevNowBeat = 0.0;
 
     // The last session.Song().clips.data() ResetIfSongChanged saw - see
     // its own comment for why this is the right chart-switch signal.
