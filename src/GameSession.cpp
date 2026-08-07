@@ -145,6 +145,10 @@ bool GameSession::LoadChart(const std::wstring& chartFilePath, bool easyMode, st
     m_clipInstances.clear();
     m_queuedBackground = QueuedBackground{};
     m_lastJudgement = JudgementResult::None;
+    for (BufferedPress& buffered : m_bufferedPress)
+    {
+        buffered = BufferedPress{};
+    }
     return true;
 }
 
@@ -170,6 +174,10 @@ void GameSession::Start()
     m_queuedBackground = QueuedBackground{};
     m_lastJudgement = JudgementResult::None;
     m_paused = false;
+    for (BufferedPress& buffered : m_bufferedPress)
+    {
+        buffered = BufferedPress{};
+    }
 
     m_bankedScore = 0;
     m_sessionScore = 0;
@@ -192,6 +200,10 @@ void GameSession::Stop()
     m_queuedBackground = QueuedBackground{};
     m_lastJudgement = JudgementResult::None;
     m_paused = false;
+    for (BufferedPress& buffered : m_bufferedPress)
+    {
+        buffered = BufferedPress{};
+    }
 }
 
 // See the header comment.
@@ -287,39 +299,7 @@ void GameSession::OnPress(int lane)
 
     if (std::abs(nowSeconds - startSeconds) <= toleranceSeconds)
     {
-        double originBeat = m_clipInstances.at(&clip).startSeconds / secondsPerBeat;
-        const LaneNote* note = FindLaneNote(clip, lane, originBeat, startBeat);
-        double durationBeats = note ? note->durationBeats : 0.0;
-
-        // How close this press landed to the note's own onset, as a
-        // fraction of the tolerance window it was judged against - past
-        // kImprecisionToleranceFraction of it, still a correct press (it's
-        // within the full window), but not a precise one. See
-        // SectionInstance::LaneHoldWasPrecise/GameSession::ScoreForHit.
-        bool wasPrecise = std::abs(nowSeconds - startSeconds) <= toleranceSeconds * kImprecisionToleranceFraction;
-
-        StartClipLoop(section.clipIndex, clip.initVolume);
-        m_currentInstance.StartLaneHold(lane, startBeat, startBeat + durationBeats, wasPrecise);
-        AdvanceExpectedNote(lane);
-
-        if (m_easyMode)
-        {
-            // Release timing is ignored entirely in easy mode, so the press
-            // itself is the final judgement - mirrors OnRelease's
-            // in-tolerance branch below, the only other place a Hit gets
-            // registered.
-            RegisterHit(lane, wasPrecise);
-            RecordOnsetJudgement(startBeat, lane, JudgementResult::Hit);
-        }
-        else
-        {
-            // A correct press doesn't produce a final judgement yet - that
-            // only happens at release - so any stale Hit/Miss left over
-            // from an earlier press/release must be cleared here, or the
-            // caller's very next ConsumeLastJudgement() would misattribute
-            // it to this press.
-            m_lastJudgement = JudgementResult::None;
-        }
+        ApplyInTolerancePress(lane, section, clip, startBeat, nowSeconds);
     }
     else if (nowSeconds < startSeconds - toleranceSeconds)
     {
@@ -341,11 +321,167 @@ void GameSession::OnPress(int lane)
     }
 }
 
+// Judges a press already confirmed within its note's start tolerance - see
+// the header comment.
+void GameSession::ApplyInTolerancePress(int lane, const ChartSection& section, const ChartClip& clip,
+                                         double startBeat, double pressSeconds)
+{
+    double secondsPerBeat = 60.0 / m_song.bpm;
+    double startSeconds = startBeat * secondsPerBeat;
+    double toleranceSeconds = EffectiveStartToleranceSeconds(clip);
+    double originBeat = m_clipInstances.at(&clip).startSeconds / secondsPerBeat;
+    const LaneNote* note = FindLaneNote(clip, lane, originBeat, startBeat);
+    double durationBeats = note ? note->durationBeats : 0.0;
+
+    // How close this press landed to the note's own onset, as a fraction of
+    // the tolerance window it was judged against - past
+    // kImprecisionToleranceFraction of it, still a correct press (it's
+    // within the full window), but not a precise one. See
+    // SectionInstance::LaneHoldWasPrecise/GameSession::ScoreForHit.
+    bool wasPrecise = std::abs(pressSeconds - startSeconds) <= toleranceSeconds * kImprecisionToleranceFraction;
+
+    StartClipLoop(section.clipIndex, clip.initVolume);
+    m_currentInstance.StartLaneHold(lane, startBeat, startBeat + durationBeats, wasPrecise);
+    AdvanceExpectedNote(lane);
+
+    if (m_easyMode)
+    {
+        // Release timing is ignored entirely in easy mode, so the press
+        // itself is the final judgement - mirrors OnRelease's in-tolerance
+        // branch below, the only other place a Hit gets registered.
+        RegisterHit(lane, wasPrecise);
+        RecordOnsetJudgement(startBeat, lane, JudgementResult::Hit);
+    }
+    else
+    {
+        // A correct press doesn't produce a final judgement yet - that only
+        // happens at release - so any stale Hit/Miss left over from an
+        // earlier press/release must be cleared here, or the caller's very
+        // next ConsumeLastJudgement() would misattribute it to this press.
+        m_lastJudgement = JudgementResult::None;
+    }
+}
+
+// See the header comment - lets a press whose note belongs to a section
+// that hasn't begun yet still be judged, instead of losing the early half
+// of that note's own tolerance window purely because the section transition
+// hadn't happened yet.
+bool GameSession::TryBufferEarlyPress(int lane)
+{
+    if (m_paused || lane < 0 || lane >= kLaneCount)
+    {
+        return false;
+    }
+
+    int previewIdx = PreviewSectionIndex();
+    if (previewIdx < 0 || m_song.sections[previewIdx].kind != SectionKind::Learn)
+    {
+        return false;
+    }
+    const ChartClip& clip = m_song.clips[m_song.sections[previewIdx].clipIndex];
+    if (clip.laneNotes[lane].empty())
+    {
+        return false;
+    }
+
+    double onsetBeat = PreviewFirstOnsetBeatForLane(lane);
+    if (onsetBeat < 0.0)
+    {
+        return false;
+    }
+    double secondsPerBeat = 60.0 / m_song.bpm;
+    double onsetSeconds = onsetBeat * secondsPerBeat;
+    double toleranceSeconds = EffectiveStartToleranceSeconds(clip);
+    double nowSeconds = m_clock.ElapsedSeconds();
+    if (nowSeconds < onsetSeconds - toleranceSeconds)
+    {
+        return false; // too early even for this - a stray tap, not anticipation
+    }
+
+    m_bufferedPress[lane] = BufferedPress{/*active=*/true, nowSeconds, /*released=*/false, 0.0};
+    return true;
+}
+
+// See the header comment.
+void GameSession::ConsumeBufferedPresses(const ChartSection& section, const ChartClip& clip)
+{
+    double secondsPerBeat = 60.0 / m_song.bpm;
+    double toleranceSeconds = EffectiveStartToleranceSeconds(clip);
+
+    for (int lane = 0; lane < kLaneCount; ++lane)
+    {
+        BufferedPress buffered = m_bufferedPress[lane];
+        m_bufferedPress[lane] = BufferedPress{}; // never carries over past this section beginning
+
+        if (!buffered.active || clip.laneNotes[lane].empty())
+        {
+            continue;
+        }
+
+        double startBeat = m_currentInstance.NextExpectedBeatForLane(lane);
+        double startSeconds = startBeat * secondsPerBeat;
+        // Re-validated against the note's real, just-established onset,
+        // not trusted from whenever it was buffered - see the header
+        // comment on why the real onset can end up later than it looked
+        // back then.
+        if (std::abs(buffered.pressSeconds - startSeconds) > toleranceSeconds)
+        {
+            continue;
+        }
+
+        ApplyInTolerancePress(lane, section, clip, startBeat, buffered.pressSeconds);
+
+        if (buffered.released && m_currentInstance.IsLaneHeld(lane))
+        {
+            // The player had already let go before this section even
+            // began (a very fast anticipatory tap) - resolve that release
+            // now too, against the hold ApplyInTolerancePress just
+            // started, exactly as OnRelease would have. In easy mode the
+            // press alone already produced the final judgement (see
+            // ApplyInTolerancePress), so this just lets go of the hold,
+            // mirroring OnRelease's own easy-mode branch.
+            if (m_easyMode)
+            {
+                m_currentInstance.ClearLaneHold(lane);
+            }
+            else
+            {
+                double endSeconds = m_currentInstance.LaneHoldExpectedEndBeat(lane) * secondsPerBeat;
+                double releaseToleranceSeconds = clip.releaseToleranceMs / 1000.0;
+                double holdStartBeat = m_currentInstance.LaneHoldStartBeat(lane);
+                if (std::abs(buffered.releaseSeconds - endSeconds) <= releaseToleranceSeconds)
+                {
+                    RegisterHit(lane, m_currentInstance.LaneHoldWasPrecise(lane));
+                    RecordOnsetJudgement(holdStartBeat, lane, JudgementResult::Hit);
+                }
+                else
+                {
+                    RegisterMiss(lane);
+                    RecordOnsetJudgement(holdStartBeat, lane, JudgementResult::Miss);
+                }
+                m_currentInstance.ClearLaneHold(lane);
+            }
+        }
+    }
+}
+
 // Registers a key-up for lane; judges it against the note that lane was holding, if any.
 void GameSession::OnRelease(int lane)
 {
     if (lane < 0 || lane >= kLaneCount || !m_currentInstance.IsLaneHeld(lane) || m_currentInstance.SectionIndex() < 0)
     {
+        // Not holding anything right now - but if a press was just buffered
+        // for this lane (see TryBufferEarlyPress) and hasn't been consumed
+        // yet, remember this release too, so a fast tap-and-release just
+        // ahead of a section transition resolves the same way it would if
+        // the section had already begun, instead of leaving
+        // ConsumeBufferedPresses to start a hold with no release to ever
+        // resolve it.
+        if (lane >= 0 && lane < kLaneCount && m_bufferedPress[lane].active && !m_bufferedPress[lane].released)
+        {
+            m_bufferedPress[lane].released = true;
+            m_bufferedPress[lane].releaseSeconds = m_clock.ElapsedSeconds();
+        }
         return;
     }
 
@@ -1068,6 +1204,14 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
             m_currentInstance.SchedulePendingAdvance(ChartTiming::ComputeLearnAdvanceSeconds(
                 instance.startSeconds, nowSeconds, instance.loopStartSeconds, stemDuration, section.loopCount,
                 tFallSeconds));
+
+            // Now that this section's own onsets are established, replay
+            // whatever presses (see TryBufferEarlyPress) arrived early
+            // enough to anticipate them - must run after
+            // SchedulePendingAdvance above (a buffered press completing
+            // easy mode's hits_required needs one already scheduled - see
+            // RegisterHit's own extension logic).
+            ConsumeBufferedPresses(section, clip);
             return;
         }
     }
