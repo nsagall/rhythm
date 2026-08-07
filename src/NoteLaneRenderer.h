@@ -19,7 +19,10 @@ public:
     // Notifies the renderer of a fresh press/release judgement, for
     // whatever transient visual feedback it wants to show - a flash, a
     // ripple, nothing at all. Purely cosmetic; never affects scoring.
-    virtual void OnJudgement(JudgementResult result, int lane, bool passing) = 0;
+    // precise mirrors GameSession::JudgementEvent::precise - meaningful only
+    // when result == Hit - so a hit whose press wasn't precise can be shown
+    // differently (see NoteLaneGdiRenderer's yellow-vs-green ripple).
+    virtual void OnJudgement(JudgementResult result, int lane, bool passing, bool precise) = 0;
 
     // Draws one frame of scene into laneRect on hdc - plus, beside it,
     // hitsMeterRect (see NoteLaneScene::showHitsMeter/hitsMeterProgress) -

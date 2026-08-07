@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 
 #include <algorithm>
+#include <filesystem>
 #include <mmsystem.h>
 
 #include "ColorUtil.h"
@@ -92,6 +93,37 @@ constexpr COLORREF kHintTextColor = RGB(150, 140, 175);
 constexpr COLORREF kToggleTrackOffColor = kFieldBgColor;
 constexpr COLORREF kToggleTrackOnColor = kSongRowHighlightColor;
 constexpr COLORREF kToggleKnobColor = RGB(245, 242, 250);
+
+// Returns value formatted with thousands separators (e.g. 12345 -> "12,345") -
+// scores read a lot more easily this way than as a bare digit run.
+std::wstring FormatScoreWithCommas(int value)
+{
+    std::wstring digits = std::to_wstring(value);
+    std::wstring result;
+    int sinceComma = 0;
+    for (auto it = digits.rbegin(); it != digits.rend(); ++it)
+    {
+        if (sinceComma == 3)
+        {
+            result.push_back(L',');
+            sinceComma = 0;
+        }
+        result.push_back(*it);
+        ++sinceComma;
+    }
+    std::reverse(result.begin(), result.end());
+    return result;
+}
+
+// Returns the stable key a song's high score list is saved under: its
+// content folder's own name (e.g. "Content\MySong\MySong.chart" -> "MySong") -
+// see SongLibrary's own comment on one folder per song. More stable across
+// machines/working directories than the full chartPath itself, which is all
+// Settings::LoadLastChartPath otherwise keys off of.
+std::wstring SongKeyForChartPath(const std::wstring& chartPath)
+{
+    return std::filesystem::path(chartPath).parent_path().filename().wstring();
+}
 
 // Custom-paints one owner-drawn button: a rounded, bevelled fill in
 // baseColor (darkened while pressed for tactile feedback) with bold dark
@@ -405,6 +437,11 @@ void MainWindow::OnGetMinMaxInfo(LPARAM lParam)
 // BeginCapture() for the Assign Inputs button.
 void MainWindow::OnCommand(HWND hwnd, int controlId)
 {
+    if (m_enteringInitials)
+    {
+        return; // buttons are disabled for the run's duration anyway - defensive only
+    }
+
     if (controlId == IDC_BUTTON_REFRESH)
     {
         RescanSongs(/*reportValidationErrors=*/true);
@@ -436,6 +473,12 @@ void MainWindow::OnKeyDown(WPARAM key, LPARAM flags)
     if (m_captureLane != -1)
     {
         HandleCaptureKeyDown(static_cast<int>(key));
+        return;
+    }
+
+    if (m_enteringInitials)
+    {
+        HandleInitialsKeyDown(static_cast<int>(key));
         return;
     }
 
@@ -670,7 +713,7 @@ void MainWindow::CancelCapture()
 // chooses that song immediately.
 void MainWindow::OnLButtonDown(LPARAM lParam)
 {
-    if (m_screen != UiScreen::SongSelect || m_captureLane != -1)
+    if (m_screen != UiScreen::SongSelect || m_captureLane != -1 || m_enteringInitials)
     {
         return;
     }
@@ -707,7 +750,7 @@ void MainWindow::RegisterPress(int lane)
     m_gameSession.CatchUpCountIn();
     if (!m_gameSession.IsLaneJudgeable(lane))
     {
-        m_noteLane.ShowJudgement(JudgementResult::Miss, lane, false);
+        m_noteLane.ShowJudgement(JudgementResult::Miss, lane, false, /*precise=*/true);
         return;
     }
 
@@ -727,7 +770,7 @@ void MainWindow::DrainJudgements()
 {
     for (const GameSession::JudgementEvent& event : m_gameSession.ConsumeJudgementEvents())
     {
-        m_noteLane.ShowJudgement(event.result, event.lane, event.passing);
+        m_noteLane.ShowJudgement(event.result, event.lane, event.passing, event.precise);
     }
 }
 
@@ -742,6 +785,7 @@ void MainWindow::OnTimer(WPARAM timerId)
 
     if (m_screen == UiScreen::Playing && m_gameSession.Phase() == GamePhase::Complete)
     {
+        HandleSongComplete();
         m_screen = UiScreen::SongSelect;
         ShowWindow(m_hButtonRefresh, SW_SHOW);
         ShowWindow(m_hButtonAssign, SW_SHOW);
@@ -749,6 +793,101 @@ void MainWindow::OnTimer(WPARAM timerId)
     }
 
     m_noteLane.OnTimer(timerId);
+}
+
+// See the header's own comment.
+void MainWindow::HandleSongComplete()
+{
+    int score = m_gameSession.CurrentScore();
+    std::wstring songKey = SongKeyForChartPath(m_playingChartPath);
+
+    m_lastResultText =
+        L"You scored " + FormatScoreWithCommas(score) + L" on \"" + m_playingSongTitle + L"\"";
+
+    std::vector<HighScoreEntry> entries = m_settings.LoadHighScores(songKey);
+    if (!Settings::HighScoreQualifies(entries, score))
+    {
+        return;
+    }
+
+    m_enteringInitials = true;
+    EnableWindow(m_hButtonAssign, FALSE);
+    EnableWindow(m_hButtonRefresh, FALSE);
+    m_initialsBuffer.clear();
+    m_pendingScore = score;
+    m_pendingSongKey = songKey;
+    m_pendingSongTitle = m_playingSongTitle;
+    m_pendingHighScores = std::move(entries);
+    m_pendingSongIndex = -1;
+    for (size_t i = 0; i < m_songs.size(); ++i)
+    {
+        if (m_songs[i].chartPath == m_playingChartPath)
+        {
+            m_pendingSongIndex = static_cast<int>(i);
+            break;
+        }
+    }
+}
+
+// See the header's own comment.
+void MainWindow::HandleInitialsKeyDown(int vkCode)
+{
+    if (vkCode == VK_ESCAPE)
+    {
+        CancelInitialsEntry();
+        return;
+    }
+
+    if (vkCode == VK_BACK)
+    {
+        if (!m_initialsBuffer.empty())
+        {
+            m_initialsBuffer.pop_back();
+            InvalidateRect(m_hwnd, nullptr, FALSE);
+        }
+        return;
+    }
+
+    if (vkCode == VK_RETURN)
+    {
+        if (m_initialsBuffer.size() == 3)
+        {
+            FinalizeInitialsEntry();
+        }
+        return;
+    }
+
+    if (vkCode >= 'A' && vkCode <= 'Z' && m_initialsBuffer.size() < 3)
+    {
+        m_initialsBuffer.push_back(static_cast<wchar_t>(vkCode));
+        InvalidateRect(m_hwnd, nullptr, FALSE);
+    }
+}
+
+// See the header's own comment.
+void MainWindow::FinalizeInitialsEntry()
+{
+    Settings::InsertHighScore(m_pendingHighScores, m_initialsBuffer, m_pendingScore);
+    m_settings.SaveHighScores(m_pendingSongKey, m_pendingHighScores);
+
+    if (m_pendingSongIndex >= 0 && m_pendingSongIndex < static_cast<int>(m_songBestScores.size()))
+    {
+        m_songBestScores[m_pendingSongIndex] = m_pendingHighScores.front().score;
+    }
+
+    m_enteringInitials = false;
+    EnableWindow(m_hButtonAssign, TRUE);
+    EnableWindow(m_hButtonRefresh, TRUE);
+    InvalidateRect(m_hwnd, nullptr, FALSE);
+}
+
+// See the header's own comment.
+void MainWindow::CancelInitialsEntry()
+{
+    m_enteringInitials = false;
+    EnableWindow(m_hButtonAssign, TRUE);
+    EnableWindow(m_hButtonRefresh, TRUE);
+    InvalidateRect(m_hwnd, nullptr, FALSE);
 }
 
 // Bails out of the current song (Esc while Playing) and returns to the song
@@ -825,8 +964,10 @@ void MainWindow::OnPaint(HWND hwnd)
         if (m_screen == UiScreen::SongSelect)
         {
             DrawSongList(m_backBufferDC);
+            DrawLastResult(m_backBufferDC);
             DrawEasyModeToggle(m_backBufferDC);
             DrawCapturePrompt(m_backBufferDC);
+            DrawInitialsPrompt(m_backBufferDC);
         }
         else
         {
@@ -876,6 +1017,18 @@ void MainWindow::RescanSongs(bool reportValidationErrors)
     std::vector<std::wstring> validationErrors;
     m_songs = SongLibrary::Scrape(kContentRoot, reportValidationErrors ? &validationErrors : nullptr);
 
+    // Rebuilt alongside m_songs, not read from Settings on every paint - see
+    // m_songBestScores's own comment.
+    m_songBestScores.assign(m_songs.size(), -1);
+    for (size_t i = 0; i < m_songs.size(); ++i)
+    {
+        std::vector<HighScoreEntry> entries = m_settings.LoadHighScores(SongKeyForChartPath(m_songs[i].chartPath));
+        if (!entries.empty())
+        {
+            m_songBestScores[i] = entries.front().score;
+        }
+    }
+
     m_selectedSongIndex = m_songs.empty() ? -1 : 0;
     if (!preferredPath.empty())
     {
@@ -920,6 +1073,9 @@ void MainWindow::ChooseSong(int index)
     }
 
     m_settings.SaveLastChartPath(m_songs[index].chartPath);
+    m_playingChartPath = m_songs[index].chartPath;
+    m_playingSongTitle = m_songs[index].title;
+    m_lastResultText.clear();
     m_gameSession.Start();
     m_screen = UiScreen::Playing;
     ShowWindow(m_hButtonRefresh, SW_HIDE);
@@ -997,6 +1153,16 @@ void MainWindow::DrawSongList(HDC hdc)
         textRect.left += 16;
         textRect.right -= 16;
         SetTextColor(hdc, selected ? kSongRowHighlightTextColor : kLabelTextColor);
+
+        if (i < m_songBestScores.size() && m_songBestScores[i] >= 0)
+        {
+            RECT scoreRect = textRect;
+            scoreRect.left = std::max(scoreRect.left, scoreRect.right - 150);
+            std::wstring scoreText = L"Best " + FormatScoreWithCommas(m_songBestScores[i]);
+            DrawTextW(hdc, scoreText.c_str(), -1, &scoreRect, DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+            textRect.right = scoreRect.left - 8;
+        }
+
         DrawTextW(hdc, m_songs[i].title.c_str(), -1, &textRect,
                   DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
     }
@@ -1006,6 +1172,105 @@ void MainWindow::DrawSongList(HDC hdc)
     SetTextColor(hdc, kHintTextColor);
     DrawTextW(hdc, L"Click a song, or use \x2191/\x2193 and any other key to start it.", -1, &hintRect,
               DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+
+    SelectObject(hdc, oldFont);
+}
+
+// See the header's own comment. Drawn in the gap between the header row and
+// the song list, so it never competes with either for space. Suppressed
+// while either overlay prompt is up (m_enteringInitials/m_captureLane != -1) -
+// both spill downward from the same header-row starting point (see
+// DrawInitialsPrompt/DrawCapturePrompt) and would otherwise land right on
+// top of this text; the initials prompt already repeats the score in its
+// own headline, so nothing is lost by skipping this one while it's up.
+void MainWindow::DrawLastResult(HDC hdc)
+{
+    if (m_lastResultText.empty() || m_enteringInitials || m_captureLane != -1)
+    {
+        return;
+    }
+
+    static HFONT resultFont =
+        CreateFontW(-15, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+                    CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
+
+    RECT rect{kRowLeft, kToolbarHeight, m_songListRect.right, kToolbarHeight + kLaneMargin};
+    HFONT oldFont = (HFONT)SelectObject(hdc, resultFont);
+    SetBkMode(hdc, TRANSPARENT);
+    SetTextColor(hdc, kSongRowHighlightColor);
+    DrawTextW(hdc, m_lastResultText.c_str(), -1, &rect, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
+    SelectObject(hdc, oldFont);
+}
+
+// See the header's own comment.
+void MainWindow::DrawInitialsPrompt(HDC hdc)
+{
+    if (!m_enteringInitials)
+    {
+        return;
+    }
+
+    static HFONT promptFont =
+        CreateFontW(-16, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+                    CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
+    static HFONT lettersFont =
+        CreateFontW(-30, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+                    CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
+
+    // Pads the typed initials out to 3 slots with underscores, spaced apart
+    // (e.g. "AB_" -> "A B _") so each letter's own slot stays visually
+    // distinct instead of reading as one run of characters.
+    std::wstring padded = m_initialsBuffer;
+    while (padded.size() < 3)
+    {
+        padded.push_back(L'_');
+    }
+    std::wstring lettersText;
+    for (size_t i = 0; i < padded.size(); ++i)
+    {
+        if (i != 0)
+        {
+            lettersText += L"  ";
+        }
+        lettersText += padded[i];
+    }
+
+    std::wstring headline = L"New High Score on \"" + m_pendingSongTitle + L"\" - " +
+                             FormatScoreWithCommas(m_pendingScore);
+    std::wstring hint = L"Enter your initials - Enter to confirm, Esc to skip";
+
+    // Deliberately spills over the song list's own top rows, same as
+    // DrawCapturePrompt - input is fully blocked while entering initials
+    // (OnLButtonDown/OnKeyDown both guard on m_enteringInitials). Unlike
+    // DrawCapturePrompt, this draws over an opaque panel first: the letters
+    // typed here are the whole point of this screen, so they're not left to
+    // visually compete with whatever song-list text happens to sit
+    // underneath them.
+    int top = kRowTop + kControlHeight + 10;
+    RECT panelRect{kRowLeft - 6, top - 8, m_songListRect.right + 6, top + 118};
+    HBRUSH panelBrush = CreateSolidBrush(RGB(20, 14, 42));
+    HPEN oldPanelPen = (HPEN)SelectObject(hdc, GetStockObject(NULL_PEN));
+    HBRUSH oldPanelBrush = (HBRUSH)SelectObject(hdc, panelBrush);
+    RoundRect(hdc, panelRect.left, panelRect.top, panelRect.right, panelRect.bottom, 14, 14);
+    SelectObject(hdc, oldPanelBrush);
+    SelectObject(hdc, oldPanelPen);
+    DeleteObject(panelBrush);
+
+    RECT headlineRect{kRowLeft, top, m_songListRect.right, top + 26};
+    HFONT oldFont = (HFONT)SelectObject(hdc, promptFont);
+    SetBkMode(hdc, TRANSPARENT);
+    SetTextColor(hdc, kSongRowHighlightColor);
+    DrawTextW(hdc, headline.c_str(), -1, &headlineRect, DT_LEFT | DT_TOP | DT_WORDBREAK | DT_NOPREFIX);
+
+    RECT lettersRect{kRowLeft, headlineRect.bottom + 6, m_songListRect.right, headlineRect.bottom + 48};
+    SelectObject(hdc, lettersFont);
+    SetTextColor(hdc, kLabelTextColor);
+    DrawTextW(hdc, lettersText.c_str(), -1, &lettersRect, DT_LEFT | DT_TOP | DT_SINGLELINE | DT_NOPREFIX);
+
+    RECT hintRect{kRowLeft, lettersRect.bottom + 4, m_songListRect.right, lettersRect.bottom + 26};
+    SelectObject(hdc, promptFont);
+    SetTextColor(hdc, kHintTextColor);
+    DrawTextW(hdc, hint.c_str(), -1, &hintRect, DT_LEFT | DT_TOP | DT_WORDBREAK | DT_NOPREFIX);
 
     SelectObject(hdc, oldFont);
 }

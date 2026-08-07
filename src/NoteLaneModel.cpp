@@ -19,6 +19,29 @@ namespace
 // nextClipShowing below.
 constexpr bool kPreviewNextClipBeforeHandoff = true;
 
+// Returns value formatted with thousands separators (e.g. 12345 -> "12,345") -
+// matches MainWindow's own FormatScoreWithCommas (song-select's best-score
+// column); duplicated here rather than shared, since it's a few lines of
+// pure formatting and the two callers live in otherwise-unrelated files.
+std::wstring FormatScoreWithCommas(int value)
+{
+    std::wstring digits = std::to_wstring(value);
+    std::wstring result;
+    int sinceComma = 0;
+    for (auto it = digits.rbegin(); it != digits.rend(); ++it)
+    {
+        if (sinceComma == 3)
+        {
+            result.push_back(L',');
+            sinceComma = 0;
+        }
+        result.push_back(*it);
+        ++sinceComma;
+    }
+    std::reverse(result.begin(), result.end());
+    return result;
+}
+
 } // namespace
 
 std::vector<SceneNote> NoteLaneModel::NotesInRange(int lane, double originBeat, double fromBeat, double toBeat,
@@ -604,6 +627,14 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
         case GamePhase::Complete:
             scene.statusText = L"Song complete!";
             break;
+    }
+
+    // Visible for the whole song (count-in through completion) - not just
+    // Idle, where there's no score yet to show and statusText's own prompt
+    // already fills the panel.
+    if (session.Phase() != GamePhase::Idle)
+    {
+        scene.scoreText = L"Score " + FormatScoreWithCommas(session.CurrentScore());
     }
 
     // Overrides whatever the switch above chose - the phase/clip itself
