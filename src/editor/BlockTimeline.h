@@ -17,7 +17,10 @@
 // plain click collapses back to just that one block, all standard
 // file-manager conventions). Ctrl+C/Ctrl+V copy/paste whichever blocks are
 // selected as a group, inserted right after the current selection's last
-// (highest doc.blocks index) member. A playhead shows exactly where
+// (highest doc.blocks index) member. The Delete key deletes whichever
+// blocks are selected, and right-clicking a block opens a context menu with
+// the same delete action (selecting just that block first if it wasn't
+// already part of the current selection). A playhead shows exactly where
 // player's current position falls, via BlockSchedule::Seek - including
 // crossing back and re-sweeping a block whose loop_count > 1, and jumping
 // instantly across a Background/Reset marker (neither ever gets its own
