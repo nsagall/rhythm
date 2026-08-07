@@ -137,6 +137,34 @@ public:
     // just happened - see its own comment for why.
     bool IsLaneJudgeable(int lane) const;
 
+    // Called by the caller instead of showing its own "nothing to press
+    // here" feedback when IsLaneJudgeable(lane) is false - covers the case
+    // where a press is too early to judge only because the section that
+    // owns its note hasn't begun yet, not because there's genuinely nothing
+    // there. A note's start-tolerance window is normally symmetric (see
+    // OnPress), but the very first note of any section shares its onset
+    // second with the section's own start instant (see
+    // ChartTiming::FreshOnsetForAllLanes) - before that instant, the
+    // section isn't current yet, so IsLaneJudgeable rejects the press
+    // outright regardless of tolerance, silently discarding the early half
+    // of that one note's window that every other note in the chart gets to
+    // use. This is the fix: if PreviewClip() already knows the very next
+    // section (the one about to begin) is Learn and this press falls within
+    // that section's own first onset's start tolerance for this lane, it's
+    // remembered (see m_bufferedPress) and judged the instant BeginSection
+    // actually establishes that onset - exactly as if IsLaneJudgeable had
+    // already been true - rather than starting the actual section (and its
+    // clip's audio) early just to accommodate it. A release landing before
+    // that happens is remembered too (see OnRelease), so a fast tap-and-
+    // release just ahead of the transition resolves the same way a normal
+    // one would instead of leaving a hold stranded with no press behind it.
+    // Returns true if this press was recognized and buffered this way (the
+    // caller should suppress its own miss feedback); false if there's
+    // nothing legitimate to buffer against (too early even for that, or no
+    // upcoming Learn section at all) - the caller's usual "no note here"
+    // feedback still applies then.
+    bool TryBufferEarlyPress(int lane);
+
     // If still in the count-in but real elapsed time has already reached
     // its end, begins the first section immediately instead of waiting for
     // the next Update() tick to notice. The count-in now ends exactly at
@@ -408,6 +436,43 @@ private:
         double startSeconds = 0.0;
     };
 
+    // A press (and, if it happened, its matching release) that arrived
+    // before the section owning its note had begun - see
+    // TryBufferEarlyPress. One per lane; a later buffered press for the
+    // same lane simply overwrites an earlier, unconsumed one.
+    struct BufferedPress
+    {
+        bool active = false;
+        double pressSeconds = 0.0;
+        bool released = false;
+        double releaseSeconds = 0.0;
+    };
+
+    // Judges a press already confirmed to be within a lane's current
+    // expected note's start tolerance - shared by OnPress's own live press
+    // and by ConsumeBufferedPresses replaying an early one at the instant
+    // its section actually begins. pressSeconds is the instant the press
+    // itself happened (the live clock for OnPress; the buffered timestamp
+    // for a replayed one) - used only to grade precision/scoring, since the
+    // tolerance check itself already happened before this is called.
+    void ApplyInTolerancePress(int lane, const ChartSection& section, const ChartClip& clip, double startBeat,
+                                double pressSeconds);
+
+    // Replays every lane's buffered early press (see TryBufferEarlyPress)
+    // against clip's just-established onsets, now that section has actually
+    // begun - re-validates each against the note's start tolerance rather
+    // than trusting it was still valid whenever it was buffered (a DontFail
+    // section dropping back to failing, or a not-yet-passing Learn section
+    // repeating another loop, can both push the real onset much later than
+    // it looked at buffering time - see PendingAdvanceAtSeconds' own
+    // comment). Clears every lane's buffered press unconditionally
+    // afterward, used or not, so none of it can leak into a later section.
+    // Called from BeginSection's own Learn case, after
+    // SchedulePendingAdvance (a buffered press completing easy mode's
+    // hits_required needs one already scheduled - see RegisterHit's own
+    // extension logic).
+    void ConsumeBufferedPresses(const ChartSection& section, const ChartClip& clip);
+
     // Begins (or resumes) the section at the given index, dispatching on
     // its kind. scheduledBeat is the ideal beat this transition was
     // scheduled for (e.g. CountInSeconds() or the previous instance's own
@@ -608,6 +673,9 @@ private:
     // for why this lives here (per clip), not on SectionInstance (per
     // section).
     std::unordered_map<const ChartClip*, ClipInstance> m_clipInstances;
+
+    // See TryBufferEarlyPress/ConsumeBufferedPresses/BufferedPress.
+    BufferedPress m_bufferedPress[kLaneCount];
 
     QueuedBackground m_queuedBackground;
     JudgementResult m_lastJudgement = JudgementResult::None;

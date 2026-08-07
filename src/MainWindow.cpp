@@ -777,7 +777,9 @@ void MainWindow::OnLButtonDown(LPARAM lParam)
 // note lane - or, if this lane has no note to press right now at all (no
 // chart loaded, count-in/intro/solo playing, or this clip simply never uses
 // this lane), shows the same miss feedback directly, since OnPress itself
-// would otherwise just silently ignore the tap.
+// would otherwise just silently ignore the tap. In between those two cases,
+// TryBufferEarlyPress handles a press that's early only because the section
+// owning its note hasn't begun yet - see its own comment.
 void MainWindow::RegisterPress(int lane)
 {
     // Must run before IsLaneJudgeable - a press landing right on the
@@ -787,7 +789,10 @@ void MainWindow::RegisterPress(int lane)
     m_gameSession.CatchUpCountIn();
     if (!m_gameSession.IsLaneJudgeable(lane))
     {
-        m_noteLane.ShowJudgement(JudgementResult::Miss, lane, false, /*precise=*/true);
+        if (!m_gameSession.TryBufferEarlyPress(lane))
+        {
+            m_noteLane.ShowJudgement(JudgementResult::Miss, lane, false, /*precise=*/true);
+        }
         return;
     }
 
