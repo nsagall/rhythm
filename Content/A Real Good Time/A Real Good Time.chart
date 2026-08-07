@@ -1,0 +1,94 @@
+[song]
+title = A Real Good Time
+bpm = 95
+time_signature = 4/4
+start_tolerance_ms = 120
+release_tolerance_ms = 120
+
+[clip]
+display_name = Arp Bg
+name = arp_bg
+
+[clip]
+display_name = Bass
+name = bass
+
+[clip]
+display_name = Chords
+name = chords
+
+[clip]
+display_name = Drums
+name = drums
+hits_required = 2
+learn_mode = dontfail
+
+[clip]
+display_name = Drums Intro
+name = drums_intro
+
+[clip]
+display_name = Intro Bg
+name = intro_bg
+hits_required = 3
+learn_mode = dontfail
+
+[clip]
+display_name = Break 1
+name = break_1
+
+[clip]
+display_name = Good Time
+name = good_time
+hits_required = 1
+learn_mode = dontfail
+release_tolerance_ms = 1000
+
+[clip]
+display_name = Good Time Bg
+name = good_time_bg
+
+[clip]
+display_name = You Be Dead
+name = you_be_dead
+
+[background]
+clip = intro_bg
+
+[learn]
+clip = drums_intro
+
+[reset]
+
+[background]
+clip = arp_bg
+
+[learn]
+clip = bass
+
+[learn]
+clip = drums
+
+[learn]
+clip = chords
+
+[reset]
+
+[background]
+clip = good_time_bg
+
+[learn]
+clip = good_time
+
+[break]
+clip = break_1
+
+[background]
+clip = you_be_dead
+
+[background]
+clip = drums
+
+[learn]
+clip = bass
+
