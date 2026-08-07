@@ -688,3 +688,4 @@ bool ChartFile::Load(const std::wstring& chartFilePath, ChartSong& outSong, std:
     outSong = std::move(song);
     return true;
 }
+
