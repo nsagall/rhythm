@@ -103,6 +103,13 @@ struct SceneNote
     double durationBeats = 0.0;
     NoteVisualState state = NoteVisualState::Normal;
 
+    // Only meaningful when state == Hit - mirrors GameSession::OnsetPrecise:
+    // false for a correct press that landed outside half the tolerance
+    // window (a "partial miss" - still counted as a hit, worth less score,
+    // but a renderer should color it differently from a precise one - see
+    // NoteLaneGdiRenderer::ColorForNote/kNoteColorHitImprecise).
+    bool precise = true;
+
     // Never null for a note that actually made it into NoteLaneScene::
     // notes/explodingNotes - points into one of NoteLaneModel's own
     // persistent instances (see ClipInstance's own comment), which outlive
@@ -202,6 +209,15 @@ struct NoteLaneScene
     // alongside statusText, right-aligned in the same HUD panel so it's
     // visible for the whole song, not just after it ends.
     std::wstring scoreText;
+
+    // The current section's not-yet-banked score, already formatted (e.g.
+    // L"+120") - empty whenever GameSession::PendingScore() is 0, so a
+    // renderer can treat "nothing to show" and "text to draw" as the same
+    // check. Meant to read as points visibly building up, separate from the
+    // permanent total in scoreText - see GameSession::ScoreEvent/
+    // ConsumeScoreEvents for the moment those points move (or vanish) as a
+    // renderer-owned animation instead.
+    std::wstring pendingScoreText;
 
     // Which ChartClip (by its .chart name, not displayName) each of NoteLaneModel's own
     // m_previousClip/m_currentClip/m_nextClip currently identifies, or

@@ -809,6 +809,17 @@ void MainWindow::DrainJudgements()
     {
         m_noteLane.ShowJudgement(event.result, event.lane, event.passing, event.precise);
     }
+    for (const GameSession::ScoreEvent& event : m_gameSession.ConsumeScoreEvents())
+    {
+        if (event.kind == GameSession::ScoreEvent::Kind::Banked)
+        {
+            m_noteLane.ShowScoreBanked(event.amount);
+        }
+        else
+        {
+            m_noteLane.ShowScoreLost(event.amount);
+        }
+    }
 }
 
 // Advances the game session and reflects any judgement in the note lane.

@@ -153,9 +153,17 @@ public:
 
     JudgementResult OnsetJudgement(double startBeat, int lane) const;
 
+    // Whether the same lane note OnsetJudgement(startBeat, lane) resolves to
+    // a Hit was a precise one (see GameSession::JudgementEvent::precise) -
+    // true (the harmless default) for a Miss, or a note never judged/too old
+    // to still be tracked, since neither has a "how precise" to report.
+    bool OnsetPrecise(double startBeat, int lane) const;
+
     // Records a judgement for a specific lane note, for OnsetJudgement()
     // to look up later. Trims old entries so this can't grow unbounded.
-    void RecordOnsetJudgement(double startBeat, int lane, JudgementResult result);
+    // precise is only meaningful when result == JudgementResult::Hit - see
+    // OnsetPrecise.
+    void RecordOnsetJudgement(double startBeat, int lane, JudgementResult result, bool precise = true);
 
 private:
     // One lane currently mid-hold: its press was judged correct and its
@@ -177,6 +185,7 @@ private:
         double beat = 0.0;
         int lane = 0;
         JudgementResult result = JudgementResult::None;
+        bool precise = true;
     };
 
     int m_sectionIndex = -1;

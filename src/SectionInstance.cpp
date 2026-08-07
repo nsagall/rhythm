@@ -173,9 +173,21 @@ JudgementResult SectionInstance::OnsetJudgement(double startBeat, int lane) cons
     return JudgementResult::None;
 }
 
-void SectionInstance::RecordOnsetJudgement(double startBeat, int lane, JudgementResult result)
+bool SectionInstance::OnsetPrecise(double startBeat, int lane) const
 {
-    m_judgedNotes.push_back({startBeat, lane, result});
+    for (const JudgedLaneNote& judged : m_judgedNotes)
+    {
+        if (judged.lane == lane && std::abs(judged.beat - startBeat) < 1e-6)
+        {
+            return judged.precise;
+        }
+    }
+    return true;
+}
+
+void SectionInstance::RecordOnsetJudgement(double startBeat, int lane, JudgementResult result, bool precise)
+{
+    m_judgedNotes.push_back({startBeat, lane, result, precise});
 
     constexpr size_t kMaxTracked = 32;
     if (m_judgedNotes.size() > kMaxTracked)

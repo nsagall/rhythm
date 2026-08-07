@@ -174,6 +174,7 @@ void GameSession::Start()
     m_bankedScore = 0;
     m_sessionScore = 0;
     m_comboCount = 0;
+    m_scoreEvents.clear();
 
     m_clock.Start(m_song.bpm);
     m_phase = GamePhase::CountIn;
@@ -309,7 +310,7 @@ void GameSession::OnPress(int lane)
             // in-tolerance branch below, the only other place a Hit gets
             // registered.
             RegisterHit(lane, wasPrecise);
-            RecordOnsetJudgement(startBeat, lane, JudgementResult::Hit);
+            RecordOnsetJudgement(startBeat, lane, JudgementResult::Hit, wasPrecise);
         }
         else
         {
@@ -374,8 +375,9 @@ void GameSession::OnRelease(int lane)
 
     if (std::abs(nowSeconds - endSeconds) <= toleranceSeconds)
     {
-        RegisterHit(lane, m_currentInstance.LaneHoldWasPrecise(lane));
-        RecordOnsetJudgement(startBeat, lane, JudgementResult::Hit);
+        bool wasPrecise = m_currentInstance.LaneHoldWasPrecise(lane);
+        RegisterHit(lane, wasPrecise);
+        RecordOnsetJudgement(startBeat, lane, JudgementResult::Hit, wasPrecise);
     }
     else
     {
@@ -510,6 +512,10 @@ void GameSession::Update()
             // section's own miss (see RegisterMiss/CurrentScore()). Left at
             // 0 either way once this runs, so the next section always
             // starts its own build-up from a clean slate.
+            if (m_sessionScore > 0)
+            {
+                m_scoreEvents.push_back({ScoreEvent::Kind::Banked, m_sessionScore});
+            }
             m_bankedScore += m_sessionScore;
             m_sessionScore = 0;
 
@@ -635,6 +641,12 @@ int GameSession::CurrentStreak() const
 int GameSession::CurrentScore() const
 {
     return m_bankedScore + m_sessionScore;
+}
+
+// See the header's own comment.
+int GameSession::PendingScore() const
+{
+    return m_sessionScore;
 }
 
 // Returns the beat of the next note this lane is awaiting a press for.
@@ -846,10 +858,25 @@ std::vector<GameSession::JudgementEvent> GameSession::ConsumeJudgementEvents()
     return events;
 }
 
+// Returns and clears every score transfer recorded since the last call -
+// see the header's own comment.
+std::vector<GameSession::ScoreEvent> GameSession::ConsumeScoreEvents()
+{
+    std::vector<ScoreEvent> events = std::move(m_scoreEvents);
+    m_scoreEvents.clear();
+    return events;
+}
+
 // Returns how a specific lane note was judged, or None if untracked.
 JudgementResult GameSession::OnsetJudgement(double startBeat, int lane) const
 {
     return m_currentInstance.OnsetJudgement(startBeat, lane);
+}
+
+// See the header's own comment.
+bool GameSession::OnsetPrecise(double startBeat, int lane) const
+{
+    return m_currentInstance.OnsetPrecise(startBeat, lane);
 }
 
 bool GameSession::IsLaneHeld(int lane) const
@@ -863,7 +890,7 @@ double GameSession::LaneHoldStartBeat(int lane) const
 }
 
 // Forwards to m_currentInstance, adding RHYTHM_DEBUG_JUDGEMENTS tracing.
-void GameSession::RecordOnsetJudgement(double startBeat, int lane, JudgementResult result)
+void GameSession::RecordOnsetJudgement(double startBeat, int lane, JudgementResult result, bool precise)
 {
 #ifdef RHYTHM_DEBUG_JUDGEMENTS
     int sectionIndex = m_currentInstance.SectionIndex();
@@ -871,7 +898,7 @@ void GameSession::RecordOnsetJudgement(double startBeat, int lane, JudgementResu
                  m_clock.ElapsedSeconds(), startBeat, lane, static_cast<int>(result), sectionIndex,
                  sectionIndex >= 0 ? m_song.sections[sectionIndex].clipIndex : -1);
 #endif
-    m_currentInstance.RecordOnsetJudgement(startBeat, lane, result);
+    m_currentInstance.RecordOnsetJudgement(startBeat, lane, result, precise);
 }
 
 // Begins the section at the given index, kicking off any background clip
@@ -1255,6 +1282,10 @@ void GameSession::RegisterMiss(int lane)
     // wipes whatever the current section has built up but not yet banked
     // (see Update()'s own banking comment) - already-banked score from
     // earlier, finished sections is untouched.
+    if (m_sessionScore > 0)
+    {
+        m_scoreEvents.push_back({ScoreEvent::Kind::Lost, m_sessionScore});
+    }
     m_comboCount = 0;
     m_sessionScore = 0;
 

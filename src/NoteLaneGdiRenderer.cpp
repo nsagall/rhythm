@@ -80,12 +80,14 @@ constexpr COLORREF kStreakColor = RGB(255, 205, 70); // still used as one of the
 constexpr COLORREF kNoteColorHit = RGB(40, 235, 80);
 constexpr COLORREF kNoteColorMiss = RGB(255, 30, 30);
 
-// A hit whose press wasn't precise (see GameSession::JudgementEvent::precise)
-// still ripples - it was a correct press - but yellow instead of green, so
-// "correct but sloppy" reads differently at a glance from "correct and
-// tight." Only the ripple uses this; the note/receptor/flash colors stay
-// kNoteColorHit regardless, since those already existed before accuracy was
-// tracked and this is deliberately a smaller, additive cue on top.
+// A hit whose press wasn't precise (see GameSession::JudgementEvent::precise/
+// SceneNote::precise) - still a correct press, just a sloppy one - renders
+// yellow instead of green: the ripple it spawns (OnJudgement), and (once
+// SceneNote::state settles to Hit) the note block itself, both via
+// ColorForNote. Receptor/flash colors stay kNoteColorHit regardless - those
+// are a single-frame press/release cue with no "how precise" of their own to
+// show, unlike a note block, which stays on screen long enough for the
+// distinction to actually be readable.
 constexpr COLORREF kNoteColorHitImprecise = RGB(255, 205, 40);
 
 // Palette confetti pieces are drawn from at lock-in - a small fixed set of
@@ -95,6 +97,20 @@ constexpr COLORREF kConfettiPalette[] = {
     RGB(255, 70, 235), RGB(56, 219, 255), RGB(255, 205, 70), RGB(190, 140, 255), kStreakColor, RGB(255, 255, 255),
 };
 constexpr int kConfettiPaletteSize = sizeof(kConfettiPalette) / sizeof(kConfettiPalette[0]);
+
+// Points-banking HUD flourish (see OnScoreBanked/OnScoreLost/
+// DrawScorePopups). A popup floats/sinks and fades over its own lifetime;
+// the panel glow is a separate, shorter pulse re-triggered by the same
+// event, independent of however many popups happen to be alive at once.
+constexpr DWORD kScorePopupDurationMs = 900;
+constexpr DWORD kScoreFlashDurationMs = 400;
+constexpr double kScorePopupRisePx = 26.0;  // banked popup: total upward drift over its lifetime
+constexpr double kScorePopupSinkPx = 14.0;  // lost popup: total downward drift over its lifetime
+constexpr double kScorePopupShakePx = 5.0;  // lost popup: horizontal shake amplitude, decaying with t
+// Gold rather than kNoteColorHit's green - a banked popup is a celebration
+// of accumulated points, not another "correct" cue, so it reads as its own
+// kind of event rather than one more green flash among the ripples/glyphs.
+constexpr COLORREF kScorePopupBankedColor = RGB(255, 215, 90);
 
 // Cheap, stable pseudo-random float in [0,1) derived from an integer seed - used to scatter
 // background sparkles/confetti/explosion particles at fixed-looking-random positions without
@@ -178,6 +194,10 @@ NoteLaneGdiRenderer::~NoteLaneGdiRenderer()
     {
         DeleteObject(m_hudFont);
     }
+    if (m_smallHudFont)
+    {
+        DeleteObject(m_smallHudFont);
+    }
 }
 
 double NoteLaneGdiRenderer::PixelsPerBeat(RECT laneRect) const
@@ -207,13 +227,14 @@ int NoteLaneGdiRenderer::YForBeatsFromNow(RECT laneRect, double beatsFromNow) co
     return laneRect.top + static_cast<int>((kBeatsAhead - beatsFromNow) * PixelsPerBeat(laneRect));
 }
 
-COLORREF NoteLaneGdiRenderer::ColorForNote(NoteVisualState state, COLORREF clipColor) const
+COLORREF NoteLaneGdiRenderer::ColorForNote(NoteVisualState state, COLORREF clipColor, bool precise) const
 {
     switch (state)
     {
         case NoteVisualState::Held:
-        case NoteVisualState::Hit:
             return kNoteColorHit;
+        case NoteVisualState::Hit:
+            return precise ? kNoteColorHit : kNoteColorHitImprecise;
         case NoteVisualState::Miss:
             return kNoteColorMiss;
         case NoteVisualState::Normal:
@@ -338,6 +359,29 @@ void NoteLaneGdiRenderer::DrawAlphaRoundRect(HDC hdc, RECT rect, int cornerRadiu
     shape.Blend(alpha);
 }
 
+// Alpha-blends an outlined (unfilled) rounded rectangle - same shape as
+// DrawAlphaRoundRect, but a stroke rather than a fill, so it can sit on top
+// of already-drawn content (e.g. the HUD panel's text) as a border glow
+// instead of covering it.
+void NoteLaneGdiRenderer::DrawAlphaRoundRectOutline(HDC hdc, RECT rect, int cornerRadius, int thickness,
+                                                     COLORREF color, BYTE alpha)
+{
+    AlphaShape shape(hdc, rect, EnsureScratchBuffer(hdc, rect.right - rect.left, rect.bottom - rect.top));
+    if (!shape.Dc())
+    {
+        return;
+    }
+    HPEN oldPen = (HPEN)SelectObject(shape.Dc(), CachedSolidPen(thickness, color));
+    HBRUSH oldBrush = (HBRUSH)SelectObject(shape.Dc(), GetStockObject(NULL_BRUSH));
+    int w = rect.right - rect.left;
+    int h = rect.bottom - rect.top;
+    RoundRect(shape.Dc(), thickness / 2, thickness / 2, w - thickness / 2, h - thickness / 2, cornerRadius,
+              cornerRadius);
+    SelectObject(shape.Dc(), oldBrush);
+    SelectObject(shape.Dc(), oldPen);
+    shape.Blend(alpha);
+}
+
 // Alpha-blends a filled rectangle centered at (cx, cy) with the given
 // half-width/half-height/color/alpha - used for confetti pieces and measure lines.
 void NoteLaneGdiRenderer::DrawAlphaRect(HDC hdc, int cx, int cy, int halfWidth, int halfHeight, COLORREF color,
@@ -355,6 +399,28 @@ void NoteLaneGdiRenderer::DrawAlphaRect(HDC hdc, int cx, int cy, int halfWidth, 
     }
     RECT local{0, 0, halfWidth * 2, halfHeight * 2};
     FillRect(shape.Dc(), &local, CachedSolidBrush(color));
+    shape.Blend(alpha);
+}
+
+// Alpha-blends DrawTextW output - see the header's own comment.
+void NoteLaneGdiRenderer::DrawAlphaText(HDC hdc, RECT rect, const std::wstring& text, HFONT font, COLORREF color,
+                                         UINT flags, BYTE alpha)
+{
+    if (text.empty())
+    {
+        return;
+    }
+    AlphaShape shape(hdc, rect, EnsureScratchBuffer(hdc, rect.right - rect.left, rect.bottom - rect.top));
+    if (!shape.Dc())
+    {
+        return;
+    }
+    HFONT oldFont = (HFONT)SelectObject(shape.Dc(), font);
+    SetBkMode(shape.Dc(), TRANSPARENT);
+    SetTextColor(shape.Dc(), color);
+    RECT local{0, 0, rect.right - rect.left, rect.bottom - rect.top};
+    DrawTextW(shape.Dc(), text.c_str(), -1, &local, flags);
+    SelectObject(shape.Dc(), oldFont);
     shape.Blend(alpha);
 }
 
@@ -544,12 +610,14 @@ void NoteLaneGdiRenderer::DrawReceptors(HDC hdc, RECT laneRect, const NoteLaneSc
     }
 }
 
-// Draws every note in scene.notes: upcoming notes in their own clip
-// color; a held/hit note in kNoteColorHit; a missed note in kNoteColorMiss
-// - both then hold for the rest of the note's time on screen, matching the
-// real outcome rather than fading back to Normal. Judged hit/miss/held
-// notes get the same glow halo as the passing outline (note.clip->passing)
-// so the pass/fail moment pops instead of being a flat color swap.
+// Draws every note in scene.notes: upcoming notes in their own clip color; a
+// held or precisely-hit note in kNoteColorHit; an imprecisely-hit note (a
+// "partial miss" - correct, but sloppy - see ColorForNote) in
+// kNoteColorHitImprecise; a missed note in kNoteColorMiss - all three then
+// hold for the rest of the note's time on screen, matching the real outcome
+// rather than fading back to Normal. Judged hit/miss/held notes get the same
+// glow halo as the passing outline (note.clip->passing) so the pass/fail
+// moment pops instead of being a flat color swap.
 void NoteLaneGdiRenderer::DrawNotes(HDC hdc, RECT laneRect, const NoteLaneScene& scene)
 {
     double columnWidth =
@@ -568,7 +636,7 @@ void NoteLaneGdiRenderer::DrawNotes(HDC hdc, RECT laneRect, const NoteLaneScene&
             continue;
         }
 
-        COLORREF color = ColorForNote(note.state, note.clip->color);
+        COLORREF color = ColorForNote(note.state, note.clip->color, note.precise);
         bool emphasisGlow = note.state != NoteVisualState::Normal;
 
         DrawNoteBar(hdc, laneX, yTop, yBottom, barHalfWidth, color, note.clip->passing);
@@ -664,8 +732,13 @@ void NoteLaneGdiRenderer::DrawRipples(HDC hdc, RECT laneRect)
 // scoreText (right-aligned) gets first claim on the panel's width - status
 // text (left-aligned) has its own rect shrunk to end before it starts (and
 // ellipsizes via DT_END_ELLIPSIS if it still doesn't fit), so the two can
-// never overlap regardless of how long either one is.
-void NoteLaneGdiRenderer::DrawHud(HDC hdc, RECT laneRect, const std::wstring& statusText, const std::wstring& scoreText)
+// never overlap regardless of how long either one is. pendingScoreText (the
+// current section's not-yet-banked score) reads as a small, gently pulsing
+// gold readout just under the panel, right-aligned to match scoreText above
+// it - see DrawScorePopups for what happens to it the instant it's banked or
+// lost.
+void NoteLaneGdiRenderer::DrawHud(HDC hdc, RECT laneRect, const std::wstring& statusText, const std::wstring& scoreText,
+                                   const std::wstring& pendingScoreText)
 {
     RECT panelRect{laneRect.left + 8, laneRect.top + 8, laneRect.right - 8, laneRect.top + 44};
     DrawAlphaRoundRect(hdc, panelRect, 14, RGB(12, 8, 28), 175);
@@ -674,6 +747,11 @@ void NoteLaneGdiRenderer::DrawHud(HDC hdc, RECT laneRect, const std::wstring& st
     {
         m_hudFont = CreateFontW(-17, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
                                  CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
+    }
+    if (!m_smallHudFont)
+    {
+        m_smallHudFont = CreateFontW(-13, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+                                      CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
     }
     HFONT oldFont = (HFONT)SelectObject(hdc, m_hudFont);
     SetBkMode(hdc, TRANSPARENT);
@@ -713,6 +791,79 @@ void NoteLaneGdiRenderer::DrawHud(HDC hdc, RECT laneRect, const std::wstring& st
     }
 
     SelectObject(hdc, oldFont);
+
+    if (!pendingScoreText.empty())
+    {
+        // A slow breathing pulse (never fully opaque or fully gone) so the
+        // readout reads as "still actively building," not a static label.
+        double pulse = 0.55 + 0.45 * std::sin(GetTickCount() / 220.0);
+        BYTE alpha = static_cast<BYTE>(ClampChannel(static_cast<int>(255 * pulse)));
+        RECT pendingRect{scoreRect.left, panelRect.bottom + 2, scoreRect.right, panelRect.bottom + 20};
+        DrawAlphaText(hdc, pendingRect, pendingScoreText, m_smallHudFont, kScorePopupBankedColor, kScoreFlags, alpha);
+    }
+
+    // A brief glow around the whole panel when points just moved in or out
+    // of the pending pool - green for banked, red for lost - drawn last so
+    // it sits on top of the panel/text as a pulsing border rather than
+    // covering either.
+    DWORD now = GetTickCount();
+    if (now < m_scoreFlashUntilMs)
+    {
+        double remainingT = static_cast<double>(m_scoreFlashUntilMs - now) / kScoreFlashDurationMs;
+        BYTE glowAlpha = static_cast<BYTE>(ClampChannel(static_cast<int>(200 * remainingT)));
+        COLORREF glowColor = m_scoreFlashPositive ? kNoteColorHit : kNoteColorMiss;
+        RECT glowRect = panelRect;
+        InflateRect(&glowRect, 2, 2);
+        DrawAlphaRoundRectOutline(hdc, glowRect, 15, 3, glowColor, glowAlpha);
+    }
+
+    DrawScorePopups(hdc, panelRect);
+}
+
+// Drops any expired entry from m_scorePopups, then draws whatever's left -
+// see ScorePopup's own comment for the motion/color each direction gets.
+// Stacked by index (rather than overlapping) on the rare frame more than one
+// is alive at once.
+void NoteLaneGdiRenderer::DrawScorePopups(HDC hdc, RECT panelRect)
+{
+    DWORD now = GetTickCount();
+    for (size_t i = 0; i < m_scorePopups.size();)
+    {
+        const ScorePopup& popup = m_scorePopups[i];
+        DWORD elapsedMs = now - popup.startMs;
+        if (elapsedMs >= kScorePopupDurationMs)
+        {
+            m_scorePopups.erase(m_scorePopups.begin() + i);
+            continue;
+        }
+
+        double t = elapsedMs / static_cast<double>(kScorePopupDurationMs); // 0 at spawn -> 1 at death
+        BYTE alpha = static_cast<BYTE>(ClampChannel(static_cast<int>(255 * (1.0 - t))));
+        std::wstring text = (popup.positive ? L"+" : L"-") + std::to_wstring(popup.amount);
+        COLORREF color = popup.positive ? kScorePopupBankedColor : kNoteColorMiss;
+
+        int xOffset = 0;
+        int yOffset;
+        if (popup.positive)
+        {
+            // Floats straight up as it fades - points rising into the total.
+            yOffset = static_cast<int>(-kScorePopupRisePx * t);
+        }
+        else
+        {
+            // Sinks and shakes as it fades - a decaying wobble, like the
+            // points are crumbling away rather than cleanly departing.
+            yOffset = static_cast<int>(kScorePopupSinkPx * t);
+            xOffset = static_cast<int>(kScorePopupShakePx * std::sin(t * 30.0) * (1.0 - t));
+        }
+
+        RECT rect{panelRect.left + 10, panelRect.bottom + 2 + static_cast<int>(i) * 20, panelRect.right - 10,
+                   panelRect.bottom + 22 + static_cast<int>(i) * 20};
+        OffsetRect(&rect, xOffset, yOffset);
+        DrawAlphaText(hdc, rect, text, m_smallHudFont, color, DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
+                      alpha);
+        ++i;
+    }
 }
 
 // The hits meter panel: a translucent rounded track, same visual language
@@ -927,6 +1078,32 @@ void NoteLaneGdiRenderer::OnJudgement(JudgementResult result, int lane, bool pas
     }
 }
 
+// Spawns the "happy" points-banking flourish - a floating +amount popup plus
+// a brief green glow on the HUD panel - see ScorePopup/DrawScorePopups.
+void NoteLaneGdiRenderer::OnScoreBanked(int amount)
+{
+    if (amount <= 0)
+    {
+        return;
+    }
+    m_scorePopups.push_back({GetTickCount(), amount, /*positive=*/true});
+    m_scoreFlashUntilMs = GetTickCount() + kScoreFlashDurationMs;
+    m_scoreFlashPositive = true;
+}
+
+// Spawns the "sad" points-lost flourish - a sinking -amount popup plus a
+// brief red glow on the HUD panel - see ScorePopup/DrawScorePopups.
+void NoteLaneGdiRenderer::OnScoreLost(int amount)
+{
+    if (amount <= 0)
+    {
+        return;
+    }
+    m_scorePopups.push_back({GetTickCount(), amount, /*positive=*/false});
+    m_scoreFlashUntilMs = GetTickCount() + kScoreFlashDurationMs;
+    m_scoreFlashPositive = false;
+}
+
 // Paints the background, columns, receptors, notes, and status text for one
 // scene, plus the hits meter panel beside it.
 void NoteLaneGdiRenderer::Draw(HDC hdc, RECT laneRect, RECT hitsMeterRect, const NoteLaneScene& scene)
@@ -1036,7 +1213,7 @@ void NoteLaneGdiRenderer::Draw(HDC hdc, RECT laneRect, RECT hitsMeterRect, const
     }
 
     DrawRipples(hdc, laneRect);
-    DrawHud(hdc, laneRect, scene.statusText, scene.scoreText);
+    DrawHud(hdc, laneRect, scene.statusText, scene.scoreText, scene.pendingScoreText);
     DrawHitsMeter(hdc, hitsMeterRect, scene);
     if (m_debugOverlayEnabled)
     {

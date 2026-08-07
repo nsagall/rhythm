@@ -62,6 +62,16 @@ void NoteLane::ShowJudgement(JudgementResult result, int lane, bool passing, boo
     m_renderer->OnJudgement(result, lane, passing, precise);
 }
 
+void NoteLane::ShowScoreBanked(int amount)
+{
+    m_renderer->OnScoreBanked(amount);
+}
+
+void NoteLane::ShowScoreLost(int amount)
+{
+    m_renderer->OnScoreLost(amount);
+}
+
 void NoteLane::Draw(HDC hdc, const GameSession& session)
 {
     NoteLaneScene scene = m_model.BuildScene(session);

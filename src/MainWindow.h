@@ -176,13 +176,15 @@ private:
     // any judgement it produced (see DrainJudgements).
     void RegisterRelease(int lane);
 
-    // Forwards every judgement GameSession has recorded since the last call
-    // (see GameSession::ConsumeJudgementEvents) to the note lane - the one
-    // place a judgement's visual feedback happens, regardless of whether it
-    // came from an explicit key press/release (RegisterPress/
-    // RegisterRelease) or from one of Update()'s own timeout checks (a note
-    // never pressed, or held past its release window) - both are equally
-    // real misses and get exactly the same flash/ripple treatment.
+    // Forwards every judgement and score event GameSession has recorded
+    // since the last call (see GameSession::ConsumeJudgementEvents/
+    // ConsumeScoreEvents) to the note lane - the one place a judgement's or
+    // a points-banking/losing event's visual feedback happens, regardless of
+    // whether it came from an explicit key press/release (RegisterPress/
+    // RegisterRelease) or from one of Update()'s own timeout/banking checks
+    // (a note never pressed, held past its release window, or a section
+    // finishing) - all get exactly the same treatment as their explicit
+    // counterparts.
     void DrainJudgements();
 
     // Polls m_gamepadInput and routes every button transition it reports to

@@ -18,6 +18,8 @@ public:
     ~NoteLaneGdiRenderer() override;
 
     void OnJudgement(JudgementResult result, int lane, bool passing, bool precise) override;
+    void OnScoreBanked(int amount) override;
+    void OnScoreLost(int amount) override;
     void Draw(HDC hdc, RECT laneRect, RECT hitsMeterRect, const NoteLaneScene& scene) override;
     void ToggleDebugOverlay() override;
 
@@ -64,6 +66,20 @@ private:
         double fadeRate = 1.0;
     };
 
+    // A "+N"/"-N" popup spawned by OnScoreBanked/OnScoreLost: floats upward
+    // and fades for a Banked event (happy - points landing permanently in
+    // the total), or sinks and shakes while fading for a Lost event (sad - a
+    // streak breaking wiped them away). Like JudgementRipple, carries no
+    // baked-in pixel position - DrawScorePopups resolves it against the HUD
+    // panel rect at draw time, purely as a function of elapsed time since
+    // startMs, so it stays correct across a window resize mid-animation.
+    struct ScorePopup
+    {
+        DWORD startMs = 0;
+        int amount = 0;
+        bool positive = true;
+    };
+
     // Alpha-blends a filled shape over whatever is already at its bounds,
     // by capturing that region into the renderer's scratch buffer first,
     // drawing the shape solid on top of the copy, then blending the
@@ -99,8 +115,9 @@ private:
 
     // Returns clipColor for a Normal note, or the fixed held/hit/miss color
     // for anything else - clipColor comes from ClipInstance::color (see
-    // ClipColor.h), never from a palette of this renderer's own.
-    COLORREF ColorForNote(NoteVisualState state, COLORREF clipColor) const;
+    // ClipColor.h), never from a palette of this renderer's own. precise is
+    // only consulted for state == Hit - see kNoteColorHitImprecise.
+    COLORREF ColorForNote(NoteVisualState state, COLORREF clipColor, bool precise) const;
 
     HBRUSH CachedSolidBrush(COLORREF color);
     HPEN CachedSolidPen(int width, COLORREF color);
@@ -114,7 +131,17 @@ private:
     void DrawAlphaCircle(HDC hdc, int cx, int cy, int radius, COLORREF color, BYTE alpha);
     void DrawAlphaRing(HDC hdc, int cx, int cy, int radius, int thickness, COLORREF color, BYTE alpha);
     void DrawAlphaRoundRect(HDC hdc, RECT rect, int cornerRadius, COLORREF color, BYTE alpha);
+    // Same as DrawAlphaRoundRect but an outline only (thickness px wide) -
+    // used for the HUD panel's brief green/red "points just moved" glow, so
+    // it reads as a pulsing border rather than a filled wash over the text.
+    void DrawAlphaRoundRectOutline(HDC hdc, RECT rect, int cornerRadius, int thickness, COLORREF color, BYTE alpha);
     void DrawAlphaRect(HDC hdc, int cx, int cy, int halfWidth, int halfHeight, COLORREF color, BYTE alpha);
+    // Alpha-blends text drawn with DrawTextW - same capture/draw/blend trick
+    // as the other DrawAlpha* helpers, so a popup or pulsing readout can
+    // fade smoothly instead of only being able to hard-cut to invisible.
+    // No-op for empty text (callers never need to special-case that).
+    void DrawAlphaText(HDC hdc, RECT rect, const std::wstring& text, HFONT font, COLORREF color, UINT flags,
+                        BYTE alpha);
 
     void DrawNoteGlyph(HDC hdc, int x, int y, COLORREF color, bool glow, bool passing);
     void DrawNoteBar(HDC hdc, int x, int yTop, int yBottom, int halfWidth, COLORREF color, bool passing);
@@ -128,7 +155,13 @@ private:
     void DrawConfetti(HDC hdc, double elapsedSeconds, double t);
     void DrawExplosion(HDC hdc, double elapsedSeconds, double t);
     void DrawRipples(HDC hdc, RECT laneRect);
-    void DrawHud(HDC hdc, RECT laneRect, const std::wstring& statusText, const std::wstring& scoreText);
+    void DrawHud(HDC hdc, RECT laneRect, const std::wstring& statusText, const std::wstring& scoreText,
+                 const std::wstring& pendingScoreText);
+    // Drops any expired entry from m_scorePopups, then draws whatever's
+    // left anchored under panelRect (the HUD panel's own rect) - called
+    // once per Draw() from DrawHud, after the panel/text themselves, so
+    // popups float over top of everything else in the panel.
+    void DrawScorePopups(HDC hdc, RECT panelRect);
     // Only called when m_debugOverlayEnabled - see ToggleDebugOverlay.
     void DrawDebugOverlay(HDC hdc, RECT laneRect, const NoteLaneScene& scene);
     // The "hits meter" panel beside the playfield - a bottom-anchored fill
@@ -168,6 +201,10 @@ private:
     int m_scratchHeight = 0;
 
     HFONT m_hudFont = nullptr;
+    // Smaller than m_hudFont - used for the pending-score readout and score
+    // popups, so neither competes with the main status/score line for
+    // attention.
+    HFONT m_smallHudFont = nullptr;
 
     // See ToggleDebugOverlay/DrawDebugOverlay.
     bool m_debugOverlayEnabled = false;
@@ -175,6 +212,16 @@ private:
     JudgementResult m_flashResult[kLaneCount] = {};
     DWORD m_flashUntilMs[kLaneCount] = {};
     std::vector<JudgementRipple> m_ripples;
+
+    // See OnScoreBanked/OnScoreLost/DrawScorePopups. m_scoreFlashUntilMs/
+    // m_scoreFlashPositive drive the HUD panel's own brief glow, separate
+    // from any individual popup's lifetime (a rapid string of small events
+    // should keep re-triggering just the glow, not stack popups on top of
+    // each other indefinitely - though m_scorePopups itself has no cap,
+    // since in practice at most one or two are ever alive at once).
+    std::vector<ScorePopup> m_scorePopups;
+    DWORD m_scoreFlashUntilMs = 0;
+    bool m_scoreFlashPositive = true;
 
     DWORD m_confettiStartMs = 0;
     std::vector<ConfettiPiece> m_confetti;

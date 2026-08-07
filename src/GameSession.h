@@ -188,6 +188,14 @@ public:
     // Complete, before the next Start() zeroes it again).
     int CurrentScore() const;
 
+    // Returns the current section's not-yet-banked score alone (m_sessionScore -
+    // see CurrentScore()'s own comment): the amount still at risk to the next
+    // real miss, and what a "points building up" display should show apart
+    // from the permanent running total. 0 whenever nothing's been judged yet
+    // this section, including immediately after a bank/wipe - see
+    // ConsumeScoreEvents for the moment-of-transfer amount instead.
+    int PendingScore() const;
+
     // Returns the beat of the next note this lane is awaiting a press for.
     double NextExpectedBeatForLane(int lane) const;
 
@@ -242,11 +250,42 @@ public:
     // instead of the two being handled differently.
     std::vector<JudgementEvent> ConsumeJudgementEvents();
 
+    // One transfer in or out of the pending (not-yet-banked) score pool -
+    // Banked when a section finishes and m_sessionScore folds permanently
+    // into m_bankedScore (Update()'s own banking comment), Lost when a real
+    // miss wipes m_sessionScore back to 0 (RegisterMiss). Only ever pushed
+    // with amount > 0 - a section finishing (or a miss landing) with nothing
+    // pending produces no event, since there'd be nothing for a "points
+    // banking" animation to show moving.
+    struct ScoreEvent
+    {
+        enum class Kind
+        {
+            Banked,
+            Lost,
+        };
+        Kind kind = Kind::Banked;
+        int amount = 0;
+    };
+
+    // Returns and clears every ScoreEvent since the last call - same
+    // drain-and-clear contract as ConsumeJudgementEvents, for the same
+    // reason (Update()'s own banking can fire independently of any
+    // OnPress/OnRelease call, so nothing here should be allowed to drop one
+    // between calls). Intended reader: the note lane's points-banking
+    // animation.
+    std::vector<ScoreEvent> ConsumeScoreEvents();
+
     // Returns how a specific lane note (identified by its start beat) was
     // judged, for the note lane to color it once it's passed the line.
     // Returns None if that note hasn't been judged yet, or is too old to
     // still be tracked.
     JudgementResult OnsetJudgement(double startBeat, int lane) const;
+
+    // Whether the same lane note's OnsetJudgement Hit was precise - see
+    // SectionInstance::OnsetPrecise. Meaningless (and defaults to true) when
+    // OnsetJudgement doesn't return Hit for the same (startBeat, lane).
+    bool OnsetPrecise(double startBeat, int lane) const;
 
     // True while this lane's press was judged correct and its release
     // hasn't been judged yet (early, on time, or via a timeout Miss).
@@ -525,8 +564,9 @@ private:
 
     // Records a judgement for a specific lane note, for OnsetJudgement() to
     // look up later - forwards to m_currentInstance, adding
-    // RHYTHM_DEBUG_JUDGEMENTS tracing.
-    void RecordOnsetJudgement(double startBeat, int lane, JudgementResult result);
+    // RHYTHM_DEBUG_JUDGEMENTS tracing. precise is only meaningful when
+    // result == JudgementResult::Hit - see SectionInstance::OnsetPrecise.
+    void RecordOnsetJudgement(double startBeat, int lane, JudgementResult result, bool precise = true);
 
     AudioEngine& m_audioEngine;
     ChartSong m_song;
@@ -593,4 +633,7 @@ private:
     // See ConsumeJudgementEvents - populated by RegisterHit/RegisterMiss,
     // drained (and cleared) there.
     std::vector<JudgementEvent> m_judgementEvents;
+    // See ConsumeScoreEvents - populated by Update() (banking) and
+    // RegisterMiss (wiping), drained (and cleared) there.
+    std::vector<ScoreEvent> m_scoreEvents;
 };

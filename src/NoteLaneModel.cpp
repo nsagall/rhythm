@@ -163,6 +163,7 @@ void NoteLaneModel::CollectNotes(const GameSession& session, const ClipInstance*
                 if (result == JudgementResult::Hit)
                 {
                     sceneNote.state = NoteVisualState::Hit;
+                    sceneNote.precise = session.OnsetPrecise(sceneNote.startBeat, lane);
                 }
                 else if (result == JudgementResult::Miss)
                 {
@@ -635,6 +636,12 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
     if (session.Phase() != GamePhase::Idle)
     {
         scene.scoreText = L"Score " + FormatScoreWithCommas(session.CurrentScore());
+
+        int pendingScore = session.PendingScore();
+        if (pendingScore > 0)
+        {
+            scene.pendingScoreText = L"+" + FormatScoreWithCommas(pendingScore);
+        }
     }
 
     // Overrides whatever the switch above chose - the phase/clip itself
