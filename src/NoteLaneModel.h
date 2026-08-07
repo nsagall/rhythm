@@ -138,4 +138,18 @@ private:
     // The last session.Song().clips.data() ResetIfSongChanged saw - see
     // its own comment for why this is the right chart-switch signal.
     const ChartClip* m_lastSongClipsBase = nullptr;
+
+    // DontFail mode only: the hits meter's own frozen progress value and
+    // which loop-repetition it belongs to, while the current clip is
+    // failing - see BuildScene's own comment on NoteLaneScene::
+    // hitsMeterProgress for the full freeze/jump/reset behavior this
+    // implements. Both are only ever read/written while failing; a fresh
+    // section or clip always starts out passing (SectionInstance's own
+    // DontFail default), so there's nothing to reset these on - the first
+    // real failure always overwrites whatever's here first.
+    double m_dontFailFrozenProgress = 0.0;
+    // -1.0 means "no freeze recorded yet" - never a real loop-start beat
+    // (ChartTiming beats are never negative), so it can't be mistaken for
+    // one.
+    double m_dontFailFrozenLoopStartBeat = -1.0;
 };

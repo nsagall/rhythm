@@ -255,9 +255,14 @@ void NoteLaneModel::UpdateClipInstances(const GameSession& session, double nowBe
     {
         // A fresh (or freshly-promoted) instance already starts at false;
         // this also carries a same-instance run's passing state forward as
-        // it happens - including DontFail mode's reversals, both
-        // directions.
-        m_currentClip->passing = session.IsPassing();
+        // it happens. Deliberately NOT mirrored for a DontFail clip, even
+        // though GameSession::IsPassing() itself still flips back and forth
+        // for one exactly as it does for Pass - DontFail conveys its own
+        // progress through the hits meter bar instead (see BuildScene's own
+        // comment on NoteLaneScene::hitsMeterProgress), so its notes never
+        // gain or lose this glow mid-clip; see DrawNoteBar/DrawNoteGlyph's
+        // own comment on the glow this field drives.
+        m_currentClip->passing = session.IsPassing() && m_currentClip->chartClip->learnMode != LearnMode::DontFail;
     }
 
     const ChartClip* previewChartClip = session.PreviewClip();
@@ -328,16 +333,16 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
         clip && session.Phase() == GamePhase::Learning && session.CurrentSectionKind() == SectionKind::Learn;
     bool nowPassing = isLearnSection && session.IsPassing();
 
-    scene.showHitsMeter = isLearnSection && !nowPassing;
     if (isLearnSection)
     {
         scene.hitsMeterIsDontFail = clip->learnMode == LearnMode::DontFail;
     }
-    if (scene.showHitsMeter && clip->hitsRequired > 0)
-    {
-        scene.hitsMeterProgress =
-            std::clamp(static_cast<double>(session.CurrentStreak()) / clip->hitsRequired, 0.0, 1.0);
-    }
+    // DontFail's meter is visible for the whole section, passing or not -
+    // it tracks progress through the clip itself (see the hitsMeterProgress
+    // block below), which is meaningful either way. Pass's meter still
+    // hides the instant it locks in - passing is a one-way latch there, so
+    // there's nothing left for it to track.
+    scene.showHitsMeter = isLearnSection && (scene.hitsMeterIsDontFail || !nowPassing);
 
     // DontFail mode only: detect a passing->failing reversal for the SAME
     // clip already tracked as m_currentClip last frame (ruling out an
@@ -365,6 +370,53 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
                 scene.explodingNotes.push_back(sceneNote);
             }
         }
+    }
+
+    // Hits meter fill amount - see NoteLaneScene::hitsMeterProgress's own
+    // comment for what each mode's number actually means. Placed after
+    // justFailedThisFrame (above) since DontFail's own freeze logic needs
+    // it, but before UpdateClipInstances since it only needs clip/nowBeat,
+    // not m_currentClip's own post-update state.
+    if (scene.showHitsMeter && scene.hitsMeterIsDontFail)
+    {
+        double originBeat = session.CurrentClipOriginBeat();
+        double currentLoopStartBeat = CurrentLoopStartBeat(originBeat, scene.nowBeat, clip->spanBeats);
+        double liveProgress = clip->spanBeats > 0.0
+                                   ? std::clamp((scene.nowBeat - currentLoopStartBeat) / clip->spanBeats, 0.0, 1.0)
+                                   : 0.0;
+        if (nowPassing)
+        {
+            // Live and continuously updated while passing - real elapsed
+            // time within this loop, same number a Pass-mode meter would
+            // show if it didn't hide itself once locked in.
+            scene.hitsMeterProgress = liveProgress;
+        }
+        else
+        {
+            if (justFailedThisFrame || m_dontFailFrozenLoopStartBeat < 0.0 ||
+                std::abs(currentLoopStartBeat - m_dontFailFrozenLoopStartBeat) > 1e-6)
+            {
+                // Either the miss that dropped this back to failing just
+                // happened this exact frame (freeze right at the live value
+                // it had a moment ago, so it visibly "stops filling" rather
+                // than snapping), or a whole loop repetition has gone by
+                // while still failing since the last freeze (this attempt
+                // genuinely restarted from the top, so the frozen value
+                // resets to 0 instead of holding wherever the earlier miss
+                // happened to land).
+                m_dontFailFrozenProgress = justFailedThisFrame ? liveProgress : 0.0;
+                m_dontFailFrozenLoopStartBeat = currentLoopStartBeat;
+            }
+            // Otherwise: still the same failing stretch, same loop
+            // repetition as the last freeze - hold steady rather than
+            // recomputing from nowBeat, which is exactly the point.
+            scene.hitsMeterProgress = m_dontFailFrozenProgress;
+        }
+    }
+    else if (scene.showHitsMeter && clip->hitsRequired > 0)
+    {
+        scene.hitsMeterProgress =
+            std::clamp(static_cast<double>(session.CurrentStreak()) / clip->hitsRequired, 0.0, 1.0);
     }
 
     UpdateClipInstances(session, scene.nowBeat);

@@ -428,7 +428,9 @@ void NoteLaneGdiRenderer::DrawAlphaText(HDC hdc, RECT rect, const std::wstring& 
 // behind it, and a small specular highlight - the note's start marker, sitting at the bottom
 // (leading) edge of its duration bar. passing adds a second, wider green glow ring underneath
 // everything else - a supplementary "this track is currently passing" cue that doesn't touch
-// color.
+// color. In practice only ever true for a Pass-mode clip (see ClipInstance::passing/
+// NoteLaneModel::UpdateClipInstances) - a DontFail clip's own progress is conveyed by the hits
+// meter bar instead, so its notes never carry this glow.
 void NoteLaneGdiRenderer::DrawNoteGlyph(HDC hdc, int x, int y, COLORREF color, bool glow, bool passing)
 {
     if (passing)
@@ -465,7 +467,8 @@ void NoteLaneGdiRenderer::DrawNoteGlyph(HDC hdc, int x, int y, COLORREF color, b
 // x, with the same dark-rim/fill/highlight-strip bevel language as the
 // glyph, so the bar and its start marker read as one consistent object.
 // passing adds a glowing green outline around the whole bar underneath
-// everything else, matching DrawNoteGlyph's own passing glow.
+// everything else, matching DrawNoteGlyph's own passing glow (see its
+// comment - in practice Pass-mode-only).
 void NoteLaneGdiRenderer::DrawNoteBar(HDC hdc, int x, int yTop, int yBottom, int halfWidth, COLORREF color,
                                        bool passing)
 {
@@ -868,13 +871,17 @@ void NoteLaneGdiRenderer::DrawScorePopups(HDC hdc, RECT panelRect)
 
 // The hits meter panel: a translucent rounded track, same visual language
 // as DrawHud's panel, with a colored fill anchored to the bottom that grows
-// upward as scene.hitsMeterProgress climbs toward 1 - so it reads as
-// filling "up towards passing," matching notes falling down into the judge
-// line right beside it. Drawn only while scene.showHitsMeter is true; the
-// instant that flips false (a lock-in), the panel simply stops being drawn
-// here at all - Draw() spawns AppendHitsMeterExplosion's burst on that same
-// frame instead, so it disappears with a little celebration rather than
-// just popping away with nothing.
+// upward as scene.hitsMeterProgress climbs toward 1. Drawn only while
+// scene.showHitsMeter is true - for a Pass clip that means "up towards
+// passing," and the instant it flips false (a lock-in), the panel simply
+// stops being drawn here at all, with Draw() spawning
+// AppendHitsMeterExplosion's burst that same frame so it disappears with a
+// little celebration rather than just popping away with nothing. A DontFail
+// clip's own meter never disappears this way - showHitsMeter stays true for
+// its whole section, and hitsMeterProgress instead means "up towards the
+// end of this loop of the clip" (see NoteLaneScene::hitsMeterProgress) -
+// still on the receiving end of that same lock-in burst (see Draw()'s own
+// comment), just without the panel itself ever vanishing for it.
 void NoteLaneGdiRenderer::DrawHitsMeter(HDC hdc, RECT hitsMeterRect, const NoteLaneScene& scene)
 {
     if (!scene.showHitsMeter || hitsMeterRect.right <= hitsMeterRect.left ||
@@ -1157,13 +1164,18 @@ void NoteLaneGdiRenderer::Draw(HDC hdc, RECT laneRect, RECT hitsMeterRect, const
     }
     if (scene.justLockedIn)
     {
-        // The hits meter is about to stop being drawn this same frame (see
-        // DrawHitsMeter) - give it a burst of its own instead of just
-        // vanishing. DontFail gets the small spark burst every time (it can
-        // reappear and disappear many times over one section's run); Pass
-        // only ever disappears once for the whole section (passing is a
-        // one-way latch), so it gets its own confetti burst instead - on
-        // top of, not instead of, SpawnConfetti's playfield-wide one above.
+        // Pass mode: the hits meter is about to stop being drawn this same
+        // frame (see DrawHitsMeter) - give it a burst of its own instead of
+        // just vanishing; passing is a one-way latch there, so this is its
+        // one and only such disappearance for the whole section, and it
+        // gets its own confetti burst - on top of, not instead of,
+        // SpawnConfetti's playfield-wide one above. DontFail mode: the
+        // meter isn't going anywhere (it stays visible, tracking clip
+        // progress, for the whole section - see NoteLaneScene::
+        // showHitsMeter), so this is purely a "nice job" flourish, not a
+        // disappearance - it still gets its own small spark burst every
+        // time it locks in, since that can happen many times over one
+        // section's run.
         if (scene.hitsMeterIsDontFail)
         {
             AppendHitsMeterExplosion(hitsMeterRect, kNoteColorHit);

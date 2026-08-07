@@ -73,13 +73,18 @@ struct ClipInstance
     // to draw a clip in a consistent, recognizable color.
     COLORREF color = ClipColor::kNeutral;
 
-    // Whether this playthrough is currently passing - a renderer-chosen
-    // supplementary cue (e.g. a glow outline), independent of any one
+    // Whether this playthrough is currently passing, for a renderer's own
+    // supplementary "correct" cue (a glow outline) - independent of any one
     // note's own state/color. Reset false whenever a new ClipInstance is
     // created (a fresh playthrough hasn't earned anything yet), kept in
-    // sync with the session every frame while this instance is current. In
-    // Pass mode this only ever goes false->true once; in DontFail mode it
-    // can also revert true->false (see GameSession::IsPassing()).
+    // sync with the session every frame while this instance is current -
+    // except for a DontFail clip, which never sets this true at all (always
+    // false for its entire run), even though GameSession::IsPassing()
+    // itself does flip back and forth for one same as it does for Pass -
+    // DontFail conveys its own progress through the hits meter bar instead
+    // (see NoteLaneScene::hitsMeterProgress), not a glow that would
+    // otherwise be gaining and losing itself mid-clip on every miss/recovery.
+    // In Pass mode this only ever goes false->true once, same as before.
     bool passing = false;
 };
 
@@ -173,33 +178,46 @@ struct NoteLaneScene
     // same flash), so no de-duplication is needed here.
     std::vector<int> passLineHitLanes;
 
-    // Progress toward the current learn section's clip locking in - streak
-    // divided by hitsRequired, clamped to [0,1] - for the "hits meter" panel
-    // beside the playfield. Only meaningful while showHitsMeter is true.
+    // Progress for the "hits meter" panel beside the playfield, clamped to
+    // [0,1] - only meaningful while showHitsMeter is true, and means two
+    // different things depending on hitsMeterIsDontFail:
+    //   - Pass mode: streak divided by the clip's own hitsRequired - "how
+    //     close to locking in."
+    //   - DontFail mode: how far nowBeat has gotten through the clip's
+    //     current loop repetition (its own spanBeats) - "how far through
+    //     the clip," live while passing, frozen the instant a miss drops
+    //     back to failing (so it visibly stops filling rather than
+    //     resetting), jumping to the real live value again the instant it
+    //     locks back in (real time kept passing while it was frozen), and
+    //     reset to 0 if a whole loop repetition elapses while still failing
+    //     (that attempt genuinely restarted from the top). See
+    //     NoteLaneModel::BuildScene's own comment for the implementation.
     double hitsMeterProgress = 0.0;
 
-    // True whenever the hits meter should be visible: there's a current
-    // learn section and it isn't passing right now. False for the entire
-    // rest of a Pass-mode section's run once it first locks in (that
+    // True whenever the hits meter should be visible. Pass mode: there's a
+    // current learn section and it isn't passing right now - false for the
+    // entire rest of the section's run once it first locks in (that
     // section's own justLockedIn frame is the moment the meter should pop
-    // instead of just vanishing - see INoteLaneRenderer::Draw). In DontFail
-    // mode this starts false (a track begins already passing) and only
-    // flips true on a justFailed frame, then back false on whichever later
-    // justLockedIn brings it back to passing - so the meter is otherwise
-    // invisible the whole time a DontFail section is behaving itself.
+    // instead of just vanishing - see INoteLaneRenderer::Draw), since
+    // passing is a one-way latch there and there's nothing left to track.
+    // DontFail mode: true for the entire learn section, passing or not -
+    // its own hitsMeterProgress (above) is meaningful either way, unlike
+    // Pass's streak-based number, which has nothing to report once locked
+    // in.
     bool showHitsMeter = false;
 
-    // Which of the two disappearance treatments the hits meter should use
-    // on the justLockedIn frame it goes away: true for a DontFail clip
-    // (small spark burst - see NoteLaneRenderer's AppendHitsMeterExplosion
-    // - since the meter can reappear many times over one section's run),
-    // false for a Pass clip (a confetti burst instead - passing is a
-    // one-way latch, so this is the meter's one and only disappearance for
-    // the whole section). Meaningless (and left at its default) whenever
-    // showHitsMeter is false and no lock-in is happening this frame - a
-    // renderer only ever needs to read it on a justLockedIn frame, but it's
-    // populated any time there's a current learn clip so it's always
-    // correct by the time that frame arrives.
+    // Which of two lock-in treatments the hits meter should get on a
+    // justLockedIn frame: true for a DontFail clip (a small celebratory
+    // spark burst - see NoteLaneRenderer's AppendHitsMeterExplosion - since
+    // the meter stays visible and can lock in many times over one section's
+    // run, so this is a "nice job" flourish, not a disappearance), false for
+    // a Pass clip (a confetti burst right as the meter itself vanishes for
+    // good - passing is a one-way latch there, so this is its one and only
+    // lock-in for the whole section). Meaningless (and left at its default)
+    // whenever showHitsMeter is false and no lock-in is happening this
+    // frame - a renderer only ever needs to read it on a justLockedIn
+    // frame, but it's populated any time there's a current learn clip so
+    // it's always correct by the time that frame arrives.
     bool hitsMeterIsDontFail = false;
 
     std::wstring statusText;
