@@ -408,6 +408,38 @@ void BlockTimeline::DrawBlockRow(EditorDocument& doc, const std::vector<BlockLay
             HandleBlockClick(doc, block.id);
         }
 
+        // Right-click: if the block isn't already part of the current
+        // multi-selection, collapse to just it first (so "Delete" in the
+        // menu below never surprises the user by deleting an unrelated
+        // selection) - otherwise leave the existing multi-selection intact,
+        // matching standard file-manager right-click behavior.
+        if (ImGui::IsItemClicked(ImGuiMouseButton_Right) && m_multiSelectedBlockIds.count(block.id) == 0)
+        {
+            m_selectedBlockId = block.id;
+            m_rangeAnchorBlockId = block.id;
+            m_multiSelectedBlockIds.clear();
+            m_multiSelectedBlockIds.insert(block.id);
+        }
+        bool blocksDeletedFromContextMenu = false;
+        if (ImGui::BeginPopupContextItem("BlockContextMenu"))
+        {
+            const char* deleteLabel = m_multiSelectedBlockIds.size() > 1 ? "Delete Blocks" : "Delete Block";
+            if (ImGui::Selectable(deleteLabel))
+            {
+                DeleteSelectedBlocks(doc);
+                blocksDeletedFromContextMenu = true;
+            }
+            ImGui::EndPopup();
+        }
+        if (blocksDeletedFromContextMenu)
+        {
+            // doc.blocks/layout were just mutated - stop iterating this
+            // frame's (now stale) layout, same as the CLIP_DRAG handling
+            // below does.
+            ImGui::PopID();
+            return;
+        }
+
         if (ImGui::BeginDragDropSource())
         {
             int sourceIndex = static_cast<int>(i);
