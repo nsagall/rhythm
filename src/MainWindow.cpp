@@ -750,7 +750,7 @@ void MainWindow::RegisterPress(int lane)
     m_gameSession.CatchUpCountIn();
     if (!m_gameSession.IsLaneJudgeable(lane))
     {
-        m_noteLane.ShowJudgement(JudgementResult::Miss, lane, false);
+        m_noteLane.ShowJudgement(JudgementResult::Miss, lane, false, /*precise=*/true);
         return;
     }
 
@@ -770,7 +770,7 @@ void MainWindow::DrainJudgements()
 {
     for (const GameSession::JudgementEvent& event : m_gameSession.ConsumeJudgementEvents())
     {
-        m_noteLane.ShowJudgement(event.result, event.lane, event.passing);
+        m_noteLane.ShowJudgement(event.result, event.lane, event.passing, event.precise);
     }
 }
 

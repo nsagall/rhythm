@@ -38,13 +38,27 @@ constexpr double kClockResyncThresholdSeconds = 0.008;
 // value, and every consecutive hit after it scores progressively more) -
 // rewards sustained accuracy over isolated hits without needing a separate
 // multiplier field anywhere. A miss doesn't subtract score, only resets the
-// combo (see RegisterMiss), so a player's score never goes backwards.
+// combo and the current section's not-yet-banked score (see RegisterMiss),
+// so a player's score never goes backwards mid-hit - only ever loses
+// already-built-up, still-at-risk points on a miss.
 constexpr int kBaseHitScore = 100;
 constexpr int kComboBonusPerHit = 10;
 
-int ScoreForHit(int comboAfterHit)
+// A press landing beyond this fraction of the effective start tolerance
+// (still within the full window, so still a correct press) is judged
+// imprecise rather than precise - see GameSession::OnPress's own comment.
+constexpr double kImprecisionToleranceFraction = 0.5;
+
+// An imprecise hit is worth this fraction of what the same combo count
+// would otherwise score - still rewarded (it was a correct press), just
+// less than a precise one, so accuracy actually matters beyond the binary
+// hit/miss line.
+constexpr double kImpreciseHitScoreMultiplier = 0.5;
+
+int ScoreForHit(int comboAfterHit, bool wasPrecise)
 {
-    return kBaseHitScore + (comboAfterHit - 1) * kComboBonusPerHit;
+    int fullScore = kBaseHitScore + (comboAfterHit - 1) * kComboBonusPerHit;
+    return wasPrecise ? fullScore : static_cast<int>(fullScore * kImpreciseHitScoreMultiplier);
 }
 
 } // namespace
@@ -157,7 +171,8 @@ void GameSession::Start()
     m_lastJudgement = JudgementResult::None;
     m_paused = false;
 
-    m_score = 0;
+    m_bankedScore = 0;
+    m_sessionScore = 0;
     m_comboCount = 0;
 
     m_clock.Start(m_song.bpm);
@@ -276,8 +291,15 @@ void GameSession::OnPress(int lane)
         const LaneNote* note = FindLaneNote(clip, lane, originBeat, startBeat);
         double durationBeats = note ? note->durationBeats : 0.0;
 
+        // How close this press landed to the note's own onset, as a
+        // fraction of the tolerance window it was judged against - past
+        // kImprecisionToleranceFraction of it, still a correct press (it's
+        // within the full window), but not a precise one. See
+        // SectionInstance::LaneHoldWasPrecise/GameSession::ScoreForHit.
+        bool wasPrecise = std::abs(nowSeconds - startSeconds) <= toleranceSeconds * kImprecisionToleranceFraction;
+
         StartClipLoop(section.clipIndex, clip.initVolume);
-        m_currentInstance.StartLaneHold(lane, startBeat, startBeat + durationBeats);
+        m_currentInstance.StartLaneHold(lane, startBeat, startBeat + durationBeats, wasPrecise);
         AdvanceExpectedNote(lane);
 
         if (m_easyMode)
@@ -286,7 +308,7 @@ void GameSession::OnPress(int lane)
             // itself is the final judgement - mirrors OnRelease's
             // in-tolerance branch below, the only other place a Hit gets
             // registered.
-            RegisterHit(lane);
+            RegisterHit(lane, wasPrecise);
             RecordOnsetJudgement(startBeat, lane, JudgementResult::Hit);
         }
         else
@@ -352,7 +374,7 @@ void GameSession::OnRelease(int lane)
 
     if (std::abs(nowSeconds - endSeconds) <= toleranceSeconds)
     {
-        RegisterHit(lane);
+        RegisterHit(lane, m_currentInstance.LaneHoldWasPrecise(lane));
         RecordOnsetJudgement(startBeat, lane, JudgementResult::Hit);
     }
     else
@@ -482,6 +504,15 @@ void GameSession::Update()
 
             m_currentInstance.ClearPendingAdvance();
 
+            // The section genuinely finished (a passing Learn section, or a
+            // Break's own wait elapsed) - bank whatever score it built up so
+            // it's permanent for the rest of the song, immune to a later
+            // section's own miss (see RegisterMiss/CurrentScore()). Left at
+            // 0 either way once this runs, so the next section always
+            // starts its own build-up from a clean slate.
+            m_bankedScore += m_sessionScore;
+            m_sessionScore = 0;
+
             // A learn section reaching here is always passing (see
             // above) - its clip already switched from init_volume to
             // volume back in RegisterHit, and keeps playing by design (to
@@ -603,7 +634,7 @@ int GameSession::CurrentStreak() const
 // See the header's own comment.
 int GameSession::CurrentScore() const
 {
-    return m_score;
+    return m_bankedScore + m_sessionScore;
 }
 
 // Returns the beat of the next note this lane is awaiting a press for.
@@ -1054,14 +1085,16 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
 // counters are left alone (frozen at their passing value) since they no
 // longer drive anything - in Pass mode that's permanent; in DontFail mode
 // a later miss (see RegisterMiss) can still drop back to failing and start
-// the streak over.
-void GameSession::RegisterHit(int lane)
+// the streak over. Also scores this hit into m_sessionScore (see
+// ScoreForHit) - full value if wasPrecise, less otherwise - regardless of
+// passing state, since every judged note is worth something.
+void GameSession::RegisterHit(int lane, bool wasPrecise)
 {
     const ChartSection& section = m_song.sections[m_currentInstance.SectionIndex()];
     const ChartClip& clip = m_song.clips[section.clipIndex];
 
     ++m_comboCount;
-    m_score += ScoreForHit(m_comboCount);
+    m_sessionScore += ScoreForHit(m_comboCount, wasPrecise);
 
     if (m_currentInstance.RegisterHit(clip.hitsRequired))
     {
@@ -1102,7 +1135,7 @@ void GameSession::RegisterHit(int lane)
     StartClipLoop(section.clipIndex, clip.initVolume);
 
     m_lastJudgement = JudgementResult::Hit;
-    m_judgementEvents.push_back({JudgementResult::Hit, lane, m_currentInstance.IsPassing()});
+    m_judgementEvents.push_back({JudgementResult::Hit, lane, m_currentInstance.IsPassing(), wasPrecise});
 }
 
 // Starts clipIndex's stem looping now (phase-aligned to the beat grid, at
@@ -1218,7 +1251,12 @@ void GameSession::RegisterMiss(int lane)
         return;
     }
 
+    // A real, player-visible miss - the same one that resets the combo also
+    // wipes whatever the current section has built up but not yet banked
+    // (see Update()'s own banking comment) - already-banked score from
+    // earlier, finished sections is untouched.
     m_comboCount = 0;
+    m_sessionScore = 0;
 
     m_lastJudgement = JudgementResult::Miss;
     m_judgementEvents.push_back({JudgementResult::Miss, lane, m_currentInstance.IsPassing()});

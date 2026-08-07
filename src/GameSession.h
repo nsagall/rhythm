@@ -179,11 +179,13 @@ public:
 
     int CurrentStreak() const;
 
-    // Returns the running score for the song currently loaded/playing - see
-    // RegisterHit/RegisterMiss for how it accumulates. Reset to 0 by every
-    // Start(); persists across a Pause()/Resume() and past GamePhase::Complete
-    // (the caller reads it once the session reaches Complete, before the next
-    // Start() zeroes it again).
+    // Returns the running score for the song currently loaded/playing: the
+    // sum of every section's already-banked score plus whatever the current
+    // section has built up so far but hasn't banked yet - see
+    // RegisterHit/RegisterMiss/Update()'s own banking comment. Reset to 0 by
+    // every Start(); persists across a Pause()/Resume() and past
+    // GamePhase::Complete (the caller reads it once the session reaches
+    // Complete, before the next Start() zeroes it again).
     int CurrentScore() const;
 
     // Returns the beat of the next note this lane is awaiting a press for.
@@ -217,6 +219,15 @@ public:
         JudgementResult result = JudgementResult::None;
         int lane = -1;
         bool passing = false;
+
+        // Only meaningful when result == Hit (a Miss has no "how close" to
+        // report): false if the press that earned this hit landed more than
+        // half of the effective start tolerance away from the note's own
+        // onset - still a correct, in-tolerance press, just not a precise
+        // one, and scored for less (see GameSession::RegisterHit/
+        // ScoreForHit). The note lane's ripple renders yellow instead of
+        // green for one of these, rather than treating every Hit alike.
+        bool precise = true;
     };
 
     // Returns and clears every judgement RegisterHit/RegisterMiss recorded
@@ -378,8 +389,11 @@ private:
     // nothing further to earn until a miss drops it back to failing). lane
     // is only for the JudgementEvent this pushes (see ConsumeJudgementEvents) -
     // every caller already knows it, since a hit is always judged against a
-    // specific lane's own note.
-    void RegisterHit(int lane);
+    // specific lane's own note. wasPrecise is the press's own accuracy (see
+    // SectionInstance::LaneHoldWasPrecise) - scores fewer points via
+    // ScoreForHit when false, and is forwarded into the JudgementEvent so
+    // the note lane's ripple can render yellow instead of green for it.
+    void RegisterHit(int lane, bool wasPrecise);
 
     // Starts clipIndex's stem looping now (phase-aligned to its own
     // persistent origin - see EnsureClipInstance/ClipInstance::
@@ -563,7 +577,18 @@ private:
     // JudgementEvent - see RegisterMiss's alreadyPassingInPassMode case -
     // leaves it untouched, since the player was never shown a miss for it
     // either); RegisterHit scores each hit off of it, then increments it.
-    int m_score = 0;
+    //
+    // m_sessionScore/m_bankedScore split the running total in two:
+    // m_sessionScore is what the *current* section alone has built up since
+    // it began, entirely at risk - a real miss (the same one that zeroes
+    // m_comboCount) wipes it back to 0, same as the combo. m_bankedScore is
+    // the sum of every section that's actually finished (a Learn section
+    // locking in and reaching its own advance, or a Break section
+    // completing its wait - see Update()'s own banking comment) - once
+    // there, it's permanent for the rest of the song, immune to any later
+    // section's miss. CurrentScore() is simply their sum.
+    int m_bankedScore = 0;
+    int m_sessionScore = 0;
     int m_comboCount = 0;
     // See ConsumeJudgementEvents - populated by RegisterHit/RegisterMiss,
     // drained (and cleared) there.

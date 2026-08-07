@@ -87,13 +87,22 @@ double SectionInstance::LaneHoldExpectedEndBeat(int lane) const
     return m_laneHolds[lane].expectedEndBeat;
 }
 
-void SectionInstance::StartLaneHold(int lane, double startBeat, double expectedEndBeat)
+bool SectionInstance::LaneHoldWasPrecise(int lane) const
+{
+    if (lane < 0 || lane >= kLaneCount)
+    {
+        return true;
+    }
+    return m_laneHolds[lane].wasPrecise;
+}
+
+void SectionInstance::StartLaneHold(int lane, double startBeat, double expectedEndBeat, bool wasPrecise)
 {
     if (lane < 0 || lane >= kLaneCount)
     {
         return;
     }
-    m_laneHolds[lane] = LaneHold{true, startBeat, expectedEndBeat};
+    m_laneHolds[lane] = LaneHold{true, startBeat, expectedEndBeat, wasPrecise};
 }
 
 void SectionInstance::ClearLaneHold(int lane)

@@ -103,7 +103,18 @@ public:
     bool IsLaneHeld(int lane) const;
     double LaneHoldStartBeat(int lane) const;
     double LaneHoldExpectedEndBeat(int lane) const;
-    void StartLaneHold(int lane, double startBeat, double expectedEndBeat);
+
+    // True if this lane's press (already judged correct - see IsLaneHeld)
+    // landed within half of the effective start tolerance of the note's own
+    // onset - false if it was still within the full tolerance (so still a
+    // correct press) but closer to half than to dead-on. Set once by
+    // StartLaneHold from the press itself; read back by GameSession::
+    // RegisterHit (via OnRelease, or directly in easy mode) to decide how
+    // many points the eventual Hit is worth - see GameSession::ScoreForHit.
+    // Only meaningful while IsLaneHeld(lane) is true.
+    bool LaneHoldWasPrecise(int lane) const;
+
+    void StartLaneHold(int lane, double startBeat, double expectedEndBeat, bool wasPrecise);
     void ClearLaneHold(int lane);
 
     // Records a hit: advances the streak (unless already passing, where
@@ -155,6 +166,7 @@ private:
         bool active = false;
         double startBeat = 0.0;
         double expectedEndBeat = 0.0;
+        bool wasPrecise = true;
     };
 
     // How one specific lane note (identified by its start beat) was judged

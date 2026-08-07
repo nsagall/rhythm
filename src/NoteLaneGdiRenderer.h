@@ -17,7 +17,7 @@ class NoteLaneGdiRenderer : public INoteLaneRenderer
 public:
     ~NoteLaneGdiRenderer() override;
 
-    void OnJudgement(JudgementResult result, int lane, bool passing) override;
+    void OnJudgement(JudgementResult result, int lane, bool passing, bool precise) override;
     void Draw(HDC hdc, RECT laneRect, RECT hitsMeterRect, const NoteLaneScene& scene) override;
     void ToggleDebugOverlay() override;
 

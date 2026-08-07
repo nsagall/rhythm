@@ -80,6 +80,14 @@ constexpr COLORREF kStreakColor = RGB(255, 205, 70); // still used as one of the
 constexpr COLORREF kNoteColorHit = RGB(40, 235, 80);
 constexpr COLORREF kNoteColorMiss = RGB(255, 30, 30);
 
+// A hit whose press wasn't precise (see GameSession::JudgementEvent::precise)
+// still ripples - it was a correct press - but yellow instead of green, so
+// "correct but sloppy" reads differently at a glance from "correct and
+// tight." Only the ripple uses this; the note/receptor/flash colors stay
+// kNoteColorHit regardless, since those already existed before accuracy was
+// tracked and this is deliberately a smaller, additive cue on top.
+constexpr COLORREF kNoteColorHitImprecise = RGB(255, 205, 40);
+
 // Palette confetti pieces are drawn from at lock-in - a small fixed set of
 // "party colors" of its own, deliberately independent of any clip's color
 // (this is a generic celebration, not an identity cue).
@@ -894,10 +902,10 @@ void NoteLaneGdiRenderer::AppendHitsMeterExplosion(RECT hitsMeterRect, COLORREF 
 }
 
 // Flashes a brief hit/miss indicator at the judge line for one lane's
-// column, and spawns an expanding judgement ripple: green for a hit
-// (always, even while passing), red for a miss while not yet/no longer
-// passing only.
-void NoteLaneGdiRenderer::OnJudgement(JudgementResult result, int lane, bool passing)
+// column, and spawns an expanding judgement ripple: green for a precise hit,
+// yellow for an imprecise-but-still-correct one (always, even while
+// passing), red for a miss while not yet/no longer passing only.
+void NoteLaneGdiRenderer::OnJudgement(JudgementResult result, int lane, bool passing, bool precise)
 {
     if (lane < 0 || lane >= kLaneCount)
     {
@@ -908,8 +916,9 @@ void NoteLaneGdiRenderer::OnJudgement(JudgementResult result, int lane, bool pas
 
     if (result == JudgementResult::Hit)
     {
+        COLORREF rippleColor = precise ? kNoteColorHit : kNoteColorHitImprecise;
         m_ripples.push_back(
-            {lane, GetTickCount(), kNoteColorHit, kHitRippleSpeedPxPerSec, kHitRippleStartAlpha, kHitRippleFadeRate});
+            {lane, GetTickCount(), rippleColor, kHitRippleSpeedPxPerSec, kHitRippleStartAlpha, kHitRippleFadeRate});
     }
     else if (result == JudgementResult::Miss && !passing)
     {
@@ -956,7 +965,7 @@ void NoteLaneGdiRenderer::Draw(HDC hdc, RECT laneRect, RECT hitsMeterRect, const
     // what actually reads the flash state this sets.
     for (int lane : scene.passLineHitLanes)
     {
-        OnJudgement(JudgementResult::Hit, lane, true);
+        OnJudgement(JudgementResult::Hit, lane, true, /*precise=*/true);
     }
 
     DrawReceptors(hdc, laneRect, scene, primaryColor);
