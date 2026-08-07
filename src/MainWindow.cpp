@@ -598,6 +598,43 @@ void MainWindow::OnMidiData(WPARAM /*wParam*/, LPARAM lParam)
     }
 }
 
+// See the header's own comment.
+void MainWindow::OnGamepadButton(WORD button, bool pressed)
+{
+    if (m_captureLane != -1)
+    {
+        if (pressed)
+        {
+            m_laneBindings.SetCustom(m_captureLane, InputBinding{InputKind::Gamepad, button}, m_settings);
+            AdvanceCapture();
+        }
+        return;
+    }
+
+    if (m_screen != UiScreen::Playing)
+    {
+        return;
+    }
+
+    int lane = m_laneBindings.LaneForGamepadButton(button);
+    if (lane == -1)
+    {
+        return;
+    }
+
+    if (pressed)
+    {
+        if (!m_gameSession.IsPaused())
+        {
+            RegisterPress(lane);
+        }
+    }
+    else
+    {
+        RegisterRelease(lane);
+    }
+}
+
 // Pauses on deactivation (Alt-Tab, clicking another window) while Playing.
 void MainWindow::OnActivate(WPARAM wParam)
 {
@@ -737,6 +774,11 @@ void MainWindow::DrainJudgements()
 // untouched, exactly as it already would without this UI on top of it.
 void MainWindow::OnTimer(WPARAM timerId)
 {
+    for (const GamepadInputManager::ButtonEvent& event : m_gamepadInput.Poll())
+    {
+        OnGamepadButton(event.button, event.pressed);
+    }
+
     m_gameSession.Update();
     DrainJudgements();
 
@@ -1068,8 +1110,8 @@ void MainWindow::DrawCapturePrompt(HDC hdc)
         CreateFontW(-16, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
                     CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
 
-    std::wstring text = L"Press a key or MIDI note for lane " + std::to_wstring(m_captureLane + 1) + L" of " +
-                         std::to_wstring(kLaneCount) + L" - Esc to stop";
+    std::wstring text = L"Press a key, MIDI note, or gamepad button for lane " + std::to_wstring(m_captureLane + 1) +
+                         L" of " + std::to_wstring(kLaneCount) + L" - Esc to stop";
     if (!m_captureRejectionMessage.empty())
     {
         text += L"\r\n" + m_captureRejectionMessage;

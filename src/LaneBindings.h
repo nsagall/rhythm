@@ -13,29 +13,32 @@ class Settings;
 // own comment for why a lane never loses these.
 constexpr int kLaneDefaultKeys[kLaneCount] = {'J', 'K', 'L', VK_OEM_1};
 
-// What one input source is: a keyboard virtual-key code, or a live MIDI note
-// number (0-127) from any connected MIDI input device. None is the "no
-// custom binding set" sentinel - never itself matched against a real event.
+// What one input source is: a keyboard virtual-key code, a live MIDI note
+// number (0-127) from any connected MIDI input device, or a single
+// XINPUT_GAMEPAD_* button bit from any connected Xbox controller. None is
+// the "no custom binding set" sentinel - never itself matched against a real
+// event.
 enum class InputKind
 {
     None,
     Keyboard,
     MidiNote,
+    Gamepad,
 };
 
 struct InputBinding
 {
     InputKind kind = InputKind::None;
-    int code = 0; // VK_* code for Keyboard, MIDI note number for MidiNote
+    int code = 0; // VK_* code for Keyboard, MIDI note number for MidiNote, XINPUT_GAMEPAD_* bit for Gamepad
 };
 
 // Per-lane input bindings: each lane always responds to its own
 // kLaneDefaultKeys entry (unconditionally, not stored here - see
 // LaneForKey), plus at most one optional custom binding assigned via the
-// "Assign Inputs" flow (MainWindow's capture state machine) - keyboard key
-// or live MIDI note, either one. Persisted to Settings so a custom binding
-// survives a restart; the jkl; defaults need no persistence since they're
-// compile-time constants.
+// "Assign Inputs" flow (MainWindow's capture state machine) - a keyboard
+// key, a live MIDI note, or a gamepad button, whichever one. Persisted to
+// Settings so a custom binding survives a restart; the jkl; defaults need no
+// persistence since they're compile-time constants.
 class LaneBindings
 {
 public:
@@ -54,6 +57,12 @@ public:
     // binding - or -1 if none. Unlike LaneForKey, there is no MIDI default
     // to fall back to.
     int LaneForMidiNote(int note) const;
+
+    // Returns the lane a gamepad button press/release for `button` (a single
+    // XINPUT_GAMEPAD_* bit) should press/release, i.e. whichever lane has it
+    // as a custom Gamepad binding - or -1 if none. Same "no default" story
+    // as LaneForMidiNote.
+    int LaneForGamepadButton(int button) const;
 
     // True if vkCode is any lane's hardcoded default key - used by the
     // capture flow to reject trying to assign a default key as some other
