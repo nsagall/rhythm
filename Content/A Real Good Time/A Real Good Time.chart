@@ -26,6 +26,8 @@ learn_mode = dontfail
 [clip]
 display_name = Drums Intro
 name = drums_intro
+hits_required = 2
+learn_mode = dontfail
 
 [clip]
 display_name = Intro Bg
