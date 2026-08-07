@@ -7,9 +7,10 @@
 namespace
 {
 
-// Serializes binding as ""/"K:<code>"/"M:<code>" - see LaneBindings.h's own
-// comment on the persisted format. Kept private to this file; Settings
-// itself never needs to know this shape, only that it round-trips.
+// Serializes binding as ""/"K:<code>"/"M:<code>"/"G:<code>" - see
+// LaneBindings.h's own comment on the persisted format. Kept private to this
+// file; Settings itself never needs to know this shape, only that it
+// round-trips.
 std::wstring SerializeBinding(const InputBinding& binding)
 {
     if (binding.kind == InputKind::Keyboard)
@@ -19,6 +20,10 @@ std::wstring SerializeBinding(const InputBinding& binding)
     if (binding.kind == InputKind::MidiNote)
     {
         return L"M:" + std::to_wstring(binding.code);
+    }
+    if (binding.kind == InputKind::Gamepad)
+    {
+        return L"G:" + std::to_wstring(binding.code);
     }
     return L"";
 }
@@ -40,6 +45,10 @@ InputBinding DeserializeBinding(const std::wstring& serialized)
             if (serialized[0] == L'M')
             {
                 return InputBinding{InputKind::MidiNote, code};
+            }
+            if (serialized[0] == L'G')
+            {
+                return InputBinding{InputKind::Gamepad, code};
             }
         }
         catch (const std::exception&)
@@ -88,6 +97,19 @@ int LaneBindings::LaneForMidiNote(int note) const
     for (int lane = 0; lane < kLaneCount; ++lane)
     {
         if (m_custom[lane].kind == InputKind::MidiNote && m_custom[lane].code == note)
+        {
+            return lane;
+        }
+    }
+    return -1;
+}
+
+// Whichever lane has button as its custom Gamepad binding.
+int LaneBindings::LaneForGamepadButton(int button) const
+{
+    for (int lane = 0; lane < kLaneCount; ++lane)
+    {
+        if (m_custom[lane].kind == InputKind::Gamepad && m_custom[lane].code == button)
         {
             return lane;
         }

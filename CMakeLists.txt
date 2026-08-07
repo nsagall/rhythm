@@ -43,10 +43,11 @@ add_executable(Rhythm WIN32
     src/SongLibrary.cpp
     src/LaneBindings.cpp
     src/MidiInputManager.cpp
+    src/GamepadInputManager.cpp
 )
 
 target_compile_definitions(Rhythm PRIVATE UNICODE _UNICODE)
-target_link_libraries(Rhythm PRIVATE RhythmCore msimg32)
+target_link_libraries(Rhythm PRIVATE RhythmCore msimg32 xinput9_1_0)
 
 if(MINGW)
     target_link_options(Rhythm PRIVATE -municode)

@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "AudioEngine.h"
+#include "GamepadInputManager.h"
 #include "GameSession.h"
 #include "LaneBindings.h"
 #include "MidiInputManager.h"
@@ -107,6 +108,16 @@ private:
     // controller's accidental light taps.
     void OnMidiData(WPARAM wParam, LPARAM lParam);
 
+    // Routes one gamepad button transition (as polled once per frame by
+    // OnTimer via m_gamepadInput.Poll() - there's no window message for
+    // this, unlike keyboard/MIDI) the same way OnMidiData handles a MIDI
+    // note-on/note-off: during capture, a press commits this lane's new
+    // custom Gamepad binding (a release is ignored - only the down edge
+    // matters for capture); otherwise, only while Playing, a press/release
+    // resolved via LaneBindings::LaneForGamepadButton registers a press/
+    // release exactly like a keyboard or MIDI lane would.
+    void OnGamepadButton(WORD button, bool pressed);
+
     // On the song list, clicking a row chooses that song immediately. A
     // no-op entirely while capturing (m_captureLane != -1) - a click can't
     // supply an input binding, and letting one through to ChooseSong would
@@ -174,10 +185,11 @@ private:
     // real misses and get exactly the same flash/ripple treatment.
     void DrainJudgements();
 
-    // Advances the game session, drains and reflects any judgement it
-    // produced, and - once a song completes while it's the visible screen -
-    // switches back to the song list (playback itself is left running
-    // untouched).
+    // Polls m_gamepadInput and routes every button transition it reports to
+    // OnGamepadButton, advances the game session, drains and reflects any
+    // judgement it produced, and - once a song completes while it's the
+    // visible screen - switches back to the song list (playback itself is
+    // left running untouched).
     void OnTimer(WPARAM timerId);
 
     // Stops the session/animation/audio engine and quits the message loop.
@@ -349,4 +361,9 @@ private:
     // note events as MM_MIM_DATA window messages - see MidiInputManager.h
     // and OnMidiData.
     MidiInputManager m_midiInput;
+
+    // Polled once per frame in OnTimer for Xbox controller button
+    // transitions, since - unlike keyboard/MIDI - there's no window message
+    // for those. See GamepadInputManager.h and OnGamepadButton.
+    GamepadInputManager m_gamepadInput;
 };

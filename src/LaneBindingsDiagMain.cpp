@@ -1,5 +1,6 @@
 #include <cstdio>
 #include <string>
+#include <xinput.h>
 
 #include "LaneBindings.h"
 #include "MidiInputManager.h"
@@ -41,6 +42,7 @@ void RunLaneBindingsTests()
     Check(bindings.LaneForKey(VK_OEM_1) == 3, "default ; resolves to lane 3");
     Check(bindings.LaneForKey('X') == -1, "unbound key resolves to no lane");
     Check(bindings.LaneForMidiNote(60) == -1, "no custom MIDI binding yet resolves to no lane");
+    Check(bindings.LaneForGamepadButton(XINPUT_GAMEPAD_A) == -1, "no custom gamepad binding yet resolves to no lane");
     Check(bindings.IsDefaultKey('K'), "K is recognized as a default key");
     Check(!bindings.IsDefaultKey('X'), "X is not recognized as a default key");
 
@@ -59,6 +61,17 @@ void RunLaneBindingsTests()
     Check(bindings.LaneForMidiNote(60) == 1, "reassigned MIDI note 60 now resolves to lane 1");
     Check(bindings.GetCustom(0).kind == InputKind::None, "lane 0's custom binding was cleared by the conflict");
 
+    // Assign a gamepad button to lane 3 (currently unbound), alongside its default ; key.
+    bindings.SetCustom(3, InputBinding{InputKind::Gamepad, XINPUT_GAMEPAD_A}, settings);
+    Check(bindings.LaneForGamepadButton(XINPUT_GAMEPAD_A) == 3, "custom gamepad A button resolves to lane 3");
+    Check(bindings.LaneForKey(VK_OEM_1) == 3, "default ; for lane 3 still works alongside its gamepad binding");
+
+    // Conflict-clearing applies across gamepad bindings too: reassigning the
+    // same button to lane 0 (also currently unbound) must clear it from lane 3.
+    bindings.SetCustom(0, InputBinding{InputKind::Gamepad, XINPUT_GAMEPAD_A}, settings);
+    Check(bindings.LaneForGamepadButton(XINPUT_GAMEPAD_A) == 0, "reassigned gamepad A button now resolves to lane 0");
+    Check(bindings.GetCustom(3).kind == InputKind::None, "lane 3's custom binding was cleared by the conflict");
+
     // Replace semantics: reassigning lane 1's own custom binding drops the old one.
     bindings.SetCustom(1, InputBinding{InputKind::Keyboard, 'Y'}, settings);
     Check(bindings.LaneForKey('Y') == 1, "lane 1's new custom key Y resolves");
@@ -72,6 +85,7 @@ void RunLaneBindingsTests()
     Check(reloaded.LaneForKey('Y') == 1, "reload: lane 1's custom key Y persisted");
     Check(reloaded.LaneForMidiNote(60) == -1, "reload: lane 0's cleared MIDI binding stayed cleared");
     Check(reloaded.LaneForKey('J') == 0, "reload: default J for lane 0 still works");
+    Check(reloaded.LaneForGamepadButton(XINPUT_GAMEPAD_A) == 0, "reload: lane 0's custom gamepad A button persisted");
 
     // Clean up so re-running this diagnostic starts from a known state.
     settings.SaveLaneBinding(0, L"");
