@@ -153,6 +153,24 @@ void BlockTimeline::DrawToolbar(EditorDocument& doc)
     }
 }
 
+void BlockTimeline::HandleClipDrop(EditorDocument& doc, int clipId, size_t insertPos)
+{
+    const EditorClip* clip = FindClipById(doc, clipId);
+    if (clip == nullptr)
+    {
+        return;
+    }
+
+    EditorBlock block;
+    block.id = doc.nextBlockId++;
+    block.kind = clip->hasMidi ? SectionKind::Learn : SectionKind::Background;
+    block.clipId = clipId;
+    block.loopCount = 1;
+    doc.blocks.insert(doc.blocks.begin() + static_cast<long>(insertPos), block);
+    SetSelectedBlockId(block.id);
+    MarkDirty(doc);
+}
+
 void BlockTimeline::HandleBlockClick(const EditorDocument& doc, int clickedId)
 {
     ImGuiIO& io = ImGui::GetIO();
@@ -417,6 +435,17 @@ void BlockTimeline::DrawBlockRow(EditorDocument& doc, const std::vector<BlockLay
                     MarkDirty(doc);
                 }
             }
+            if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("CLIP_DRAG"))
+            {
+                int clipId = *static_cast<const int*>(payload->Data);
+                HandleClipDrop(doc, clipId, i);
+                // doc.blocks/layout were just mutated - stop iterating this
+                // frame's (now stale) layout rather than drawing further
+                // blocks against indices it no longer matches.
+                ImGui::EndDragDropTarget();
+                ImGui::PopID();
+                return;
+            }
             ImGui::EndDragDropTarget();
         }
 
@@ -453,6 +482,23 @@ void BlockTimeline::DrawBlockRow(EditorDocument& doc, const std::vector<BlockLay
         }
 
         ImGui::PopID();
+    }
+
+    // Trailing drop zone: a clip dragged past the last block (or onto an
+    // empty timeline) appends a new block at the end, same as dropping
+    // directly on a block inserts before it.
+    float trailingLeft = layout.empty() ? 0.0f : (layout.back().leftX + layout.back().width + kBlockGap);
+    float trailingWidth = std::max(ImGui::GetContentRegionAvail().x, 60.0f);
+    ImGui::SetCursorScreenPos(ImVec2(originX + trailingLeft, originY));
+    ImGui::InvisibleButton("clipDropTrailing", ImVec2(trailingWidth, kBlockHeight));
+    if (ImGui::BeginDragDropTarget())
+    {
+        if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("CLIP_DRAG"))
+        {
+            int clipId = *static_cast<const int*>(payload->Data);
+            HandleClipDrop(doc, clipId, doc.blocks.size());
+        }
+        ImGui::EndDragDropTarget();
     }
 }
 

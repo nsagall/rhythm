@@ -88,6 +88,13 @@ private:
     };
 
     void DrawToolbar(EditorDocument& doc);
+    // Handles a CLIP_DRAG payload dropped at insertPos (a doc.blocks
+    // index, or doc.blocks.size() to append at the end): creates a new
+    // block referencing clipId, Learn if the clip has MIDI or Background
+    // if it doesn't (a clip with no pattern can't be judged), selects it,
+    // and marks the document dirty. No-op if clipId no longer resolves to
+    // a clip (e.g. deleted mid-drag).
+    void HandleClipDrop(EditorDocument& doc, int clipId, size_t insertPos);
     std::vector<BlockLayout> ComputeLayout(const EditorDocument& doc, const BlockSchedule::Schedule* schedule) const;
     void DrawBlockRow(EditorDocument& doc, const std::vector<BlockLayout>& layout, float originX, float originY);
     void DrawPlayhead(const BlockSchedule::Schedule& schedule, double playheadSeconds,
