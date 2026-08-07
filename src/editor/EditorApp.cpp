@@ -278,6 +278,11 @@ void EditorApp::Update()
     DrawBlockTimelineWindow(0.0f, timelineY, contentWidth, timelineHeight);
     DrawBottomWindow(0.0f, bottomY, contentWidth, bottomHeight);
 
+    if (m_hasDocument)
+    {
+        SyncClipSelectionFromBlock();
+    }
+
     bool draggedThisFrame = false;
 
     // Left/right column boundary: left column is the stored value, right
@@ -676,6 +681,25 @@ void EditorApp::RebuildBlockSchedule()
     // this call, so there's nothing extra to surface.
     std::vector<std::wstring> scheduleErrors;
     m_blockPlayer.RebuildSchedule(m_doc, scheduleErrors);
+}
+
+void EditorApp::SyncClipSelectionFromBlock()
+{
+    int selectedBlockId = m_blockTimeline.SelectedBlockId();
+    if (selectedBlockId == m_lastSyncedBlockSelectionId)
+    {
+        return;
+    }
+    m_lastSyncedBlockSelectionId = selectedBlockId;
+
+    for (const EditorBlock& block : m_doc.blocks)
+    {
+        if (block.id == selectedBlockId)
+        {
+            m_clipPanel.SetSelectedClipId(block.clipId);
+            break;
+        }
+    }
 }
 
 void EditorApp::DoNew()

@@ -216,6 +216,16 @@ void ClipPanel::DrawList(EditorDocument& doc)
         {
             m_selectedClipId = clip.id;
         }
+        // Drag onto the block timeline to create a new block using this
+        // clip (BlockTimeline::HandleClipDrop decides Learn vs. Background
+        // based on clip.hasMidi).
+        if (ImGui::BeginDragDropSource())
+        {
+            int clipId = clip.id;
+            ImGui::SetDragDropPayload("CLIP_DRAG", &clipId, sizeof(int));
+            ImGui::Text("%s", label.c_str());
+            ImGui::EndDragDropSource();
+        }
         ImGui::PopID();
     }
 

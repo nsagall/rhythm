@@ -82,6 +82,14 @@ private:
     // meaningful while the player is stopped (see BlockPlayer::RebuildSchedule).
     void RebuildBlockSchedule();
 
+    // Mirrors the block timeline's primary selection into the clip panel
+    // (selecting a block also selects its clip) - called once per frame
+    // after both DrawBlockPropertiesWindow and DrawBlockTimelineWindow
+    // have run, so it sees whichever one changed the selection this frame.
+    // Only acts when the selection actually changed, so it never fights an
+    // independent click made directly in the clip panel.
+    void SyncClipSelectionFromBlock();
+
     // If the current document is dirty, defers action behind the
     // unsaved-changes modal; otherwise runs it immediately.
     void RequestActionWithGuard(PendingAction action);
@@ -104,6 +112,12 @@ private:
     EditorDocument m_doc;
     bool m_hasDocument = false;
     EditorUndoHistory m_undoHistory;
+
+    // Last block-timeline primary selection SyncClipSelectionFromBlock has
+    // already mirrored into the clip panel - distinct from any real block
+    // id (including -1, "nothing selected") so the very first frame after
+    // a document loads still performs the initial sync.
+    int m_lastSyncedBlockSelectionId = -2;
 
     // Resizable-pane layout (see Update()). All in pixels, loaded from/
     // saved to EditorSettings so the arrangement survives a restart.

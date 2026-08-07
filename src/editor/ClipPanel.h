@@ -24,6 +24,17 @@ public:
         return m_selectedClipId;
     }
 
+    // Lets EditorApp mirror the block timeline's selection here - called
+    // every frame the primary block selection changes, so picking a block
+    // also shows/edits its clip without an extra click. clipId may be -1
+    // (a Reset block, or any block with no clip assigned yet), which
+    // clears this panel's selection the same way clicking empty space
+    // would.
+    void SetSelectedClipId(int clipId)
+    {
+        m_selectedClipId = clipId;
+    }
+
     // Forces the Name/Display Name edit buffers to re-sync from doc on the
     // next Draw() call instead of showing stale staged text - call after
     // anything that replaces doc's contents out from under this panel
