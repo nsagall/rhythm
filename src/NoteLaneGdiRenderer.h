@@ -149,7 +149,10 @@ private:
                        double flashProgress);
     void DrawSparkles(HDC hdc, RECT laneRect, double beatPulse);
     void DrawMeasureLines(HDC hdc, RECT laneRect, const NoteLaneScene& scene);
-    void DrawRails(HDC hdc, RECT laneRect, COLORREF primaryColor);
+    // beatPulse (see Draw()'s own comment) drives how squiggly the rail
+    // currently is - a straight line between beats, bulging into a sine
+    // wave right on each beat and settling back as the pulse decays.
+    void DrawRails(HDC hdc, RECT laneRect, COLORREF primaryColor, double beatPulse);
     void DrawReceptors(HDC hdc, RECT laneRect, const NoteLaneScene& scene, COLORREF primaryColor);
     void DrawNotes(HDC hdc, RECT laneRect, const NoteLaneScene& scene);
     void DrawConfetti(HDC hdc, double elapsedSeconds, double t);
