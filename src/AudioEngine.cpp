@@ -1,7 +1,9 @@
 #include "AudioEngine.h"
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <fstream>
 
@@ -173,8 +175,39 @@ StemHandle AudioEngine::LoadStem(const std::wstring& wavFilePath)
         return StemHandle{};
     }
 
+    stem.wavFilePath = wavFilePath;
     m_stems.push_back(std::move(stem));
     return StemHandle{static_cast<int>(m_stems.size()) - 1};
+}
+
+// Asserts if any OTHER loaded stem sharing playingHandle's wavFilePath is
+// currently audible - see StartLooping's own call site comment for why this
+// exists and why it's safe against a stem restarting its own voice.
+void AudioEngine::AssertNoOtherStemForSameFilePlaying(StemHandle playingHandle) const
+{
+    const Stem& playing = m_stems[playingHandle.value];
+    for (size_t i = 0; i < m_stems.size(); ++i)
+    {
+        if (static_cast<int>(i) == playingHandle.value || !m_stems[i].voice)
+        {
+            continue;
+        }
+        if (m_stems[i].wavFilePath != playing.wavFilePath)
+        {
+            continue;
+        }
+
+        XAUDIO2_VOICE_STATE otherState{};
+        m_stems[i].voice->GetState(&otherState);
+        if (otherState.BuffersQueued > 0)
+        {
+            fwprintf(stderr,
+                     L"AudioEngine: '%ls' is about to play on stem %d while stem %zu of the same file is "
+                     L"still audible - the same .wav would be playing on top of itself.\n",
+                     playing.wavFilePath.c_str(), playingHandle.value, i);
+            assert(false && "AudioEngine: the same .wav file is being started while another stem of it is already playing");
+        }
+    }
 }
 
 // Starts a loaded stem looping seamlessly, seeking to phaseSeconds so it enters in time with the beat grid.
@@ -190,6 +223,13 @@ void AudioEngine::StartLooping(StemHandle stemHandle, double phaseSeconds, float
     {
         return;
     }
+
+    // Restarting THIS stem's own voice (Stop/Flush/resubmit, right below) is
+    // normal and not a violation - the invariant this guards is "at most one
+    // voice for a given .wav file is audible at once," which only a
+    // DIFFERENT stem loaded from the same file (e.g. a chart bug, or a
+    // leaked stem from an earlier LoadChart) could break.
+    AssertNoOtherStemForSameFilePlaying(stemHandle);
 
     stem.voice->Stop();
     stem.voice->FlushSourceBuffers();
