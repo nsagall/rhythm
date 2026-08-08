@@ -107,7 +107,8 @@ void NoteLaneModel::CollectNotes(const GameSession& session, const ClipInstance*
     for (int lane = 0; lane < kLaneCount; ++lane)
     {
         double dotsFromBeat = fromBeat;
-        if (dotsFromBeat < 0.0)
+        bool revealFromFirstOnset = dotsFromBeat < 0.0;
+        if (revealFromFirstOnset)
         {
             dotsFromBeat = session.PreviewFirstOnsetBeatForLane(lane);
             if (dotsFromBeat < 0.0)
@@ -118,6 +119,27 @@ void NoteLaneModel::CollectNotes(const GameSession& session, const ClipInstance*
 
         std::vector<SceneNote> visibleNotes = NotesInRange(lane, originBeat, dotsFromBeat, upperBoundBeat,
                                                              drawClip->laneNotes[lane], drawClip->spanBeats);
+        if (revealFromFirstOnset)
+        {
+            // NotesInRange always tiles one bar earlier than dotsFromBeat to
+            // catch a still-animating note's tail (its own "never tile a bar
+            // before the clip's own origin" comment) - harmless for a clip's
+            // true first-ever start (that earlier bar is clamped to
+            // nonexistent), but for a clip already established long ago
+            // (e.g. one that's been looping as a `[background]` clip before
+            // this `[learn]` section reuses it), that earlier bar is real:
+            // the tail end of the PREVIOUS repetition, one spanBeats before
+            // dotsFromBeat. Left unfiltered, this section's first reveal
+            // would show that leftover note - the pattern's actual last note -
+            // as if it were part of what's coming up, instead of only
+            // dotsFromBeat onward. The live judged pass already excludes
+            // this same case by comparing against NextExpectedBeatForLane
+            // (see below); mirror that here for the unjudged preview pass.
+            visibleNotes.erase(std::remove_if(visibleNotes.begin(), visibleNotes.end(),
+                                               [dotsFromBeat](const SceneNote& note)
+                                               { return note.startBeat < dotsFromBeat - 1e-6; }),
+                                visibleNotes.end());
+        }
         // Build with -DRHYTHM_DEBUG_RENDER (add to the Rhythm target's own
         // target_compile_definitions in CMakeLists.txt, not left on by
         // default) to trace exactly what NotesInRange tiles for each
