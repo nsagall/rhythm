@@ -29,6 +29,23 @@
 // song's structure) is NOT a multiple of bass's own spanBeats. It then
 // checks that every lane's first expected note in the bass learn section is
 // still that lane's own pattern index 0.
+//
+// Also guards against a second, related regression this fix's first attempt
+// actually introduced: GameSession::PreviewFirstOnsetBeatForLane/
+// PreviewClipOriginBeat independently predict what BeginSection will do,
+// ahead of time, so the note lane can render a clip's very first notes
+// scrolling in with their normal lead time (kNoteFallBeats) instead of
+// popping in already at the judge line. Their own doc comments say they
+// must mirror BeginSection's own anchoring choice exactly - changing
+// BeginSection's freshness rule (ForgetStaleClipOrigin) without updating
+// these two the same way left them disagreeing: the preview kept predicting
+// the OLD stale-origin onset (so notes appeared to have plenty of lead
+// time), while BeginSection actually used a fresh one landing right at the
+// section's own start beat - so the real first note showed up already past
+// the judge line instead of having scrolled into place. This records every
+// PreviewFirstOnsetBeatForLane() while bass is being previewed and checks it
+// against the real NextExpectedBeatForLane() once the section actually
+// begins - they must match exactly.
 
 int main(int argc, char** argv)
 {
@@ -98,12 +115,28 @@ int main(int argc, char** argv)
     int lastSectionIndex = -2;
     bool dumped = false;
     bool allMatchedFirstNote = true;
+    bool allMatchedPreview = true;
+    bool everPreviewedBass = false;
+    double lastPreviewedOnset[kLaneCount];
+    for (int lane = 0; lane < kLaneCount; ++lane)
+    {
+        lastPreviewedOnset[lane] = -1.0;
+    }
     DWORD startTick = GetTickCount();
 
     while (session.Phase() != GamePhase::Complete && !dumped)
     {
         session.Update();
         session.CatchUpCountIn();
+
+        if (session.PreviewClip() == &session.Song().clips[bassClipIndex])
+        {
+            everPreviewedBass = true;
+            for (int lane = 0; lane < kLaneCount; ++lane)
+            {
+                lastPreviewedOnset[lane] = session.PreviewFirstOnsetBeatForLane(lane);
+            }
+        }
 
         int sectionIndex = session.CurrentSectionIndex();
         if (sectionIndex != lastSectionIndex)
@@ -118,6 +151,7 @@ int main(int argc, char** argv)
 
                 printf("Reached bass learn section (index %d): originBeat=%.6f spanBeats=%.6f\n", targetSectionIndex,
                        originBeat, span);
+                printf("Was previewed ahead of time: %s\n", everPreviewedBass ? "true" : "false");
 
                 for (int lane = 0; lane < kLaneCount; ++lane)
                 {
@@ -136,6 +170,15 @@ int main(int argc, char** argv)
                     printf("  lane %d: first expected note phase=%.4f, pattern's own first note=%.4f%s\n", lane,
                            phase, clip.laneNotes[lane].front().startBeat,
                            matchesFirstNote ? "" : "  ** MISMATCH - first note is not this lane's pattern index 0 **");
+
+                    if (everPreviewedBass)
+                    {
+                        bool matchesPreview = std::abs(expected - lastPreviewedOnset[lane]) < 1e-6;
+                        allMatchedPreview &= matchesPreview;
+                        printf("  lane %d: real onset=%.4f, last-previewed onset=%.4f%s\n", lane, expected,
+                               lastPreviewedOnset[lane],
+                               matchesPreview ? "" : "  ** MISMATCH - preview disagreed with BeginSection **");
+                    }
                 }
                 dumped = true;
                 break;
@@ -243,6 +286,9 @@ int main(int argc, char** argv)
     printf("Reached target section: %s\n", dumped ? "true" : "false");
     printf("Every lane's first expected note was its pattern's own note 0: %s%s\n",
            allMatchedFirstNote ? "true" : "false", allMatchedFirstNote ? "" : "  ** FAIL **");
+    printf("Was previewed ahead of time: %s\n", everPreviewedBass ? "true" : "false");
+    printf("Preview agreed with the real onset on every lane: %s%s\n", allMatchedPreview ? "true" : "false",
+           allMatchedPreview ? "" : "  ** FAIL **");
 
-    return (dumped && allMatchedFirstNote) ? 0 : 1;
+    return (dumped && allMatchedFirstNote && everPreviewedBass && allMatchedPreview) ? 0 : 1;
 }

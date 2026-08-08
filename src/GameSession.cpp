@@ -936,15 +936,21 @@ double GameSession::PreviewFirstOnsetBeatForLane(int lane) const
     // Must mirror BeginSection's own Learn-case anchoring choice exactly
     // (see ClipInstance::startSeconds) - a clip previewed here before it
     // has ever actually been started (its first appearance, whether that's
-    // the count-in or any later point in the song) needs
+    // the count-in or any later point in the song), OR one that has an
+    // established ClipInstance but isn't currently playing (BeginSection's
+    // own ForgetStaleClipOrigin will discard that stale entry the instant
+    // this section actually begins - see its own comment), needs
     // FreshOnsetForAllLanes, same as BeginSection will use once this
     // section actually goes live - otherwise the notes shown here would
-    // silently disagree with what ends up judged. transitionBeat is
-    // exactly the beat BeginSection will use as scheduledBeat (and
+    // silently disagree with what ends up judged (the real onset landing
+    // right at this section's own start beat instead of wherever this
+    // still-stale prediction put it, so it'd show up already past the
+    // judge line instead of having scrolled down into place). transitionBeat
+    // is exactly the beat BeginSection will use as scheduledBeat (and
     // therefore as the fresh origin) once this section actually begins -
     // see BeginSection's own doc comment.
     auto it = m_clipInstances.find(&preview);
-    if (it == m_clipInstances.end())
+    if (it == m_clipInstances.end() || !it->second.isPlaying)
     {
         double allLanes[kLaneCount];
         ChartTiming::FreshOnsetForAllLanes(transitionBeat, preview, allLanes);
@@ -967,11 +973,13 @@ double GameSession::PreviewClipOriginBeat() const
 
     double secondsPerBeat = 60.0 / m_song.bpm;
     auto it = m_clipInstances.find(&preview);
-    if (it == m_clipInstances.end())
+    if (it == m_clipInstances.end() || !it->second.isPlaying)
     {
-        // Mirrors PreviewFirstOnsetBeatForLane's own not-yet-established
-        // branch exactly - transitionBeat is what BeginSection will
-        // actually use as the fresh origin once this section goes live.
+        // Mirrors PreviewFirstOnsetBeatForLane's own not-yet-established/
+        // gone-stale branch exactly - transitionBeat is what BeginSection
+        // will actually use as the fresh origin once this section goes
+        // live (ForgetStaleClipOrigin will have discarded this same,
+        // currently-not-playing entry by then - see its own comment).
         return PreviewTransitionSeconds() / secondsPerBeat;
     }
     return it->second.startSeconds / secondsPerBeat;
