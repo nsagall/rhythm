@@ -3,7 +3,7 @@ title = A Real Good Time
 bpm = 95
 time_signature = 4/4
 start_tolerance_ms = 120
-release_tolerance_ms = 120
+release_tolerance_ms = 500
 
 [clip]
 display_name = Arp Bg
@@ -12,10 +12,13 @@ name = arp_bg
 [clip]
 display_name = Bass
 name = bass
+hits_required = 2
+learn_mode = dontfail
 
 [clip]
 display_name = Chords
 name = chords
+hits_required = 12
 
 [clip]
 display_name = Drums
@@ -54,6 +57,36 @@ name = good_time_bg
 display_name = You Be Dead
 name = you_be_dead
 
+[clip]
+display_name = Flute Intro
+name = flute_intro
+hits_required = 2
+learn_mode = dontfail
+
+[clip]
+display_name = Flute Intro Bg
+name = flute_intro_bg
+
+[clip]
+display_name = You Had Him
+name = you_had_him
+hits_required = 1
+learn_mode = dontfail
+start_tolerance_ms = 300
+release_tolerance_ms = 1000
+
+[clip]
+display_name = Break 2
+name = break_2
+
+[clip]
+display_name = Tomorrow A Good Day
+name = tomorrow_a_good_day
+
+[clip]
+display_name = You Had Him Bg
+name = you_had_him_bg
+
 [background]
 clip = intro_bg
 
@@ -65,7 +98,7 @@ clip = drums_intro
 [background]
 clip = arp_bg
 
-[learn]
+[background]
 clip = bass
 
 [learn]
@@ -93,4 +126,23 @@ clip = drums
 
 [learn]
 clip = bass
+
+[reset]
+
+[background]
+clip = flute_intro_bg
+
+[learn]
+clip = flute_intro
+
+[reset]
+
+[background]
+clip = you_had_him_bg
+
+[learn]
+clip = you_had_him
+
+[break]
+clip = break_2
 
