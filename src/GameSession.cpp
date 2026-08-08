@@ -1063,6 +1063,11 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
     {
         int bgClipIndex = m_queuedBackground.clipIndex;
         m_queuedBackground = QueuedBackground{};
+        // See ForgetStaleClipOrigin's own comment - this queued clip is
+        // about to (re)start for what's effectively a new section's
+        // purposes, so a stale, silent-since-however-long-ago origin gets
+        // forgotten first rather than kept.
+        ForgetStaleClipOrigin(&m_song.clips[bgClipIndex]);
         StartClipLoop(bgClipIndex, m_song.clips[bgClipIndex].volume);
     }
 
@@ -1114,7 +1119,11 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
             // Established here, ahead of ComputeBreakAdvance below, which
             // needs it right away - StartClipLoop's own establishment
             // (moments later) is then just a no-op confirming the same
-            // value. See EnsureClipInstance's own comment.
+            // value. See EnsureClipInstance's own comment. ForgetStaleClipOrigin
+            // first - see its own comment - so a break reusing a clip that's
+            // gone silent since its last use re-anchors instead of picking
+            // up an old, no-longer-audible groove.
+            ForgetStaleClipOrigin(&clip);
             EnsureClipInstance(&clip, nowSeconds);
             double originSeconds = m_clipInstances.at(&clip).startSeconds;
 
@@ -1182,7 +1191,18 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
             // which needs it right away - StartClipLoop's own
             // establishment (moments later) is then just a no-op
             // confirming the same value. See EnsureClipInstance's
-            // own comment.
+            // own comment. ForgetStaleClipOrigin first - see its own
+            // comment - so a Learn section teaching a clip that already
+            // has a stale (no-longer-playing) origin from an earlier,
+            // unrelated use (e.g. an earlier [background] section, long
+            // since stopped by a Reset/Break) re-anchors and presents the
+            // pattern from its own true beginning, instead of silently
+            // picking up wherever that old, inaudible groove "would" be by
+            // now - which can land midway through the pattern, making the
+            // very first note the player is asked to hit not the pattern's
+            // own note 0, which then only shows up once the section loops
+            // back around to it.
+            ForgetStaleClipOrigin(&clip);
             bool freshOrigin = EnsureClipInstance(&clip, nowSeconds);
             double originBeat = m_clipInstances.at(&clip).startSeconds / secondsPerBeat;
 
@@ -1371,6 +1391,16 @@ bool GameSession::EnsureClipInstance(const ChartClip* clip, double nowSeconds)
     instance.startSeconds = nowSeconds;
     m_clipInstances.emplace(clip, instance);
     return true;
+}
+
+// See its own header comment.
+void GameSession::ForgetStaleClipOrigin(const ChartClip* clip)
+{
+    auto it = m_clipInstances.find(clip);
+    if (it != m_clipInstances.end() && !it->second.isPlaying)
+    {
+        m_clipInstances.erase(it);
+    }
 }
 
 // Stops clipIndex's stem if it's playing.
