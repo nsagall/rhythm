@@ -323,6 +323,24 @@ void AudioEngine::StopAll()
     }
 }
 
+// Stops every currently loaded stem except keep - see the header's own comment.
+void AudioEngine::StopAllExcept(StemHandle keep)
+{
+    for (size_t i = 0; i < m_stems.size(); ++i)
+    {
+        if (static_cast<int>(i) == keep.value)
+        {
+            continue;
+        }
+        Stem& stem = m_stems[i];
+        if (stem.voice)
+        {
+            stem.voice->Stop();
+            stem.voice->FlushSourceBuffers();
+        }
+    }
+}
+
 // Pauses every currently loaded stem in place, without flushing its queued
 // buffer.
 void AudioEngine::PauseAll()

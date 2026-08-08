@@ -80,6 +80,23 @@ public:
     // Stops every currently loaded stem.
     void StopAll();
 
+    // Stops every currently loaded stem except keep. For a caller about to
+    // immediately restart keep's own voice anyway (see GameSession::
+    // BeginSection's Break case, which starts its own section's clip right
+    // after silencing everything else - if that clip happens to be one
+    // that was already playing uninterrupted, this is exactly that case) -
+    // stopping keep here too, only to have StartLooping's own Stop()/
+    // FlushSourceBuffers() immediately stop-and-reflush it again moments
+    // later, is pure redundant overhead that only widens the window during
+    // which a stray fragment of stale audio could bleed through: Stop()/
+    // FlushSourceBuffers() take effect at the start of XAudio2's next
+    // internal processing quantum, not synchronously, so calling them twice
+    // in a row on the same voice doesn't make it stop any faster - it just
+    // means there are two chances instead of one for a few milliseconds of
+    // in-flight audio to slip out before either takes hold. A no-op for
+    // keep if it's invalid (nothing to exclude, so this becomes StopAll()).
+    void StopAllExcept(StemHandle keep);
+
     // Pauses every currently loaded stem in place - unlike Stop()/StopAll(),
     // doesn't flush each voice's queued buffer, so its playback position is
     // preserved for ResumeAll() to continue from exactly where it left off,

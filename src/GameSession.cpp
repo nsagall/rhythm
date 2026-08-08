@@ -1103,7 +1103,20 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
 
         case SectionKind::Break:
         {
-            m_audioEngine.StopAll();
+            // StopAllExcept this section's own clip, not StopAll() - if
+            // that clip was already playing uninterrupted (e.g. as a
+            // still-open background layer), it's about to be restarted
+            // fresh by StartClipLoop below regardless (the isPlaying=false
+            // fill just below makes sure of that) - stopping it here too
+            // would just mean StartLooping's own Stop()/FlushSourceBuffers()
+            // stops-and-reflushes the SAME voice a second time moments
+            // later for no benefit, widening the window for a fragment of
+            // its own stale audio to bleed through before the fresh restart
+            // takes hold (a confirmed real repro: "a tiny bit of the
+            // beginning" of a still-playing clip's own track audible right
+            // as its Break section begins). See AudioEngine::
+            // StopAllExcept's own comment.
+            m_audioEngine.StopAllExcept(m_stemHandles[section.clipIndex]);
             for (auto& entry : m_clipInstances)
             {
                 entry.second.isPlaying = false;
