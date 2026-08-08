@@ -37,13 +37,6 @@ void RunOne(const std::wstring& path, bool expectSuccess)
 
 int main()
 {
-    RunOne(L"C:\\Users\\nsaga\\AppData\\Local\\Temp\\claude\\C--Users-nsaga-OneDrive-Projects\\2d6d0060-ad5a-4bf4-86f9-077b215135dd\\scratchpad\\broken.chart", false);
-
-    RunOne(L"C:\\Users\\nsaga\\AppData\\Local\\Temp\\claude\\C--Users-nsaga-OneDrive-Projects\\2d6d0060-ad5a-4bf4-86f9-077b215135dd\\scratchpad\\missing_midi_field.chart", false);
-    RunOne(L"C:\\Users\\nsaga\\AppData\\Local\\Temp\\claude\\C--Users-nsaga-OneDrive-Projects\\2d6d0060-ad5a-4bf4-86f9-077b215135dd\\scratchpad\\bad_wav_path.chart", false);
-    RunOne(L"C:\\Users\\nsaga\\AppData\\Local\\Temp\\claude\\C--Users-nsaga-OneDrive-Projects\\2d6d0060-ad5a-4bf4-86f9-077b215135dd\\scratchpad\\malformed_midi.chart", false);
-    RunOne(L"C:\\Users\\nsaga\\AppData\\Local\\Temp\\claude\\C--Users-nsaga-OneDrive-Projects\\2d6d0060-ad5a-4bf4-86f9-077b215135dd\\scratchpad\\dangling_note.chart", false);
-
     RunOne(L"test_charts/broken_duplicate_clip.chart", false);
     RunOne(L"test_charts/broken_unknown_clip_section.chart", false);
     RunOne(L"test_charts/broken_invalid_play_mode.chart", false);
@@ -62,6 +55,11 @@ int main()
     RunOne(L"test_charts/solo_ending_test.chart", true);
     RunOne(L"Content/Cool Boy/Cool Boy.chart", true);
     RunOne(L"Content/Melodius/Melodius.chart", true);
+    RunOne(L"Content/A Real Good Time/A Real Good Time.chart", true);
+    RunOne(L"Content/Better/better.chart", true);
+    RunOne(L"Content/Byte Blaster (AI Slop)/Byte Blaster.chart", true);
+    RunOne(L"Content/Forest/forest.chart", true);
+    RunOne(L"Content/Voltage Run (AI Slop)/Voltage Run.chart", true);
 
     RunOne(L"test_charts/does_not_exist.chart", false);
 
