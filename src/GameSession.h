@@ -530,6 +530,33 @@ private:
     // instead of plain NextOnsetAfter.
     bool EnsureClipInstance(const ChartClip* clip, double nowSeconds);
 
+    // Forgets clip's already-established ClipInstance (if it has one) when
+    // it isn't currently playing - a no-op if it's still actively playing
+    // (there's a real, audible groove to preserve - see EnsureClipInstance's
+    // own comment) or was never instantiated at all (EnsureClipInstance
+    // creates it fresh regardless). Called by BeginSection - and ONLY by
+    // BeginSection, never by StartClipLoop's own safety-net EnsureClipInstance
+    // call - right before establishing the origin a brand new section is
+    // about to use: a clip that's gone silent (a Break/Reset's StopAll, or a
+    // DontFail clip's 3-miss stop) has no audible continuity left for a
+    // *later* section to preserve by keeping its old origin, so treating it
+    // as a fresh start (both the audio's phase seek and, for Learn,
+    // FreshOnsetForAllLanes) is strictly better than "continuing a groove"
+    // nobody can actually hear - the old origin, left in place, instead
+    // silently picks up wherever that stale beat grid says it "would" be by
+    // now, which can land midway through the pattern (even its very last
+    // note) - so the very first note a Learn section presents is whichever
+    // one that happens to be, not the pattern's own note 0, which then
+    // doesn't appear again until the section loops back around to it - the
+    // reported "first note moved to the end" bug. Deliberately NOT folded
+    // into EnsureClipInstance itself (or called from StartClipLoop's own
+    // safety net): a same-section recovery restart (e.g. RegisterHit
+    // recovering a clip StopClipLoop silenced after 3 misses) reaches
+    // StartClipLoop while isPlaying is equally false, but must NOT re-anchor
+    // - the section's already-scheduled note sequence depends on its origin
+    // staying exactly what BeginSection set it to for this run.
+    void ForgetStaleClipOrigin(const ChartClip* clip);
+
     // Stops clipIndex's stem if it's playing.
     void StopClipLoop(int clipIndex);
 
