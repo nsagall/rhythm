@@ -174,7 +174,7 @@ void NoteLaneModel::CollectNotes(const GameSession& session, const ClipInstance*
                     // Never held or judged - only possible for a clip's
                     // first-ever appearance, which anchors to its
                     // pattern's true beginning (GameSession's
-                    // ClipVoice::originEstablished) and so can start
+                    // ClipInstance/ForgetStaleClipOrigin) and so can start
                     // partway into a bar. Never included in the scene.
                     continue;
                 }

@@ -63,25 +63,25 @@ double WalkOnsetsForLockIn(double originBeat, const ChartClip& clip, const doubl
 }
 
 // Everything Build() needs to track per clip while walking the song's
-// sections in order - mirrors GameSession::ClipVoice's own consolidation
+// sections in order - mirrors GameSession::ClipInstance's own consolidation
 // (see GameSession.h) into one struct instead of several parallel
 // containers, keyed here by the clip's own address rather than its
 // position in song.clips.
 struct ClipBuildState
 {
-    // Per-clip, mirroring GameSession's own ClipVoice::originEstablished/
+    // Per-clip, mirroring GameSession's own ClipInstance::originEstablished/
     // originSeconds exactly - NOT a single whole-schedule flag. A clip's
     // first-ever start establishes originSeconds to that exact instant,
     // its own persistent phase reference from then on (see
     // FreshOnsetForAllLanes) - every later reuse of that same clip anchors
     // independently per lane instead, continuing its groove from wherever
     // ITS OWN beat grid (not any other clip's, and not absolute beat 0)
-    // says it'd be. See GameSession.h's own comment on ClipVoice for why
+    // says it'd be. See GameSession.h's own comment on ClipInstance for why
     // this must be keyed per clip.
     bool originEstablished = false;
     double originSeconds = 0.0;
 
-    // Per-clip playback state, mirroring GameSession's own ClipVoice::
+    // Per-clip playback state, mirroring GameSession's own ClipInstance::
     // isPlaying/loopStartSeconds exactly - a clip reused by a later
     // section while still open from an earlier one (nothing has stopped
     // it since) does NOT restart or re-seek; it just keeps going, and any
@@ -114,7 +114,7 @@ Schedule Build(const ChartSong& song, const std::unordered_map<const ChartClip*,
 
     std::unordered_map<const ChartClip*, ClipBuildState> clipStates;
 
-    // Mirrors GameSession::EnsureClipOriginEstablished exactly - see its own
+    // Mirrors GameSession::EnsureClipInstance exactly - see its own
     // comment. Returns true only when this call just established it.
     auto ensureOriginEstablished = [&](const ChartClip* clip, double atSeconds)
     {
@@ -128,7 +128,29 @@ Schedule Build(const ChartSong& song, const std::unordered_map<const ChartClip*,
         return true;
     };
 
-    // Mirrors AudioEngine::StopAll() + GameSession's ClipVoice::isPlaying
+    // Mirrors GameSession::ForgetStaleClipOrigin exactly - see its own
+    // comment. A clip's origin only stays meaningful to preserve while it's
+    // still actually open (voiceIndex >= 0) - once a Break/Reset's
+    // stopAllVoices has closed it, there's no audible continuity left for a
+    // *later* section to preserve by keeping the old origin, so the next
+    // section to (re)use this clip re-anchors from scratch instead of
+    // picking up wherever that stale beat grid "would" be by now (which can
+    // land mid-pattern, so a Learn entry's WalkOnsetsForLockIn would start
+    // from whatever note that happens to be instead of the pattern's own
+    // note 0 - a confirmed real bug, see GameSession::ForgetStaleClipOrigin's
+    // own history). No-op if the clip is still open, or was never
+    // established at all - ensureOriginEstablished handles both of those on
+    // its own.
+    auto forgetStaleOrigin = [&](const ChartClip* clip)
+    {
+        auto it = clipStates.find(clip);
+        if (it != clipStates.end() && it->second.voiceIndex < 0)
+        {
+            it->second.originEstablished = false;
+        }
+    };
+
+    // Mirrors AudioEngine::StopAll() + GameSession's ClipInstance::isPlaying
     // fill - called on entering a Break or Reset section (both call StopAll()
     // before anything else, silencing every currently-open voice
     // regardless of how it started). Only touches voiceIndex/
@@ -196,6 +218,7 @@ Schedule Build(const ChartSong& song, const std::unordered_map<const ChartClip*,
         // mirroring GameSession::BeginSection's own top-of-function check.
         if (queuedBackgroundClip != nullptr)
         {
+            forgetStaleOrigin(queuedBackgroundClip);
             startVoiceIfNeeded(queuedBackgroundClip, t, queuedBackgroundClip->volume, queuedBackgroundClip->volume,
                                 -1.0, queuedBackgroundSectionIndex);
             queuedBackgroundClip = nullptr;
@@ -225,7 +248,9 @@ Schedule Build(const ChartSong& song, const std::unordered_map<const ChartClip*,
                 // Established here, ahead of ComputeBreakAdvance below,
                 // which needs it right away - startVoiceIfNeeded's own
                 // establishment (moments later) is then just a no-op
-                // confirming the same value.
+                // confirming the same value. forgetStaleOrigin first - see
+                // its own comment.
+                forgetStaleOrigin(clip);
                 ensureOriginEstablished(clip, t);
                 double originSeconds = clipStates[clip].originSeconds;
 
@@ -269,7 +294,9 @@ Schedule Build(const ChartSong& song, const std::unordered_map<const ChartClip*,
                 // Established here, ahead of the anchor computation below,
                 // which needs it right away - startVoiceIfNeeded's own
                 // establishment (moments later) is then just a no-op
-                // confirming the same value.
+                // confirming the same value. forgetStaleOrigin first - see
+                // its own comment.
+                forgetStaleOrigin(clip);
                 bool freshOrigin = ensureOriginEstablished(clip, t);
                 double originSeconds = clipStates[clip].originSeconds;
                 double originBeat = originSeconds / secondsPerBeat;
@@ -309,7 +336,7 @@ Schedule Build(const ChartSong& song, const std::unordered_map<const ChartClip*,
                 // earlier, un-stopped section), startVoiceIfNeeded is a
                 // no-op and loopStartSeconds keeps its ORIGINAL value -
                 // exactly mirroring how the real StartClipLoop's guard
-                // leaves ClipVoice::loopStartSeconds untouched in that
+                // leaves ClipInstance::loopStartSeconds untouched in that
                 // case, so this section's own advance floor is computed
                 // relative to when the clip truly started, not this
                 // section's own start.
