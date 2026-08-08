@@ -143,8 +143,7 @@ int main(int argc, char** argv)
 
         GamePhase phase = session.Phase();
         int sectionIndex = session.CurrentSectionIndex();
-        PlayMode playMode = session.CurrentPlayMode();
-        bool awaitingAdvance = session.IsAwaitingAdvance();
+        SectionKind sectionKind = session.CurrentSectionKind();
         double secondsPerBeat = 60.0 / session.Song().bpm;
 
         bool sectionChangedThisTick = (phase != lastPhase || sectionIndex != lastSection);
@@ -166,7 +165,7 @@ int main(int argc, char** argv)
         {
             lastPhase = phase;
             lastSection = sectionIndex;
-            if (phase == GamePhase::Learning && playMode == PlayMode::Learn)
+            if (phase == GamePhase::Learning && sectionKind == SectionKind::Learn)
             {
                 ++learnSectionInstance;
                 goodHitsThisSection = 0;
@@ -197,7 +196,7 @@ int main(int argc, char** argv)
             }
         }
 
-        bool judgingLive = phase == GamePhase::Learning && playMode == PlayMode::Learn && !awaitingAdvance;
+        bool judgingLive = phase == GamePhase::Learning && sectionKind == SectionKind::Learn;
         if (judgingLive)
         {
             const ChartClip& clip = session.Song().clips[session.Song().sections[sectionIndex].clipIndex];

@@ -58,11 +58,31 @@ constexpr double kHitRippleFadeRate = 2.0;
 constexpr double kMissRippleFadeRate = 1.0;
 
 constexpr int kColumnGutterPx = 4;
-constexpr double kBarWidthFraction = 0.48;
+constexpr double kBarWidthFraction = 0.24;
 constexpr int kGlyphRadiusX = 7;
 constexpr int kGlyphRadiusY = 7;
-constexpr int kBarCornerRadius = 11;
 constexpr int kReceptorRadius = 14;
+
+// The smallest on-screen space (in pixels) ever left between two notes in
+// the same lane, even when one's release beat and the next's onset beat are
+// identical (or a hair apart) - see DrawNotes' gap-enforcement pass, which
+// shortens the earlier note's trailing edge (never the later note's leading
+// edge/glyph, which always sits exactly at its real onset time) to make
+// room for it.
+constexpr int kMinNoteGapPx = 5;
+// However short kMinNoteGapPx above forces a note's bar to get, never
+// shrink it past this - keeps a very short/back-to-back note's bar from
+// visually inverting or vanishing entirely.
+constexpr int kMinNoteBarHeightPx = 6;
+
+// A lane's central rail (see DrawRails) pulses from a straight line into a
+// sine-wave squiggle right on the beat and back - these bound how far and
+// how fast that wiggle goes.
+constexpr double kRailWiggleAmplitudePx = 7.0;
+constexpr double kRailWiggleCycles = 18.0; // full sine periods spanning the rail's own height
+constexpr double kRailWiggleSpeed = 1.0 / 130.0; // phase radians per tick (GetTickCount() ms)
+constexpr int kRailWiggleStepPx = 3;             // polyline segment resolution - fine enough to resolve kRailWiggleCycles without aliasing into a jagged zigzag
+constexpr int kRailThicknessPx = 4;
 
 // Deep indigo-to-violet backdrop - moody enough to make bright note colors
 // pop, warm enough to not read as a cold "dev tool" dark mode.
@@ -464,11 +484,15 @@ void NoteLaneGdiRenderer::DrawNoteGlyph(HDC hdc, int x, int y, COLORREF color, b
 }
 
 // Draws a note's duration bar spanning [yTop, yBottom] at horizontal center
-// x, with the same dark-rim/fill/highlight-strip bevel language as the
-// glyph, so the bar and its start marker read as one consistent object.
-// passing adds a glowing green outline around the whole bar underneath
-// everything else, matching DrawNoteGlyph's own passing glow (see its
-// comment - in practice Pass-mode-only).
+// x, with the same dark-rim/fill bevel language as the glyph, so the bar
+// and its start marker read as one consistent object. Capsule-shaped
+// rather than a rounded square: the rounding ellipse's own
+// diameter is the bar's full width (clamped to its height, for a very short
+// bar), so the top/bottom ends are always true semicircles instead of a
+// fixed, width-independent corner radius. passing adds a glowing green
+// outline around the whole bar underneath everything else, matching
+// DrawNoteGlyph's own passing glow (see its comment - in practice
+// Pass-mode-only).
 void NoteLaneGdiRenderer::DrawNoteBar(HDC hdc, int x, int yTop, int yBottom, int halfWidth, COLORREF color,
                                        bool passing)
 {
@@ -480,24 +504,22 @@ void NoteLaneGdiRenderer::DrawNoteBar(HDC hdc, int x, int yTop, int yBottom, int
     if (passing)
     {
         RECT glowRect{x - halfWidth - 5, yTop - 5, x + halfWidth + 5, yBottom + 5};
-        DrawAlphaRoundRect(hdc, glowRect, kBarCornerRadius + 5, kNoteColorHit, 130);
+        int glowDiameter = std::min((glowRect.right - glowRect.left), (glowRect.bottom - glowRect.top));
+        DrawAlphaRoundRect(hdc, glowRect, glowDiameter, kNoteColorHit, 130);
     }
 
     HPEN nullPen = (HPEN)GetStockObject(NULL_PEN);
     HPEN oldPen = (HPEN)SelectObject(hdc, nullPen);
     HBRUSH oldBrush = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
 
+    int outerDiameter = std::min(halfWidth * 2, yBottom - yTop);
     SelectObject(hdc, CachedSolidBrush(Darken(color, 100)));
-    RoundRect(hdc, x - halfWidth, yTop, x + halfWidth, yBottom, kBarCornerRadius, kBarCornerRadius);
+    RoundRect(hdc, x - halfWidth, yTop, x + halfWidth, yBottom, outerDiameter, outerDiameter);
 
+    RECT innerRect{x - halfWidth + 2, yTop + 2, x + halfWidth - 1, yBottom - 1};
+    int innerDiameter = std::min(innerRect.right - innerRect.left, innerRect.bottom - innerRect.top);
     SelectObject(hdc, CachedSolidBrush(color));
-    RoundRect(hdc, x - halfWidth + 2, yTop + 2, x + halfWidth - 1, yBottom - 1, kBarCornerRadius, kBarCornerRadius);
-
-    RECT highlightRect{x - halfWidth + 3, yTop + 5, x - halfWidth + 7, yBottom - 4};
-    if (highlightRect.bottom > highlightRect.top)
-    {
-        FillRect(hdc, &highlightRect, CachedSolidBrush(Lighten(color, 100)));
-    }
+    RoundRect(hdc, innerRect.left, innerRect.top, innerRect.right, innerRect.bottom, innerDiameter, innerDiameter);
 
     SelectObject(hdc, oldBrush);
     SelectObject(hdc, oldPen);
@@ -578,15 +600,63 @@ void NoteLaneGdiRenderer::DrawMeasureLines(HDC hdc, RECT laneRect, const NoteLan
 
 // A faint glowing rail down each column, in the current/upcoming clip's
 // own color, so every lane has a visible identity even where no notes are
-// currently on screen.
-void NoteLaneGdiRenderer::DrawRails(HDC hdc, RECT laneRect, COLORREF primaryColor)
+// currently on screen. Normally a straight line, same as before - but
+// beatPulse (brightest right on the beat, decaying between beats - see
+// Draw()'s own comment) bends it into a traveling sine-wave squiggle whose
+// amplitude tracks the pulse, so it visibly relaxes back to straight before
+// bulging again on the next beat.
+void NoteLaneGdiRenderer::DrawRails(HDC hdc, RECT laneRect, COLORREF primaryColor, double beatPulse)
 {
     int lineY = LineY(laneRect);
+    double amplitude = kRailWiggleAmplitudePx * beatPulse;
+    double phase = GetTickCount() * kRailWiggleSpeed;
+    int ampPx = static_cast<int>(std::ceil(amplitude));
+
     for (int lane = 0; lane < kLaneCount; ++lane)
     {
         int x = LaneCenterX(laneRect, lane);
-        RECT railRect{x - 2, laneRect.top + 10, x + 2, lineY};
-        DrawAlphaRoundRect(hdc, railRect, 2, primaryColor, 26);
+        int railTop = laneRect.top + 10;
+        int railBottom = lineY;
+        if (railBottom <= railTop)
+        {
+            continue;
+        }
+
+        int halfThickness = kRailThicknessPx / 2;
+        RECT bounds{x - halfThickness - ampPx - 1, railTop, x + halfThickness + ampPx + 1, railBottom};
+        AlphaShape shape(hdc, bounds, EnsureScratchBuffer(hdc, bounds.right - bounds.left, bounds.bottom - bounds.top));
+        if (!shape.Dc())
+        {
+            continue;
+        }
+
+        int railHeight = railBottom - railTop;
+        double frequency = kRailWiggleCycles * 6.283185307 / std::max(1, railHeight);
+        int localX0 = x - bounds.left;
+
+        HPEN pen = CachedSolidPen(kRailThicknessPx, primaryColor);
+        HPEN oldPen = (HPEN)SelectObject(shape.Dc(), pen);
+
+        bool first = true;
+        for (int y = railTop; y < railBottom; y += kRailWiggleStepPx)
+        {
+            double localX = localX0 + amplitude * std::sin((y - railTop) * frequency + phase);
+            int localY = y - bounds.top;
+            if (first)
+            {
+                MoveToEx(shape.Dc(), static_cast<int>(localX), localY, nullptr);
+                first = false;
+            }
+            else
+            {
+                LineTo(shape.Dc(), static_cast<int>(localX), localY);
+            }
+        }
+        double endLocalX = localX0 + amplitude * std::sin(railHeight * frequency + phase);
+        LineTo(shape.Dc(), static_cast<int>(endLocalX), railBottom - bounds.top);
+
+        SelectObject(shape.Dc(), oldPen);
+        shape.Blend(26);
     }
 }
 
@@ -621,29 +691,70 @@ void NoteLaneGdiRenderer::DrawReceptors(HDC hdc, RECT laneRect, const NoteLaneSc
 // rather than fading back to Normal. Judged hit/miss/held notes get the same
 // glow halo as the passing outline (note.clip->passing) so the pass/fail
 // moment pops instead of being a flat color swap.
+//
+// Before drawing, each lane's notes are walked in time order enforcing
+// kMinNoteGapPx of on-screen breathing room between consecutive ones: when
+// one note's release and the next note's onset land close enough together
+// to look touching (or, rarely, overlapping) on screen, the earlier note's
+// trailing edge (its release end, drawn as the top of its bar - see
+// DrawNoteBar) is pulled in to make room. The later note's leading edge
+// (its onset, where its glyph sits) is never touched, so a note's glyph
+// always marks its true onset time regardless of what its neighbor did.
 void NoteLaneGdiRenderer::DrawNotes(HDC hdc, RECT laneRect, const NoteLaneScene& scene)
 {
     double columnWidth =
         ((laneRect.right - laneRect.left) - kColumnGutterPx * (kLaneCount - 1)) / static_cast<double>(kLaneCount);
     int barHalfWidth = static_cast<int>(columnWidth * kBarWidthFraction / 2.0);
 
+    struct DrawableNote
+    {
+        const SceneNote* note;
+        int yTop;    // the end - the trailing, upper edge (may be pulled in below)
+        int yBottom; // the start - the leading, lower edge (never adjusted)
+    };
+
+    std::vector<DrawableNote> laneNotes[kLaneCount];
     for (const SceneNote& note : scene.notes)
     {
-        int laneX = LaneCenterX(laneRect, note.lane);
         double beatsFromStart = note.startBeat - scene.nowBeat;
         double beatsFromEnd = beatsFromStart + note.durationBeats;
-        int yBottom = YForBeatsFromNow(laneRect, beatsFromStart); // the start - the leading, lower edge
-        int yTop = YForBeatsFromNow(laneRect, beatsFromEnd);      // the end - the trailing, upper edge
-        if (yBottom < laneRect.top - kVisibilityMarginPx || yTop > laneRect.bottom + kVisibilityMarginPx)
+        int yBottom = YForBeatsFromNow(laneRect, beatsFromStart);
+        int yTop = YForBeatsFromNow(laneRect, beatsFromEnd);
+        laneNotes[note.lane].push_back({&note, yTop, yBottom});
+    }
+
+    for (auto& notes : laneNotes)
+    {
+        std::sort(notes.begin(), notes.end(), [](const DrawableNote& a, const DrawableNote& b)
+                  { return a.note->startBeat < b.note->startBeat; });
+
+        for (size_t i = 1; i < notes.size(); ++i)
         {
-            continue;
+            DrawableNote& earlier = notes[i - 1];
+            const DrawableNote& later = notes[i];
+            int desiredTop = later.yBottom + kMinNoteGapPx;
+            if (earlier.yTop < desiredTop)
+            {
+                earlier.yTop = std::min(desiredTop, earlier.yBottom - kMinNoteBarHeightPx);
+            }
         }
 
-        COLORREF color = ColorForNote(note.state, note.clip->color, note.precise);
-        bool emphasisGlow = note.state != NoteVisualState::Normal;
+        for (const DrawableNote& drawable : notes)
+        {
+            const SceneNote& note = *drawable.note;
+            if (drawable.yBottom < laneRect.top - kVisibilityMarginPx ||
+                drawable.yTop > laneRect.bottom + kVisibilityMarginPx)
+            {
+                continue;
+            }
 
-        DrawNoteBar(hdc, laneX, yTop, yBottom, barHalfWidth, color, note.clip->passing);
-        DrawNoteGlyph(hdc, laneX, yBottom, color, emphasisGlow, note.clip->passing);
+            int laneX = LaneCenterX(laneRect, note.lane);
+            COLORREF color = ColorForNote(note.state, note.clip->color, note.precise);
+            bool emphasisGlow = note.state != NoteVisualState::Normal;
+
+            DrawNoteBar(hdc, laneX, drawable.yTop, drawable.yBottom, barHalfWidth, color, note.clip->passing);
+            DrawNoteGlyph(hdc, laneX, drawable.yBottom, color, emphasisGlow, note.clip->passing);
+        }
     }
 }
 
@@ -1138,7 +1249,7 @@ void NoteLaneGdiRenderer::Draw(HDC hdc, RECT laneRect, RECT hitsMeterRect, const
     DrawMeasureLines(hdc, laneRect, scene);
 
     COLORREF primaryColor = scene.primaryClip ? scene.primaryClip->color : ClipColor::kNeutral;
-    DrawRails(hdc, laneRect, primaryColor);
+    DrawRails(hdc, laneRect, primaryColor, beatPulse);
 
     // A Pass-mode section's own already-exploded notes (see
     // NoteLaneScene::passLineHitLanes) still get a real "hit" flash at the

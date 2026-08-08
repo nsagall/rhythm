@@ -119,10 +119,21 @@ private:
         std::vector<BYTE> pcmData;
         WAVEFORMATEX format{};
         UINT64 loopStartSampleBaseline = 0;
+
+        // The file this stem was loaded from (LoadStem's own argument,
+        // kept around) - used only by StartLooping's same-file-twice
+        // assertion below, since two DIFFERENT stems can end up wrapping
+        // the same .wav (e.g. a chart bug, or a reload leaving an old
+        // stem behind) in a way m_stems' own index/StemHandle can't catch.
+        std::wstring wavFilePath;
     };
 
     // Returns a stem's total length in sample frames, derived from its PCM data size.
     static UINT32 GetTotalFrames(const Stem& stem);
+
+    // Asserts if any OTHER loaded stem sharing playingHandle's wavFilePath
+    // is currently audible - see StartLooping's own call site comment.
+    void AssertNoOtherStemForSameFilePlaying(StemHandle playingHandle) const;
 
     IXAudio2* m_xaudio2 = nullptr;
     IXAudio2MasteringVoice* m_masteringVoice = nullptr;
