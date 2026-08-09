@@ -117,6 +117,28 @@ struct BreakAdvance
 BreakAdvance ComputeBreakAdvance(double originSeconds, double loopStartSeconds, double stemDuration,
                                   int requestedLoopCount, double tFallSeconds);
 
+// Extends advanceSeconds forward by whole stemDuration-sized steps (never
+// fewer than one, if it extends at all) until it clears referenceSeconds by
+// at least tFallSeconds - the shared "not enough preview lead time yet"
+// rule behind two different callers: GameSession::RegisterHit applies this
+// reactively, the instant a Learn section's own IsPassing() flips true
+// (referenceSeconds == "now"), to fix up an already-scheduled advance that
+// turned out too close to the section's own start; BlockSchedule::Build's
+// Learn case applies the equivalent closed-form computation up front for a
+// hypothetical perfect player (referenceSeconds == that player's own
+// lockInSeconds). Both need the exact same guarantee - the section's own
+// advance must never land less than tFallSeconds after passing was
+// reached, so the next section's own preview gets its full on-screen lead
+// time - just computed at different moments against different reference
+// instants. No-op (returns advanceSeconds unchanged) if stemDuration <= 0 -
+// nothing to extend by. Not the same rule as ComputeLearnAdvanceSeconds's
+// own internal extension (referenceSeconds there is always
+// sectionStartSeconds, never lockInSeconds/"now") - a different guarantee,
+// not a duplicate of this one, even though the shape of the loop is
+// identical.
+double ExtendAdvanceForFallLeadTime(double advanceSeconds, double referenceSeconds, double stemDuration,
+                                     double tFallSeconds);
+
 // Computes the phase (seconds, 0..cycleDurationSeconds) a clip's audio
 // should seek to when starting to play at absolute elapsed time nowSeconds,
 // measured relative to originSeconds (this clip's own persistent phase

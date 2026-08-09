@@ -150,12 +150,18 @@ Schedule Build(const ChartSong& song, const std::unordered_map<const ChartClip*,
         }
     };
 
-    // Mirrors AudioEngine::StopAll() + GameSession's ClipInstance::isPlaying
-    // fill - called on entering a Break or Reset section (both call StopAll()
-    // before anything else, silencing every currently-open voice
-    // regardless of how it started). Only touches voiceIndex/
-    // loopStartSeconds, same as GameSession's own equivalent loop leaves
-    // originEstablished/originSeconds alone - never clipStates.clear().
+    // Closes every currently-open voice window - called on entering a Break
+    // or Reset section (both silence everything before anything else in the
+    // real game too, via AudioEngine::StopAll()/StopAllExcept() +
+    // GameSession's own ClipInstance::isPlaying fill). This is a pure data
+    // reset with no audio-hardware concept of its own, so unlike the real
+    // game's Break case (which uses StopAllExcept to avoid a redundant
+    // double-stop on its own about-to-restart clip - see GameSession.cpp's
+    // own comment) there's nothing here to exclude: every VoiceWindow this
+    // section's own clip had open closes and reopens at the same instant
+    // either way, which is schedule-equivalent regardless. Only touches
+    // voiceIndex/loopStartSeconds, same as GameSession's own equivalent loop
+    // leaves originEstablished/originSeconds alone - never clipStates.clear().
     auto stopAllVoices = [&](double atSeconds)
     {
         for (VoiceWindow& window : schedule.voices)
@@ -237,10 +243,10 @@ Schedule Build(const ChartSong& song, const std::unordered_map<const ChartClip*,
 
             case SectionKind::Break:
             {
-                // Mirrors GameSession::BeginSection's Break case calling
-                // m_audioEngine.StopAll() before starting its own clip -
-                // that silences any currently-playing voice, background or
-                // locked-in Learn alike, not just a Reset's own gate.
+                // Closes every open voice window before starting its own
+                // clip - see stopAllVoices' own comment for why this is a
+                // plain unconditional close here even though the real
+                // game's equivalent (StopAllExcept) skips its own clip.
                 stopAllVoices(t);
 
                 double stemDuration = stemDurationsByClip.at(clip);
@@ -367,21 +373,18 @@ Schedule Build(const ChartSong& song, const std::unordered_map<const ChartClip*,
                 // before the hand-off - locking in with less than that left
                 // gives the player little or no real on-screen warning
                 // about what's coming, even though this section technically
-                // passed (mirrors GameSession::Update's own
-                // m_currentSectionLockInAtSeconds check). Both conditions
-                // collapse into the same single floor below: the boundary
-                // must land at least tFallSeconds after lockInSeconds,
-                // extended by whole loops (mirroring ExtendPendingAdvance's
-                // own one-loop-at-a-time granularity) until that holds -
-                // which is a strict superset of the "doesn't fit in the
-                // natural window at all" case this replaced, not a
-                // separate check.
-                if (stemDuration > 0.0 && entry.endSeconds - lockInSeconds < tFallSeconds)
-                {
-                    double loopsNeeded =
-                        std::ceil((lockInSeconds + tFallSeconds - entry.endSeconds) / stemDuration - 1e-9);
-                    entry.endSeconds += std::max(1.0, loopsNeeded) * stemDuration;
-                }
+                // passed. Both conditions collapse into the same single
+                // floor below: the boundary must land at least tFallSeconds
+                // after lockInSeconds - which is a strict superset of the
+                // "doesn't fit in the natural window at all" case this
+                // replaced, not a separate check. Shared with
+                // GameSession::RegisterHit's own equivalent, reactive
+                // fix-up (there, referenceSeconds is "now" instead of this
+                // perfect player's own lockInSeconds) via
+                // ChartTiming::ExtendAdvanceForFallLeadTime - see its own
+                // doc comment.
+                entry.endSeconds =
+                    ChartTiming::ExtendAdvanceForFallLeadTime(entry.endSeconds, lockInSeconds, stemDuration, tFallSeconds);
 
                 // Informational only - the total number of passes spanning
                 // [audioStartSeconds, endSeconds), each exactly stemDuration

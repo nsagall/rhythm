@@ -45,6 +45,50 @@
 // every click across a degenerate block to audioStartSeconds instead of
 // tracking the click - so this asserts the shared function returns exactly
 // 0.0 for it instead, regardless of audioStartSeconds/originSeconds.
+//
+// Also checks ChartTiming::ExtendAdvanceForFallLeadTime directly against
+// reference reimplementations of the two independent algorithms it
+// replaced - GameSession::RegisterHit's old reactive while-loop
+// (referenceOldReactive below) and BlockSchedule::Build's old closed-form
+// ceil() formula (referenceOldClosedForm below) - across a range of
+// inputs. Both old algorithms were confirmed mathematically equivalent by
+// inspection before this refactor, so this doesn't catch a behavior
+// change (there wasn't one) - it's a permanent regression guard: if the
+// shared function is ever edited in a way that stops matching what either
+// caller actually needs, this fails immediately instead of only surfacing
+// as a timing glitch someone has to notice by ear or by eye.
+
+namespace
+{
+
+// GameSession::RegisterHit's old algorithm, verbatim, before it was
+// replaced by a call to ChartTiming::ExtendAdvanceForFallLeadTime.
+double ReferenceOldReactive(double advanceSeconds, double referenceSeconds, double stemDuration, double tFallSeconds)
+{
+    if (stemDuration > 0.0)
+    {
+        while (advanceSeconds - referenceSeconds < tFallSeconds)
+        {
+            advanceSeconds += stemDuration;
+        }
+    }
+    return advanceSeconds;
+}
+
+// BlockSchedule::Build's old algorithm, verbatim, before it was replaced
+// by the same call.
+double ReferenceOldClosedForm(double advanceSeconds, double referenceSeconds, double stemDuration,
+                               double tFallSeconds)
+{
+    if (stemDuration > 0.0 && advanceSeconds - referenceSeconds < tFallSeconds)
+    {
+        double loopsNeeded = std::ceil((referenceSeconds + tFallSeconds - advanceSeconds) / stemDuration - 1e-9);
+        advanceSeconds += std::max(1.0, loopsNeeded) * stemDuration;
+    }
+    return advanceSeconds;
+}
+
+} // namespace
 
 int main(int argc, char** argv)
 {
@@ -194,6 +238,40 @@ int main(int argc, char** argv)
                c.origin, c.loopSeconds, result, ok ? "" : "  ** FAIL - expected exactly 0.0 **");
     }
 
+    // ExtendAdvanceForFallLeadTime must match both of the independent
+    // algorithms it replaced, across a range of inputs - no-op already
+    // satisfied, exactly-one-extension, multiple-extensions, and
+    // stemDuration<=0 (no-op regardless of gap).
+    bool extendAdvanceOk = true;
+    struct ExtendCase
+    {
+        double advanceSeconds;
+        double referenceSeconds;
+        double stemDuration;
+        double tFallSeconds;
+    };
+    const ExtendCase kExtendCases[] = {
+        {100.0, 90.0, 4.0, 5.0},   // gap already 10 >= tFallSeconds=5: no-op
+        {100.0, 98.0, 4.0, 5.0},   // gap 2 < 5: needs exactly one 4s extension -> 104
+        {100.0, 99.9, 1.0, 10.0},  // gap 0.1 < 10: needs several 1s extensions
+        {100.0, 50.0, 0.0, 5.0},   // stemDuration<=0: no-op regardless of gap
+        {100.0, 96.0, 4.0, 4.0},   // gap exactly equals tFallSeconds: no-op (not < )
+    };
+    for (const ExtendCase& c : kExtendCases)
+    {
+        double shared =
+            ChartTiming::ExtendAdvanceForFallLeadTime(c.advanceSeconds, c.referenceSeconds, c.stemDuration, c.tFallSeconds);
+        double oldReactive = ReferenceOldReactive(c.advanceSeconds, c.referenceSeconds, c.stemDuration, c.tFallSeconds);
+        double oldClosedForm =
+            ReferenceOldClosedForm(c.advanceSeconds, c.referenceSeconds, c.stemDuration, c.tFallSeconds);
+        bool ok = std::abs(shared - oldReactive) < 1e-9 && std::abs(shared - oldClosedForm) < 1e-9;
+        extendAdvanceOk &= ok;
+        printf("ExtendAdvanceForFallLeadTime(advance=%.3f, ref=%.3f, stem=%.3f, tFall=%.3f) = %.6f "
+               "(oldReactive=%.6f, oldClosedForm=%.6f)%s\n",
+               c.advanceSeconds, c.referenceSeconds, c.stemDuration, c.tFallSeconds, shared, oldReactive,
+               oldClosedForm, ok ? "" : "  ** FAIL - disagrees with an old algorithm **");
+    }
+
     printf("\n=== RESULTS ===\n");
     printf("bass [learn] Entry: sectionStartSeconds=%.6f originSeconds=%.6f\n", learnSectionStartSeconds,
            learnOriginSeconds);
@@ -203,6 +281,8 @@ int main(int argc, char** argv)
            reanchored ? "" : "  ** FAIL **");
     printf("ComputeFirstPassSeconds handles loopSeconds<=0 correctly on every case: %s%s\n",
            firstPassSecondsOk ? "true" : "false", firstPassSecondsOk ? "" : "  ** FAIL **");
+    printf("ExtendAdvanceForFallLeadTime agrees with both old algorithms on every case: %s%s\n",
+           extendAdvanceOk ? "true" : "false", extendAdvanceOk ? "" : "  ** FAIL **");
 
-    return (reanchored && earlierOriginWasStale && firstPassSecondsOk) ? 0 : 1;
+    return (reanchored && earlierOriginWasStale && firstPassSecondsOk && extendAdvanceOk) ? 0 : 1;
 }

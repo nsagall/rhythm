@@ -1336,12 +1336,11 @@ void GameSession::RegisterHit(int lane, bool wasPrecise)
         double secondsPerBeat = 60.0 / m_song.bpm;
         double tFallSeconds = kNoteFallBeats * secondsPerBeat;
         double stemDuration = m_audioEngine.GetStemDurationSeconds(m_stemHandles[section.clipIndex]);
-        if (stemDuration > 0.0)
+        double extendedAdvance = ChartTiming::ExtendAdvanceForFallLeadTime(m_currentInstance.PendingAdvanceAtSeconds(),
+                                                                            now, stemDuration, tFallSeconds);
+        if (extendedAdvance != m_currentInstance.PendingAdvanceAtSeconds())
         {
-            while (m_currentInstance.PendingAdvanceAtSeconds() - now < tFallSeconds)
-            {
-                m_currentInstance.ExtendPendingAdvance(stemDuration);
-            }
+            m_currentInstance.SchedulePendingAdvance(extendedAdvance);
         }
     }
     StartClipLoop(section.clipIndex, clip.initVolume);

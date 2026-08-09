@@ -195,6 +195,20 @@ BreakAdvance ComputeBreakAdvance(double originSeconds, double loopStartSeconds, 
     return result;
 }
 
+double ExtendAdvanceForFallLeadTime(double advanceSeconds, double referenceSeconds, double stemDuration,
+                                     double tFallSeconds)
+{
+    if (stemDuration <= 0.0)
+    {
+        return advanceSeconds;
+    }
+    while (advanceSeconds - referenceSeconds < tFallSeconds)
+    {
+        advanceSeconds += stemDuration;
+    }
+    return advanceSeconds;
+}
+
 double ComputeClipPhaseSeconds(double originSeconds, double nowSeconds, const ChartClip& clip, double stemDuration,
                                 double bpm)
 {
