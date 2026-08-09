@@ -5,20 +5,13 @@
 #include <cwctype>
 #include <fstream>
 
+#include "ChartTextUtil.h"
+
 namespace
 {
 
-// Trims leading/trailing whitespace from a wide string.
-std::wstring Trim(const std::wstring& s)
-{
-    size_t start = s.find_first_not_of(L" \t\r\n");
-    if (start == std::wstring::npos)
-    {
-        return L"";
-    }
-    size_t end = s.find_last_not_of(L" \t\r\n");
-    return s.substr(start, end - start + 1);
-}
+using ChartTextUtil::GetDirectory;
+using ChartTextUtil::Trim;
 
 // Splits "key = value" into trimmed key/value strings. Returns false if there's no '='.
 bool SplitKeyValue(const std::wstring& line, std::wstring& outKey, std::wstring& outValue)
@@ -42,17 +35,6 @@ bool ParseSectionHeader(const std::wstring& line, std::wstring& outSection)
     }
     outSection = Trim(line.substr(1, line.size() - 2));
     return true;
-}
-
-// Returns the directory portion of a path (everything up to and including the last slash), or "" if none.
-std::wstring GetDirectory(const std::wstring& path)
-{
-    size_t slash = path.find_last_of(L"\\/");
-    if (slash == std::wstring::npos)
-    {
-        return L"";
-    }
-    return path.substr(0, slash + 1);
 }
 
 // Parses a whole number, rejecting anything that isn't purely digits (with

@@ -6,33 +6,13 @@
 #include <fstream>
 #include <utility>
 
+#include "ChartTextUtil.h"
+
 namespace
 {
 
-// Mirrors ChartFile.cpp's own Trim/GetDirectory helpers (those are
-// file-local to ChartFile.cpp, not exported) so this file's raw-text
-// time-signature-denominator scan and path derivation stay byte-for-byte
-// consistent with how the real parser behaves.
-std::wstring Trim(const std::wstring& s)
-{
-    size_t start = s.find_first_not_of(L" \t\r\n");
-    if (start == std::wstring::npos)
-    {
-        return L"";
-    }
-    size_t end = s.find_last_not_of(L" \t\r\n");
-    return s.substr(start, end - start + 1);
-}
-
-std::wstring GetDirectory(const std::wstring& path)
-{
-    size_t slash = path.find_last_of(L"\\/");
-    if (slash == std::wstring::npos)
-    {
-        return L"";
-    }
-    return path.substr(0, slash + 1);
-}
+using ChartTextUtil::GetDirectory;
+using ChartTextUtil::Trim;
 
 // Formats a double as plain fixed-point text with trailing zeros (and a
 // bare trailing '.') trimmed off, e.g. 120.0 -> "120", 87.5 -> "87.5" -
