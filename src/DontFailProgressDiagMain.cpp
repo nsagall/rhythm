@@ -4,6 +4,7 @@
 #include <cstdio>
 
 #include "AudioEngine.h"
+#include "DiagTestHelpers.h"
 #include "GameSession.h"
 #include "NoteLaneModel.h"
 
@@ -28,28 +29,10 @@
 namespace
 {
 
-double DurationForLaneNote(const ChartClip& clip, double originBeat, int lane, double absoluteStartBeat)
-{
-    double span = clip.spanBeats;
-    double phase = std::fmod(absoluteStartBeat - originBeat, span);
-    if (phase < 0.0)
-    {
-        phase += span;
-    }
-    for (const LaneNote& note : clip.laneNotes[lane])
-    {
-        if (std::abs(note.startBeat - phase) < 1e-6)
-        {
-            return note.durationBeats;
-        }
-    }
-    return 0.0;
-}
-
 // Mirrors RepeatUntilLockedInDiagMain's own "play perfectly" press/release
-// bookkeeping - kept local rather than shared, same reasoning as that file's
-// own DurationForLaneNote (a few lines of pure timing arithmetic, not worth
-// a shared header for two diagnostics).
+// bookkeeping - kept local rather than shared, since it's specific to this
+// file's own section-driving loop (unlike DiagTestHelpers.h's
+// DurationForLaneNote, used identically across many diagnostics).
 struct PerfectPlayer
 {
     bool heldByUs[kLaneCount] = {};
@@ -101,7 +84,8 @@ struct PerfectPlayer
             JudgementResult result = session.ConsumeLastJudgement();
             if (result == JudgementResult::None || result == JudgementResult::Hit)
             {
-                double durationBeats = DurationForLaneNote(*clip, session.CurrentClipOriginBeat(), lane, nextBeat);
+                double durationBeats =
+                    DiagTestHelpers::DurationForLaneNote(*clip, lane, session.CurrentClipOriginBeat(), nextBeat);
                 releaseAtSeconds[lane] = (nextBeat + durationBeats) * secondsPerBeat;
                 heldByUs[lane] = true;
             }

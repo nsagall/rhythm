@@ -5,6 +5,7 @@
 
 #include "AudioEngine.h"
 #include "ChartTiming.h"
+#include "DiagTestHelpers.h"
 #include "GameSession.h"
 
 // Standalone diagnostic (not part of the normal build): drives GameSession
@@ -45,24 +46,6 @@ const wchar_t* JudgementName(JudgementResult result)
         case JudgementResult::None: return L"None";
     }
     return L"?";
-}
-
-double DurationForLaneNote(const ChartClip& clip, int lane, double originBeat, double absoluteStartBeat)
-{
-    double span = clip.spanBeats;
-    double phase = std::fmod(absoluteStartBeat - originBeat, span);
-    if (phase < 0.0)
-    {
-        phase += span;
-    }
-    for (const LaneNote& note : clip.laneNotes[lane])
-    {
-        if (std::abs(note.startBeat - phase) < 1e-6)
-        {
-            return note.durationBeats;
-        }
-    }
-    return 0.0;
 }
 
 } // namespace
@@ -218,7 +201,8 @@ int main(int argc, char** argv)
                 }
                 if (result == JudgementResult::None || result == JudgementResult::Hit)
                 {
-                    double durationBeats = DurationForLaneNote(clip, lane, session.CurrentClipOriginBeat(), nextBeat);
+                    double durationBeats =
+                        DiagTestHelpers::DurationForLaneNote(clip, lane, session.CurrentClipOriginBeat(), nextBeat);
                     releaseAtSeconds[lane] = (nextBeat + durationBeats) * secondsPerBeat;
                     heldByUs[lane] = true;
                 }

@@ -4,6 +4,7 @@
 #include <cstdio>
 
 #include "AudioEngine.h"
+#include "DiagTestHelpers.h"
 #include "GameSession.h"
 
 // Standalone diagnostic (not part of the normal build): verifies "a learn
@@ -21,23 +22,6 @@
 namespace
 {
 
-double DurationForLaneNote(const ChartClip& clip, double originBeat, int lane, double absoluteStartBeat)
-{
-    double span = clip.spanBeats;
-    double phase = std::fmod(absoluteStartBeat - originBeat, span);
-    if (phase < 0.0)
-    {
-        phase += span;
-    }
-    for (const LaneNote& note : clip.laneNotes[lane])
-    {
-        if (std::abs(note.startBeat - phase) < 1e-6)
-        {
-            return note.durationBeats;
-        }
-    }
-    return 0.0;
-}
 
 } // namespace
 
@@ -181,7 +165,7 @@ int main(int argc, char** argv)
                 if (result == JudgementResult::None || result == JudgementResult::Hit)
                 {
                     double durationBeats =
-                        DurationForLaneNote(clip, session.CurrentClipOriginBeat(), lane, nextBeat);
+                        DiagTestHelpers::DurationForLaneNote(clip, lane, session.CurrentClipOriginBeat(), nextBeat);
                     releaseAtSeconds[lane] = (nextBeat + durationBeats) * secondsPerBeat;
                     heldByUs[lane] = true;
                 }

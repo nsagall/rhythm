@@ -4,6 +4,7 @@
 #include <cstdio>
 
 #include "AudioEngine.h"
+#include "DiagTestHelpers.h"
 #include "GameSession.h"
 
 // Standalone diagnostic (not part of the normal build): verifies easy
@@ -49,29 +50,6 @@ const wchar_t* JudgementName(JudgementResult result)
         case JudgementResult::None: return L"None";
     }
     return L"?";
-}
-
-// Mirrors GameSession's private FindLaneNote: looks up the note whose
-// phase-within-span matches absoluteStartBeat, so this diagnostic can plan
-// a release without access to GameSession's internals. Kept even though
-// easy mode ignores release timing - a real key-up is still simulated, to
-// keep the auto-player's shape close to IntroOutroDiagMain's.
-double DurationForLaneNote(const ChartClip& clip, int lane, double absoluteStartBeat)
-{
-    double span = clip.spanBeats;
-    double phase = std::fmod(absoluteStartBeat, span);
-    if (phase < 0.0)
-    {
-        phase += span;
-    }
-    for (const LaneNote& note : clip.laneNotes[lane])
-    {
-        if (std::abs(note.startBeat - phase) < 1e-6)
-        {
-            return note.durationBeats;
-        }
-    }
-    return 0.0;
 }
 
 } // namespace
@@ -241,7 +219,8 @@ int main(int argc, char** argv)
                 }
                 if (result == JudgementResult::None || result == JudgementResult::Hit)
                 {
-                    double durationBeats = DurationForLaneNote(clip, lane, nextBeat);
+                    double durationBeats =
+                        DiagTestHelpers::DurationForLaneNote(clip, lane, session.CurrentClipOriginBeat(), nextBeat);
                     releaseAtSeconds[lane] = (nextBeat + durationBeats) * secondsPerBeat;
                     heldByUs[lane] = true;
                 }

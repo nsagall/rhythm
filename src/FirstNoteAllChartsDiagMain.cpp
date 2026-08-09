@@ -6,6 +6,7 @@
 #include <unordered_set>
 
 #include "AudioEngine.h"
+#include "DiagTestHelpers.h"
 #include "GameSession.h"
 
 // Standalone diagnostic (not part of the normal build): broad version of
@@ -23,24 +24,6 @@
 
 namespace
 {
-
-double DurationForLaneNote(const ChartClip& clip, double originBeat, double absoluteStartBeat, int lane)
-{
-    double span = clip.spanBeats;
-    double phase = std::fmod(absoluteStartBeat - originBeat, span);
-    if (phase < 0.0)
-    {
-        phase += span;
-    }
-    for (const LaneNote& note : clip.laneNotes[lane])
-    {
-        if (std::abs(note.startBeat - phase) < 1e-6)
-        {
-            return note.durationBeats;
-        }
-    }
-    return 0.0;
-}
 
 // Returns true (and prints per-lane detail) if every lane's first expected
 // note in this freshly-begun Learn section is its own pattern's note 0.
@@ -209,7 +192,7 @@ bool RunChart(const std::wstring& chartPath)
 
                 lastPressedBeat[lane] = nextBeat;
                 double originBeat = session.CurrentClipOriginBeat();
-                double durationBeats = DurationForLaneNote(clip, originBeat, nextBeat, lane);
+                double durationBeats = DiagTestHelpers::DurationForLaneNote(clip, lane, originBeat, nextBeat);
 
                 session.OnPress(lane);
                 JudgementResult result = session.ConsumeLastJudgement();
