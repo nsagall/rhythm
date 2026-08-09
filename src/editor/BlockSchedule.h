@@ -188,4 +188,19 @@ struct SeekResult
 // Pure function of schedule and elapsedSeconds - see the namespace comment.
 SeekResult Seek(const Schedule& schedule, double elapsedSeconds);
 
+// Pass 1's real duration for a Learn/Break entry, given where its clip's
+// audio actually started (audioStartSeconds), its persistent phase
+// reference (originSeconds), and one full loop's duration (loopSeconds) -
+// see SeekResult::loopIndex's own comment for why pass 1 is a special case.
+// Returns 0.0 (never loopSeconds itself, never dividing/fmod-ing by it)
+// when loopSeconds <= 0 - "nothing to compute," matching Seek()'s own
+// top-level treatment of that case (loopIndex == 0, phaseSeconds == 0.0).
+// Shared by Seek() and BlockTimeline::LayoutXToSeconds's own ruler-click
+// mapping, which needs the identical formula to convert a click position
+// back into elapsed seconds - previously two independent copies of the
+// same 6 lines, one of which (LayoutXToSeconds) lacked this function's
+// loopSeconds<=0 guard and would collapse every click across a degenerate
+// block's width to audioStartSeconds instead of tracking the click.
+double ComputeFirstPassSeconds(double audioStartSeconds, double originSeconds, double loopSeconds);
+
 } // namespace BlockSchedule

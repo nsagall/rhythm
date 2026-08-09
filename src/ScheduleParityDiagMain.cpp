@@ -34,6 +34,17 @@
 // originSeconds == sectionStartSeconds, i.e. it re-anchored fresh instead of
 // carrying forward the earlier background entry's own (long stale)
 // originSeconds.
+//
+// Also checks BlockSchedule::ComputeFirstPassSeconds directly - the
+// function that replaced two independent, hand-duplicated copies of the
+// same "pass 1 is shorter than a full loop" formula (Seek()'s own inline
+// version, and BlockTimeline::LayoutXToSeconds's copy, which lacked
+// Seek()'s implicit loopSeconds>0 guard). loopSeconds<=0 is exactly the
+// case the old LayoutXToSeconds copy got wrong - it would let
+// firstPassSeconds end up <= 0 and use it as a multiplier, collapsing
+// every click across a degenerate block to audioStartSeconds instead of
+// tracking the click - so this asserts the shared function returns exactly
+// 0.0 for it instead, regardless of audioStartSeconds/originSeconds.
 
 int main(int argc, char** argv)
 {
@@ -158,6 +169,31 @@ int main(int argc, char** argv)
     bool reanchored = std::abs(learnSectionStartSeconds - learnOriginSeconds) < 1e-6;
     bool earlierOriginWasStale = std::abs(earliestBassOriginSeconds - learnOriginSeconds) > 1.0;
 
+    // ComputeFirstPassSeconds(loopSeconds<=0) must always return exactly
+    // 0.0, regardless of audioStartSeconds/originSeconds - this is what the
+    // old, duplicated BlockTimeline::LayoutXToSeconds copy got wrong (see
+    // this file's own top comment).
+    bool firstPassSecondsOk = true;
+    struct FirstPassCase
+    {
+        double audioStart;
+        double origin;
+        double loopSeconds;
+    };
+    const FirstPassCase kDegenerateCases[] = {
+        {0.0, 0.0, 0.0},
+        {123.456, 78.9, 0.0},
+        {50.0, 50.0, -1.0},
+    };
+    for (const FirstPassCase& c : kDegenerateCases)
+    {
+        double result = BlockSchedule::ComputeFirstPassSeconds(c.audioStart, c.origin, c.loopSeconds);
+        bool ok = result == 0.0;
+        firstPassSecondsOk &= ok;
+        printf("ComputeFirstPassSeconds(audioStart=%.3f, origin=%.3f, loopSeconds=%.3f) = %.6f%s\n", c.audioStart,
+               c.origin, c.loopSeconds, result, ok ? "" : "  ** FAIL - expected exactly 0.0 **");
+    }
+
     printf("\n=== RESULTS ===\n");
     printf("bass [learn] Entry: sectionStartSeconds=%.6f originSeconds=%.6f\n", learnSectionStartSeconds,
            learnOriginSeconds);
@@ -165,6 +201,8 @@ int main(int argc, char** argv)
            earlierOriginWasStale ? "true" : "false", earliestBassOriginSeconds, learnOriginSeconds);
     printf("bass [learn] re-anchored instead of reusing that stale origin: %s%s\n", reanchored ? "true" : "false",
            reanchored ? "" : "  ** FAIL **");
+    printf("ComputeFirstPassSeconds handles loopSeconds<=0 correctly on every case: %s%s\n",
+           firstPassSecondsOk ? "true" : "false", firstPassSecondsOk ? "" : "  ** FAIL **");
 
-    return (reanchored && earlierOriginWasStale) ? 0 : 1;
+    return (reanchored && earlierOriginWasStale && firstPassSecondsOk) ? 0 : 1;
 }

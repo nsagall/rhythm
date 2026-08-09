@@ -422,6 +422,22 @@ Schedule Build(const ChartSong& song, const std::unordered_map<const ChartClip*,
     return schedule;
 }
 
+// See the header's own comment.
+double ComputeFirstPassSeconds(double audioStartSeconds, double originSeconds, double loopSeconds)
+{
+    if (loopSeconds <= 0.0)
+    {
+        return 0.0;
+    }
+    double startPhase = std::fmod(audioStartSeconds - originSeconds, loopSeconds);
+    double firstPassSeconds = loopSeconds - startPhase;
+    if (firstPassSeconds <= 1e-9)
+    {
+        firstPassSeconds = loopSeconds;
+    }
+    return firstPassSeconds;
+}
+
 SeekResult Seek(const Schedule& schedule, double elapsedSeconds)
 {
     SeekResult result;
@@ -467,12 +483,8 @@ SeekResult Seek(const Schedule& schedule, double elapsedSeconds)
             // after a loop boundary (see BlockSchedule.cpp's own diagnostic
             // history for a confirmed real repro: a single-pass block that
             // only ever reached ~73% of its own width).
-            double startPhase = std::fmod(entry.audioStartSeconds - entry.originSeconds, entry.loopSeconds);
-            double firstPassSeconds = entry.loopSeconds - startPhase;
-            if (firstPassSeconds <= 1e-9)
-            {
-                firstPassSeconds = entry.loopSeconds;
-            }
+            double firstPassSeconds =
+                ComputeFirstPassSeconds(entry.audioStartSeconds, entry.originSeconds, entry.loopSeconds);
 
             double loopOffset = elapsedSeconds - entry.audioStartSeconds;
             if (loopOffset < firstPassSeconds)

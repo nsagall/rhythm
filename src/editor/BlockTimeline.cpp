@@ -627,24 +627,17 @@ double BlockTimeline::LayoutXToSeconds(float x, const std::vector<BlockLayout>& 
             // BlockPlayer::SeekToBlockStart makes by always landing on
             // sectionStartSeconds rather than a specific pass. Pass 1's own
             // real duration - not necessarily the full loopSeconds the
-            // block's width represents - mirrors Seek()'s own pass-1
-            // handling exactly (see SeekResult::loopIndex's comment): the
-            // real, phase-seeked audio voice can wrap sooner than a full
-            // loopSeconds after audioStartSeconds, so the right edge of the
-            // block (frac == 1.0) must map to that real, possibly-earlier
-            // wrap instant, not to audioStartSeconds + loopSeconds - or a
-            // click near the right edge could land past this entry's own
-            // end, in whatever the next entry happens to be.
-            double loopSeconds = block.entry->loopSeconds;
-            double startPhase =
-                loopSeconds > 0.0
-                    ? std::fmod(block.entry->audioStartSeconds - block.entry->originSeconds, loopSeconds)
-                    : 0.0;
-            double firstPassSeconds = loopSeconds - startPhase;
-            if (firstPassSeconds <= 1e-9)
-            {
-                firstPassSeconds = loopSeconds;
-            }
+            // block's width represents - calls BlockSchedule::
+            // ComputeFirstPassSeconds, the same function Seek() itself uses
+            // (see SeekResult::loopIndex's comment): the real, phase-seeked
+            // audio voice can wrap sooner than a full loopSeconds after
+            // audioStartSeconds, so the right edge of the block (frac ==
+            // 1.0) must map to that real, possibly-earlier wrap instant, not
+            // to audioStartSeconds + loopSeconds - or a click near the right
+            // edge could land past this entry's own end, in whatever the
+            // next entry happens to be.
+            double firstPassSeconds = BlockSchedule::ComputeFirstPassSeconds(
+                block.entry->audioStartSeconds, block.entry->originSeconds, block.entry->loopSeconds);
             return block.entry->audioStartSeconds + static_cast<double>(frac) * firstPassSeconds;
         }
 
