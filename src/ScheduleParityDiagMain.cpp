@@ -238,6 +238,28 @@ int main(int argc, char** argv)
                c.origin, c.loopSeconds, result, ok ? "" : "  ** FAIL - expected exactly 0.0 **");
     }
 
+    // FirstEntrySecondsAtOrAfter(0) must land on the schedule's very first
+    // entry (section 0 in "A Real Good Time" is itself a [background]
+    // section with no Entry of its own, so this exercises the actual
+    // fallback-search path, not just a trivial in-range hit), and a
+    // trailing, past-every-entry index must land on schedule.totalSeconds.
+    bool firstEntryOk = true;
+    if (!schedule.entries.empty())
+    {
+        double atZero = BlockSchedule::FirstEntrySecondsAtOrAfter(schedule, 0);
+        bool atZeroOk = std::abs(atZero - schedule.entries.front().sectionStartSeconds) < 1e-9;
+        firstEntryOk &= atZeroOk;
+        printf("FirstEntrySecondsAtOrAfter(0) = %.6f (first entry's own sectionStartSeconds=%.6f)%s\n", atZero,
+               schedule.entries.front().sectionStartSeconds, atZeroOk ? "" : "  ** FAIL **");
+
+        int pastEveryEntry = schedule.entries.back().sectionIndex + 1000;
+        double atTrailing = BlockSchedule::FirstEntrySecondsAtOrAfter(schedule, pastEveryEntry);
+        bool atTrailingOk = atTrailing == schedule.totalSeconds;
+        firstEntryOk &= atTrailingOk;
+        printf("FirstEntrySecondsAtOrAfter(%d, past every entry) = %.6f (schedule.totalSeconds=%.6f)%s\n",
+               pastEveryEntry, atTrailing, schedule.totalSeconds, atTrailingOk ? "" : "  ** FAIL **");
+    }
+
     // ExtendAdvanceForFallLeadTime must match both of the independent
     // algorithms it replaced, across a range of inputs - no-op already
     // satisfied, exactly-one-extension, multiple-extensions, and
@@ -283,6 +305,8 @@ int main(int argc, char** argv)
            firstPassSecondsOk ? "true" : "false", firstPassSecondsOk ? "" : "  ** FAIL **");
     printf("ExtendAdvanceForFallLeadTime agrees with both old algorithms on every case: %s%s\n",
            extendAdvanceOk ? "true" : "false", extendAdvanceOk ? "" : "  ** FAIL **");
+    printf("FirstEntrySecondsAtOrAfter handles the fallback-search and trailing cases correctly: %s%s\n",
+           firstEntryOk ? "true" : "false", firstEntryOk ? "" : "  ** FAIL **");
 
-    return (reanchored && earlierOriginWasStale && firstPassSecondsOk && extendAdvanceOk) ? 0 : 1;
+    return (reanchored && earlierOriginWasStale && firstPassSecondsOk && extendAdvanceOk && firstEntryOk) ? 0 : 1;
 }

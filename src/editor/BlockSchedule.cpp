@@ -522,4 +522,17 @@ SeekResult Seek(const Schedule& schedule, double elapsedSeconds)
     return result;
 }
 
+// See the header's own comment.
+double FirstEntrySecondsAtOrAfter(const Schedule& schedule, int sectionIndex)
+{
+    for (const Entry& entry : schedule.entries)
+    {
+        if (entry.sectionIndex >= sectionIndex)
+        {
+            return entry.sectionStartSeconds;
+        }
+    }
+    return schedule.totalSeconds;
+}
+
 } // namespace BlockSchedule

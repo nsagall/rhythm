@@ -643,16 +643,9 @@ double BlockTimeline::LayoutXToSeconds(float x, const std::vector<BlockLayout>& 
 
         // Background/Reset marker - zero real duration, so there's no
         // "position within it" to map; land on wherever this block's own
-        // instant actually falls, exactly mirroring
-        // BlockPlayer::SeekToBlockStart's own fallback for the same case.
-        for (const BlockSchedule::Entry& entry : schedule.entries)
-        {
-            if (entry.sectionIndex >= static_cast<int>(i))
-            {
-                return entry.sectionStartSeconds;
-            }
-        }
-        return schedule.totalSeconds;
+        // instant actually falls, shared with BlockPlayer::SeekToBlockStart's
+        // own fallback for the same case.
+        return BlockSchedule::FirstEntrySecondsAtOrAfter(schedule, static_cast<int>(i));
     }
 
     return schedule.totalSeconds;

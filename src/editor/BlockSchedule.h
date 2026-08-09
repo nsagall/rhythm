@@ -203,4 +203,14 @@ SeekResult Seek(const Schedule& schedule, double elapsedSeconds);
 // block's width to audioStartSeconds instead of tracking the click.
 double ComputeFirstPassSeconds(double audioStartSeconds, double originSeconds, double loopSeconds);
 
+// The instant a zero-duration (Background/Reset) section actually falls
+// at - such a section never gets its own Entry (see Entry's own comment),
+// so there's nothing to look up directly for it - the first Learn/Break
+// entry at or after sectionIndex (entries are always in section order), or
+// schedule.totalSeconds if sectionIndex is trailing past every entry.
+// Shared by BlockPlayer::SeekToBlockStart's own fallback and
+// BlockTimeline::LayoutXToSeconds's Background/Reset marker-click
+// fallback - both need the same answer for the same block.
+double FirstEntrySecondsAtOrAfter(const Schedule& schedule, int sectionIndex);
+
 } // namespace BlockSchedule

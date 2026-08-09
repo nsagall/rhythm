@@ -212,20 +212,9 @@ void BlockPlayer::SeekToBlockStart(int sectionIndex)
     // (both are zero-duration, see BlockSchedule::Entry's own comment).
     // Fall back to wherever the next real (Learn/Break) entry actually
     // begins, which is exactly this section's own conceptual instant in
-    // time - entries are already sorted by sectionIndex, so the first one
-    // at or past sectionIndex is the answer.
-    for (const BlockSchedule::Entry& entry : m_schedule.entries)
-    {
-        if (entry.sectionIndex >= sectionIndex)
-        {
-            SeekToSeconds(entry.sectionStartSeconds);
-            return;
-        }
-    }
-
-    // Nothing at or after this section either - it's trailing, past the
-    // last real entry - land at the very end.
-    SeekToSeconds(m_schedule.totalSeconds);
+    // time - shared with BlockTimeline::LayoutXToSeconds's own identical
+    // fallback for a marker click on the same kind of block.
+    SeekToSeconds(BlockSchedule::FirstEntrySecondsAtOrAfter(m_schedule, sectionIndex));
 }
 
 void BlockPlayer::SetLoopWholeSong(bool loop)
