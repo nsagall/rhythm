@@ -12,7 +12,6 @@ namespace
 {
 
 using ChartTextUtil::GetDirectory;
-using ChartTextUtil::Trim;
 
 // Formats a double as plain fixed-point text with trailing zeros (and a
 // bare trailing '.') trimmed off, e.g. 120.0 -> "120", 87.5 -> "87.5" -
@@ -35,49 +34,6 @@ std::wstring FormatDouble(double value)
         s.erase(lastNonZero + 1);
     }
     return s;
-}
-
-// Best-effort, independent single-pass scan for a `time_signature = N/D`
-// line's denominator - ChartFile::Load validates but discards it, so
-// there's no other way to recover it for a faithful reload. Returns 4
-// (the common default) if the file can't be opened or no such line parses.
-int ReadRawTimeSignatureDenominator(const std::wstring& chartFilePath)
-{
-    std::wifstream file(chartFilePath.c_str());
-    if (!file)
-    {
-        return 4;
-    }
-
-    std::wstring line;
-    while (std::getline(file, line))
-    {
-        line = Trim(line);
-        size_t eq = line.find(L'=');
-        if (eq == std::wstring::npos)
-        {
-            continue;
-        }
-        if (Trim(line.substr(0, eq)) != L"time_signature")
-        {
-            continue;
-        }
-        std::wstring value = Trim(line.substr(eq + 1));
-        size_t slash = value.find(L'/');
-        if (slash == std::wstring::npos)
-        {
-            continue;
-        }
-        try
-        {
-            return std::stoi(Trim(value.substr(slash + 1)));
-        }
-        catch (...)
-        {
-            continue;
-        }
-    }
-    return 4;
 }
 
 const wchar_t* SectionKindHeader(SectionKind kind)
@@ -115,7 +71,7 @@ bool LoadIntoDocument(const std::wstring& chartFilePath, EditorDocument& outDoc,
     doc.title = song.title;
     doc.bpm = song.bpm;
     doc.beatsPerBar = song.beatsPerBar;
-    doc.timeSignatureDenominator = ReadRawTimeSignatureDenominator(chartFilePath);
+    doc.timeSignatureDenominator = song.timeSignatureDenominator;
     doc.startToleranceMs = song.startToleranceMs;
     doc.releaseToleranceMs = song.releaseToleranceMs;
 

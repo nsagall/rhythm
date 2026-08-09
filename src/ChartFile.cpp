@@ -115,10 +115,11 @@ bool TryParseStrictDouble(const std::wstring& text, double& outValue)
     }
 }
 
-// Parses "N/D" into beatsPerBar (N), accepting only a musically sensible
-// time signature: a single '/', a positive whole-number numerator, and a
-// denominator that's an actual note value (1, 2, 4, 8, 16, or 32).
-bool ParseTimeSignature(const std::wstring& value, int& outBeatsPerBar)
+// Parses "N/D" into beatsPerBar (N) and outDenominator (D), accepting only
+// a musically sensible time signature: a single '/', a positive
+// whole-number numerator, and a denominator that's an actual note value
+// (1, 2, 4, 8, 16, or 32).
+bool ParseTimeSignature(const std::wstring& value, int& outBeatsPerBar, int& outDenominator)
 {
     size_t slash = value.find(L'/');
     if (slash == std::wstring::npos || value.find(L'/', slash + 1) != std::wstring::npos)
@@ -147,6 +148,7 @@ bool ParseTimeSignature(const std::wstring& value, int& outBeatsPerBar)
     }
 
     outBeatsPerBar = numerator;
+    outDenominator = denominator;
     return true;
 }
 
@@ -470,7 +472,8 @@ bool ChartFile::Load(const std::wstring& chartFilePath, ChartSong& outSong, std:
             else if (key == L"time_signature")
             {
                 int beatsPerBar;
-                if (!ParseTimeSignature(value, beatsPerBar))
+                int denominator;
+                if (!ParseTimeSignature(value, beatsPerBar, denominator))
                 {
                     outErrors.push_back(L"Line " + std::to_wstring(lineNumber) + L": time_signature '" + value +
                                          L"' is not a valid time signature (expected e.g. '4/4')");
@@ -478,6 +481,7 @@ bool ChartFile::Load(const std::wstring& chartFilePath, ChartSong& outSong, std:
                 else
                 {
                     song.beatsPerBar = beatsPerBar;
+                    song.timeSignatureDenominator = denominator;
                 }
             }
             else if (key == L"start_tolerance_ms" || key == L"release_tolerance_ms")

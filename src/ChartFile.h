@@ -95,7 +95,13 @@ struct ChartSong
 {
     std::wstring title;
     double bpm = 120.0;
-    int beatsPerBar = 4;
+    int beatsPerBar = 4; // the time_signature field's numerator (N in "N/D")
+    // The time_signature field's denominator (D in "N/D") - retained purely
+    // so a caller that needs to redisplay/re-save the chart's own declared
+    // time signature (see EditorChartIO) doesn't need to re-derive or
+    // re-parse it separately; nothing in judging/timing ever reads this,
+    // only beatsPerBar does.
+    int timeSignatureDenominator = 4;
     // Default press/release judging tolerance for any clip that doesn't
     // declare its own start_tolerance_ms/release_tolerance_ms override.
     double startToleranceMs = 120.0;
