@@ -136,6 +136,7 @@ SectionInstance::MissResult SectionInstance::RegisterMiss(bool easyMode)
 
     if (m_passing && m_mode == LearnMode::Pass)
     {
+        result.wasNoOpAlreadyPassing = true;
         return result;
     }
 

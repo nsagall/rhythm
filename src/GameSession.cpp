@@ -1445,18 +1445,6 @@ void GameSession::RegisterMiss(int lane)
     const ChartSection& section = m_song.sections[m_currentInstance.SectionIndex()];
     const ChartClip& clip = m_song.clips[section.clipIndex];
 
-    // Captured before m_currentInstance.RegisterMiss() runs (it can't
-    // change IsPassing() in this case - see below - but reads cleaner
-    // captured up front): mirrors SectionInstance::RegisterMiss's own
-    // early-return for this exact condition. Once a Pass-mode section is
-    // already passing, a miss is a genuine no-op there, not just for the
-    // streak/clip-stopping consequences below - so it shouldn't produce a
-    // judgement event either. The note lane instead flashes its own
-    // synthetic "hit" for these notes (see NoteLaneModel::BuildScene's
-    // passLineHitLanes) - a real Miss event here would just fight it for
-    // the same lane's flash.
-    bool alreadyPassingInPassMode = m_currentInstance.IsPassing() && clip.learnMode == LearnMode::Pass;
-
     SectionInstance::MissResult result = m_currentInstance.RegisterMiss(m_easyMode);
     if (result.shouldStopClip)
     {
@@ -1467,7 +1455,14 @@ void GameSession::RegisterMiss(int lane)
         m_audioEngine.SetVolume(m_stemHandles[section.clipIndex], static_cast<float>(clip.initVolume));
     }
 
-    if (alreadyPassingInPassMode)
+    // Once a Pass-mode section is already passing, a miss is a genuine
+    // no-op there (see SectionInstance::RegisterMiss's own early-return),
+    // not just for the streak/clip-stopping consequences above - so it
+    // shouldn't produce a judgement event either. The note lane instead
+    // flashes its own synthetic "hit" for these notes (see
+    // NoteLaneModel::BuildScene's passLineHitLanes) - a real Miss event
+    // here would just fight it for the same lane's flash.
+    if (result.wasNoOpAlreadyPassing)
     {
         return;
     }

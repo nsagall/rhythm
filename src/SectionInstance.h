@@ -139,6 +139,14 @@ public:
         // preview). Never true in Pass mode, where a miss while passing is
         // already a no-op below.
         bool justEnteredFailState = false;
+        // True only for RegisterMiss's own early-return case: already
+        // passing in Pass mode, where a miss is a complete no-op (streak/
+        // consecutive-miss counters untouched too, unlike every other
+        // case). Lets a caller that needs to know this (e.g. to skip
+        // emitting a judgement event or wiping score for a no-op miss)
+        // read it back here instead of recomputing the same condition by
+        // hand just before calling RegisterMiss.
+        bool wasNoOpAlreadyPassing = false;
     };
 
     // Records a miss: a no-op once passing, in Pass mode (frozen forever,
