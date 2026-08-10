@@ -24,19 +24,14 @@ public:
     // differently (see NoteLaneGdiRenderer's yellow-vs-green ripple).
     virtual void OnJudgement(JudgementResult result, int lane, bool passing, bool precise) = 0;
 
-    // Notifies the renderer that amount points just moved permanently into
-    // the banked total (GameSession::ScoreEvent::Kind::Banked) - a "happy"
-    // flourish as they land, distinct from the ordinary Hit ripple that
-    // already fired for whichever press/release actually earned them.
-    // amount is always > 0 - see GameSession::ConsumeScoreEvents.
-    virtual void OnScoreBanked(int amount) = 0;
-
-    // Notifies the renderer that amount not-yet-banked points just vanished
-    // to a real miss (GameSession::ScoreEvent::Kind::Lost) - a "sad"
-    // flourish as they disappear, distinct from the ordinary Miss ripple
-    // that already fired for the same press/release/timeout. amount is
-    // always > 0 - see GameSession::ConsumeScoreEvents.
-    virtual void OnScoreLost(int amount) = 0;
+    // Notifies the renderer that one of the three HUD values (total score/
+    // bank/multiplier - see GameSession::HudField/ConsumeHudChangeEvents)
+    // just changed to newValue, so it can grow that value's own on-screen
+    // text 2x for about a second. newValue lets the renderer tell a Bank
+    // field's ordinary per-hit increase apart from the moment it drops to
+    // exactly 0 (a streak trip wiping it), for its own "streak broken"
+    // flourish - see GameSession::HudChangeEvent's own comment.
+    virtual void OnHudValueChanged(GameSession::HudField field, int newValue) = 0;
 
     // Draws one frame of scene into laneRect on hdc - plus, beside it,
     // hitsMeterRect (see NoteLaneScene::showHitsMeter/hitsMeterProgress) -

@@ -136,6 +136,19 @@ void AudioEngine::Shutdown()
     }
     m_stems.clear();
 
+    for (Sfx& sfx : m_sfx)
+    {
+        for (IXAudio2SourceVoice*& voice : sfx.voices)
+        {
+            if (voice)
+            {
+                voice->DestroyVoice();
+                voice = nullptr;
+            }
+        }
+    }
+    m_sfx.clear();
+
     if (m_masteringVoice)
     {
         m_masteringVoice->DestroyVoice();
@@ -441,6 +454,71 @@ double AudioEngine::GetStemDurationSeconds(StemHandle stemHandle) const
     }
 
     return static_cast<double>(GetTotalFrames(stem)) / stem.format.nSamplesPerSec;
+}
+
+// Loads a short PCM WAV file for one-shot playback - see the header's own comment.
+SfxHandle AudioEngine::LoadSfx(const std::wstring& wavFilePath)
+{
+    if (!m_xaudio2)
+    {
+        return SfxHandle{};
+    }
+
+    Sfx sfx;
+    if (!LoadWavFile(wavFilePath, sfx.pcmData, sfx.format))
+    {
+        return SfxHandle{};
+    }
+
+    for (int i = 0; i < kSfxVoicePoolSize; ++i)
+    {
+        if (FAILED(m_xaudio2->CreateSourceVoice(&sfx.voices[i], &sfx.format)) || !sfx.voices[i])
+        {
+            for (int created = 0; created < i; ++created)
+            {
+                sfx.voices[created]->DestroyVoice();
+            }
+            return SfxHandle{};
+        }
+    }
+
+    m_sfx.push_back(std::move(sfx));
+    return SfxHandle{static_cast<int>(m_sfx.size()) - 1};
+}
+
+// Plays sfx once, fire-and-forget, from the next voice in its pool - see the header's own comment.
+void AudioEngine::PlaySfx(SfxHandle sfx)
+{
+    if (!sfx.IsValid() || sfx.value >= static_cast<int>(m_sfx.size()))
+    {
+        return;
+    }
+
+    Sfx& entry = m_sfx[sfx.value];
+    if (entry.pcmData.empty() || entry.format.nBlockAlign == 0)
+    {
+        return;
+    }
+
+    IXAudio2SourceVoice* voice = entry.voices[entry.nextVoice];
+    entry.nextVoice = (entry.nextVoice + 1) % kSfxVoicePoolSize;
+    if (!voice)
+    {
+        return;
+    }
+
+    voice->Stop();
+    voice->FlushSourceBuffers();
+
+    XAUDIO2_BUFFER buffer{};
+    buffer.AudioBytes = static_cast<UINT32>(entry.pcmData.size());
+    buffer.pAudioData = entry.pcmData.data();
+    buffer.Flags = XAUDIO2_END_OF_STREAM;
+    buffer.LoopCount = 0;
+
+    voice->SetVolume(1.0f);
+    voice->SubmitSourceBuffer(&buffer);
+    voice->Start();
 }
 
 // Returns a stem's total length in sample frames, derived from its PCM data size.

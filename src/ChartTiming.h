@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vector>
+
 #include "ChartFile.h"
 #include "LaneConfig.h"
 
@@ -165,5 +167,22 @@ double ExtendAdvanceForFallLeadTime(double advanceSeconds, double referenceSecon
 // there, since nothing else is ever compared against it.
 double ComputeClipPhaseSeconds(double originSeconds, double nowSeconds, const ChartClip& clip, double stemDuration,
                                 double bpm);
+
+// Returns every onset (this lane's own pattern, tiled every spanBeats from
+// originBeat - same convention as NextOnsetAfter/FreshOnsetForAllLanes)
+// whose absolute beat falls in (afterBeatExclusive, uptoBeatInclusive],
+// ascending. Unlike NextOnsetAfter (single next onset) this can return
+// several - or none - depending on how far apart the two bounds are; used by
+// GameSession::Update() to auto-score every note a Pass-mode section's
+// locked-in clip has crossed since the last tick, without re-deriving
+// NextOnsetAfter's own bar-tiling math a second time. Deliberately onsets
+// only, not spans/overlap - NoteLaneModel's own NotesInRange is a separate,
+// rendering-only function with a different contract and a different
+// consumer; this one stays in ChartTiming so GameSession can reach it
+// without depending on NoteLaneModel.h (which itself depends on
+// GameSession.h - see NoteLaneModel.h's own include). Returns an empty
+// vector if notes is empty, spanBeats <= 0, or the range is empty/inverted.
+std::vector<double> OnsetsInRange(double originBeat, double afterBeatExclusive, double uptoBeatInclusive,
+                                   const std::vector<LaneNote>& notes, double spanBeats);
 
 } // namespace ChartTiming

@@ -333,7 +333,6 @@ void NoteLaneModel::ResetIfSongChanged(const GameSession& session)
     // justHandedOff edge (nowX && !m_prevX never firing once for it).
     m_prevPassing = false;
     m_prevNotesHandoff = false;
-    m_prevNowBeat = 0.0;
 }
 
 NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
@@ -359,12 +358,14 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
     {
         scene.hitsMeterIsDontFail = clip->learnMode == LearnMode::DontFail;
     }
-    // DontFail's meter is visible for the whole section, passing or not -
-    // it tracks progress through the clip itself (see the hitsMeterProgress
-    // block below), which is meaningful either way. Pass's meter still
-    // hides the instant it locks in - passing is a one-way latch there, so
-    // there's nothing left for it to track.
-    scene.showHitsMeter = isLearnSection && (scene.hitsMeterIsDontFail || !nowPassing);
+    // Visible for the whole learn section in both modes now - DontFail
+    // always was (its own hitsMeterProgress tracks the clip itself, which
+    // stays meaningful either way); Pass's meter used to hide the instant it
+    // locked in, but now holds at its full 1.0 value instead (see
+    // hitsMeterProgress/hitsMeterPulsing) for the rest of the section's run,
+    // only actually disappearing once the section itself changes.
+    scene.showHitsMeter = isLearnSection;
+    scene.hitsMeterPulsing = nowPassing && !scene.hitsMeterIsDontFail;
 
     // DontFail mode only: detect a passing->failing reversal for the SAME
     // clip already tracked as m_currentClip last frame (ruling out an
@@ -587,34 +588,12 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
         }
     }
 
-    // Pass mode only: once locked in, this clip's own notes explode
-    // immediately (see the nextClipShowing override above) and never draw
-    // again for the rest of this section's run - but its audio keeps
-    // looping in the background regardless (to build up the arrangement),
-    // so give the judge line a synthetic "hit" flash every time one of its
-    // pattern's onsets crosses it anyway, so the beat still visibly lands
-    // on something instead of the judge line going dark for however long
-    // the section has left. Compared against last frame's own nowBeat
-    // (m_prevNowBeat) so each onset only fires once, right as it crosses;
-    // skipped if nowBeat has gone backwards since last frame (a fresh
-    // Start()/Stop() - nothing to catch up on, and a descending range
-    // would confuse NotesInRange's own bar-tiling math).
-    if (isLearnSection && nowPassing && clip->learnMode == LearnMode::Pass && scene.nowBeat >= m_prevNowBeat)
-    {
-        double passOriginBeat = session.CurrentClipOriginBeat();
-        for (int lane = 0; lane < kLaneCount; ++lane)
-        {
-            for (const SceneNote& crossed : NotesInRange(lane, passOriginBeat, m_prevNowBeat, scene.nowBeat + 1e-6,
-                                                           clip->laneNotes[lane], clip->spanBeats))
-            {
-                if (crossed.startBeat > m_prevNowBeat + 1e-9 && crossed.startBeat <= scene.nowBeat + 1e-9)
-                {
-                    scene.passLineHitLanes.push_back(lane);
-                }
-            }
-        }
-    }
-    m_prevNowBeat = scene.nowBeat;
+    // Pass mode's post-lock-in judge-line flash used to be synthesized here
+    // (see the now-removed passLineHitLanes) - it's superseded by
+    // GameSession::Update()'s own real auto-accrual, which pushes genuine
+    // JudgementEvents for the exact same onsets through the normal
+    // ConsumeJudgementEvents pipeline, so there's nothing left for this
+    // model to fake.
 
     m_prevPassing = nowPassing;
     m_prevNotesHandoff = nextClipShowing;
@@ -711,10 +690,19 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
     {
         scene.scoreText = L"Score " + FormatScoreWithCommas(session.CurrentScore());
 
-        int pendingScore = session.PendingScore();
-        if (pendingScore > 0)
+        int bank = session.CurrentBank();
+        if (bank > 0)
         {
-            scene.pendingScoreText = L"+" + FormatScoreWithCommas(pendingScore);
+            scene.bankText = L"+" + FormatScoreWithCommas(bank);
+        }
+
+        // x1 (the base, un-boosted rate) is deliberately not shown - the
+        // multiplier readout only appears once it's actually saying
+        // something worth celebrating.
+        int multiplier = session.CurrentMultiplier();
+        if (multiplier > 1)
+        {
+            scene.multiplierText = L"x" + std::to_wstring(multiplier);
         }
     }
 

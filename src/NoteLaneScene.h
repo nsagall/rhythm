@@ -166,23 +166,15 @@ struct NoteLaneScene
     // check first, exactly as it would for NoteLaneScene::notes.
     std::vector<SceneNote> explodingNotes;
 
-    // Lanes where a Pass-mode section's own notes - already exploded away
-    // and never drawn again for the rest of its run (see
-    // NoteLaneModel::BuildScene's nextClipShowing override) - crossed the
-    // judge line this frame anyway, since that clip's audio keeps looping
-    // in the background regardless. A renderer should flash a "hit" at the
-    // judge line for each of these exactly as it would for a real judged
-    // Hit, even though there's no on-screen note to point at. May repeat
-    // the same lane more than once if more than one note crossed within a
-    // single frame - reacting to each is idempotent (just re-triggers the
-    // same flash), so no de-duplication is needed here.
-    std::vector<int> passLineHitLanes;
-
     // Progress for the "hits meter" panel beside the playfield, clamped to
     // [0,1] - only meaningful while showHitsMeter is true, and means two
     // different things depending on hitsMeterIsDontFail:
     //   - Pass mode: streak divided by the clip's own hitsRequired - "how
-    //     close to locking in."
+    //     close to locking in," reaching exactly 1.0 the instant it locks in
+    //     and staying pinned there (SectionInstance freezes the streak at
+    //     its passing value) for the rest of the section's run - see
+    //     hitsMeterPulsing for what a renderer should do with a bar held at
+    //     1.0 this way.
     //   - DontFail mode: how far nowBeat has gotten through the clip's
     //     current loop repetition (its own spanBeats) - "how far through
     //     the clip," live while passing, frozen the instant a miss drops
@@ -194,48 +186,64 @@ struct NoteLaneScene
     //     NoteLaneModel::BuildScene's own comment for the implementation.
     double hitsMeterProgress = 0.0;
 
-    // True whenever the hits meter should be visible. Pass mode: there's a
-    // current learn section and it isn't passing right now - false for the
-    // entire rest of the section's run once it first locks in (that
-    // section's own justLockedIn frame is the moment the meter should pop
-    // instead of just vanishing - see INoteLaneRenderer::Draw), since
-    // passing is a one-way latch there and there's nothing left to track.
-    // DontFail mode: true for the entire learn section, passing or not -
-    // its own hitsMeterProgress (above) is meaningful either way, unlike
-    // Pass's streak-based number, which has nothing to report once locked
-    // in.
+    // True whenever the hits meter should be visible - true for the entire
+    // duration of a current learn section, in both modes, including for the
+    // rest of a Pass section's run after it locks in (see hitsMeterProgress/
+    // hitsMeterPulsing) - only false once the section itself changes to
+    // something else (a different section becomes current, or there's no
+    // current learn section at all), at which point a freshly-begun Pass
+    // section's own hitsMeterProgress starts back at 0, same as it always
+    // did before locking in.
     bool showHitsMeter = false;
+
+    // Pass mode only: true once a Pass-mode section has locked in and stays
+    // true for the rest of that section's run (mirrors IsPassing() -
+    // hitsMeterProgress is pinned at exactly 1.0 for this whole stretch, per
+    // its own comment). A renderer should hold the bar full and pulse it
+    // gently to the beat instead of treating it as just another progress
+    // value - see NoteLaneGdiRenderer::DrawHitsMeter. Always false for
+    // DontFail (its own hitsMeterProgress reaching 1.0 at a loop boundary
+    // doesn't mean the same thing - see hitsMeterIsDontFail).
+    bool hitsMeterPulsing = false;
 
     // Which of two lock-in treatments the hits meter should get on a
     // justLockedIn frame: true for a DontFail clip (a small celebratory
     // spark burst - see NoteLaneRenderer's AppendHitsMeterExplosion - since
     // the meter stays visible and can lock in many times over one section's
-    // run, so this is a "nice job" flourish, not a disappearance), false for
-    // a Pass clip (a confetti burst right as the meter itself vanishes for
-    // good - passing is a one-way latch there, so this is its one and only
-    // lock-in for the whole section). Meaningless (and left at its default)
-    // whenever showHitsMeter is false and no lock-in is happening this
-    // frame - a renderer only ever needs to read it on a justLockedIn
+    // run, so this is a "nice job" flourish among many), false for a Pass
+    // clip (a confetti burst as the meter settles into its held-full,
+    // pulsing state - passing is a one-way latch there, so this is its one
+    // and only lock-in for the whole section). Meaningless (and left at its
+    // default) whenever showHitsMeter is false and no lock-in is happening
+    // this frame - a renderer only ever needs to read it on a justLockedIn
     // frame, but it's populated any time there's a current learn clip so
     // it's always correct by the time that frame arrives.
     bool hitsMeterIsDontFail = false;
 
     std::wstring statusText;
 
-    // The running score, already formatted for display (e.g. L"Score 12,340") -
-    // see GameSession::CurrentScore(). Drawn by INoteLaneRenderer::DrawHud
-    // alongside statusText, right-aligned in the same HUD panel so it's
-    // visible for the whole song, not just after it ends.
+    // The permanent running total, already formatted for display (e.g.
+    // L"Score 12,340") - see GameSession::CurrentScore(). Drawn by
+    // INoteLaneRenderer::DrawHud alongside statusText, right-aligned in the
+    // same HUD panel so it's visible for the whole song, not just after it
+    // ends.
     std::wstring scoreText;
 
-    // The current section's not-yet-banked score, already formatted (e.g.
-    // L"+120") - empty whenever GameSession::PendingScore() is 0, so a
+    // The whole-song bank's not-yet-paid-out amount, already formatted (e.g.
+    // L"+120") - see GameSession::CurrentBank(). Empty whenever it's 0, so a
     // renderer can treat "nothing to show" and "text to draw" as the same
     // check. Meant to read as points visibly building up, separate from the
-    // permanent total in scoreText - see GameSession::ScoreEvent/
-    // ConsumeScoreEvents for the moment those points move (or vanish) as a
-    // renderer-owned animation instead.
-    std::wstring pendingScoreText;
+    // permanent total in scoreText - see GameSession::HudField/
+    // ConsumeHudChangeEvents for the moment this (or scoreText/
+    // multiplierText) actually changes, for a renderer-owned grow-pulse
+    // animation.
+    std::wstring bankText;
+
+    // The multiplier CurrentBank() will pay out at right now (e.g. L"x2") -
+    // see GameSession::CurrentMultiplier(). Empty at the base x1 rate (same
+    // "nothing to show" contract as bankText) - only shown once there's
+    // actually a boost to celebrate.
+    std::wstring multiplierText;
 
     // Which ChartClip (by its .chart name, not displayName) each of NoteLaneModel's own
     // m_previousClip/m_currentClip/m_nextClip currently identifies, or

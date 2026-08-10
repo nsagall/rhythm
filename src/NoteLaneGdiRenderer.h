@@ -18,8 +18,7 @@ public:
     ~NoteLaneGdiRenderer() override;
 
     void OnJudgement(JudgementResult result, int lane, bool passing, bool precise) override;
-    void OnScoreBanked(int amount) override;
-    void OnScoreLost(int amount) override;
+    void OnHudValueChanged(GameSession::HudField field, int newValue) override;
     void Draw(HDC hdc, RECT laneRect, RECT hitsMeterRect, const NoteLaneScene& scene) override;
     void ToggleDebugOverlay() override;
 
@@ -66,10 +65,10 @@ private:
         double fadeRate = 1.0;
     };
 
-    // A "+N"/"-N" popup spawned by OnScoreBanked/OnScoreLost: floats upward
-    // and fades for a Banked event (happy - points landing permanently in
-    // the total), or sinks and shakes while fading for a Lost event (sad - a
-    // streak breaking wiped them away). Like JudgementRipple, carries no
+    // A "-N" popup spawned by OnHudValueChanged the instant the bank drops
+    // to exactly 0 from a nonzero value (a streak trip wiping it - see
+    // GameSession::HudChangeEvent): sinks and shakes while fading, reading
+    // as the points crumbling away. Like JudgementRipple, carries no
     // baked-in pixel position - DrawScorePopups resolves it against the HUD
     // panel rect at draw time, purely as a function of elapsed time since
     // startMs, so it stays correct across a window resize mid-animation.
@@ -77,7 +76,6 @@ private:
     {
         DWORD startMs = 0;
         int amount = 0;
-        bool positive = true;
     };
 
     // Alpha-blends a filled shape over whatever is already at its bounds,
@@ -159,7 +157,17 @@ private:
     void DrawExplosion(HDC hdc, double elapsedSeconds, double t);
     void DrawRipples(HDC hdc, RECT laneRect);
     void DrawHud(HDC hdc, RECT laneRect, const std::wstring& statusText, const std::wstring& scoreText,
-                 const std::wstring& pendingScoreText);
+                 const std::wstring& bankText, const std::wstring& multiplierText);
+    // Returns baseFont unchanged once growUntilMs has passed; otherwise
+    // (re)creates growFontSlot at a point size interpolated from
+    // basePointSize*2 (right when OnHudValueChanged triggered it) down to
+    // basePointSize (as growUntilMs is reached) and returns that instead -
+    // see kHudGrowDurationMs. growFontSlot is a specific field's own cached
+    // temporary font (m_totalGrowFont/m_bankGrowFont/m_multiplierGrowFont),
+    // recreated on essentially every animating frame since the interpolated
+    // size is different each time - cheap, and only happens during each
+    // value's own brief ~1s window.
+    HFONT FontForGrowPulse(HFONT baseFont, int basePointSize, DWORD growUntilMs, HFONT& growFontSlot, DWORD now);
     // Drops any expired entry from m_scorePopups, then draws whatever's
     // left anchored under panelRect (the HUD panel's own rect) - called
     // once per Draw() from DrawHud, after the panel/text themselves, so
@@ -169,9 +177,10 @@ private:
     void DrawDebugOverlay(HDC hdc, RECT laneRect, const NoteLaneScene& scene);
     // The "hits meter" panel beside the playfield - a bottom-anchored fill
     // tracking scene.hitsMeterProgress. Draws nothing while
-    // scene.showHitsMeter is false (see AppendHitsMeterExplosion for what
-    // plays instead, right as it flips false on a lock-in).
-    void DrawHitsMeter(HDC hdc, RECT hitsMeterRect, const NoteLaneScene& scene);
+    // scene.showHitsMeter is false. beatPulse (see Draw()'s own comment) -
+    // brightens the fill gently on the beat while scene.hitsMeterPulsing is
+    // true (a locked-in Pass section holding its bar full).
+    void DrawHitsMeter(HDC hdc, RECT hitsMeterRect, const NoteLaneScene& scene, double beatPulse);
 
     // Spawns a lock-in confetti burst across laneRect's width.
     void SpawnConfetti(RECT laneRect);
@@ -216,15 +225,29 @@ private:
     DWORD m_flashUntilMs[kLaneCount] = {};
     std::vector<JudgementRipple> m_ripples;
 
-    // See OnScoreBanked/OnScoreLost/DrawScorePopups. m_scoreFlashUntilMs/
-    // m_scoreFlashPositive drive the HUD panel's own brief glow, separate
-    // from any individual popup's lifetime (a rapid string of small events
-    // should keep re-triggering just the glow, not stack popups on top of
-    // each other indefinitely - though m_scorePopups itself has no cap,
-    // since in practice at most one or two are ever alive at once).
+    // See OnHudValueChanged/DrawScorePopups. m_scoreFlashUntilMs drives the
+    // HUD panel's own brief red glow on a bank wipe, separate from the
+    // popup's own lifetime - m_scorePopups itself has no cap, since in
+    // practice at most one is ever alive at once (a wipe is comparatively
+    // rare, unlike the old per-hit Banked event this replaces).
     std::vector<ScorePopup> m_scorePopups;
     DWORD m_scoreFlashUntilMs = 0;
-    bool m_scoreFlashPositive = true;
+
+    // Bank's own value as of the last OnHudValueChanged(Bank, ...) call -
+    // lets that call tell an ordinary increase apart from the drop-to-0 that
+    // means a streak trip just wiped it (see ScorePopup's own comment),
+    // without GameSession needing to describe *why* the value changed.
+    int m_lastBankValue = 0;
+
+    // See FontForGrowPulse. One growUntilMs deadline + one cached temporary
+    // font per HUD value (GameSession::HudField), set by OnHudValueChanged
+    // and consumed by DrawHud.
+    DWORD m_totalGrowUntilMs = 0;
+    DWORD m_bankGrowUntilMs = 0;
+    DWORD m_multiplierGrowUntilMs = 0;
+    HFONT m_totalGrowFont = nullptr;
+    HFONT m_bankGrowFont = nullptr;
+    HFONT m_multiplierGrowFont = nullptr;
 
     DWORD m_confettiStartMs = 0;
     std::vector<ConfettiPiece> m_confetti;

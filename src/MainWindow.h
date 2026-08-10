@@ -176,15 +176,17 @@ private:
     // any judgement it produced (see DrainJudgements).
     void RegisterRelease(int lane);
 
-    // Forwards every judgement and score event GameSession has recorded
-    // since the last call (see GameSession::ConsumeJudgementEvents/
-    // ConsumeScoreEvents) to the note lane - the one place a judgement's or
-    // a points-banking/losing event's visual feedback happens, regardless of
-    // whether it came from an explicit key press/release (RegisterPress/
-    // RegisterRelease) or from one of Update()'s own timeout/banking checks
-    // (a note never pressed, held past its release window, or a section
-    // finishing) - all get exactly the same treatment as their explicit
-    // counterparts.
+    // Forwards every judgement, HUD-value-change, and SFX-cue event
+    // GameSession has recorded since the last call (see
+    // GameSession::ConsumeJudgementEvents/ConsumeHudChangeEvents/
+    // ConsumeSfxEvents) - judgements and HUD changes go to the note lane for
+    // their own visual feedback, SFX cues play directly through
+    // m_audioEngine (GameSession itself knows nothing about AudioEngine's
+    // one-shot API - see AudioEngine::PlaySfx). Regardless of whether an
+    // event came from an explicit key press/release (RegisterPress/
+    // RegisterRelease) or from one of Update()'s own timeout/banking/
+    // auto-accrual checks, all get exactly the same treatment as their
+    // explicit counterparts.
     void DrainJudgements();
 
     // Polls m_gamepadInput and routes every button transition it reports to
@@ -238,28 +240,12 @@ private:
     // Called from OnTimer the instant a song naturally finishes (GamePhase::
     // Complete). Reads GameSession::CurrentScore(), sets m_lastResultText so
     // the song list shows it, and - if the score earns a spot in the just-
-    // finished song's high score list (Settings::HighScoreQualifies) - starts
-    // the initials-entry flow (m_enteringInitials) instead of leaving the
-    // score to save itself. Not called for QuitToSongSelect's own early-out
-    // (Esc mid-song never scores).
+    // finished song's high score list (Settings::HighScoreQualifies) -
+    // records it immediately (Settings::InsertHighScore/SaveHighScores,
+    // under a fixed placeholder - no initials prompt) and refreshes
+    // m_songBestScores for the song that was just played. Not called for
+    // QuitToSongSelect's own early-out (Esc mid-song never scores).
     void HandleSongComplete();
-
-    // Routes one physical key-down to the initials-entry flow instead of
-    // normal song-select input, while m_enteringInitials is true: A-Z
-    // appends a letter (up to 3), Backspace removes the last one, Enter
-    // commits via FinalizeInitialsEntry once exactly 3 are entered, Escape
-    // discards the entry via CancelInitialsEntry (the score itself is still
-    // shown via m_lastResultText either way - only the high score list entry
-    // is skipped).
-    void HandleInitialsKeyDown(int vkCode);
-
-    // Inserts m_initialsBuffer/m_pendingScore into m_pendingHighScores
-    // (Settings::InsertHighScore), saves it, refreshes m_songBestScores for
-    // the song that was just played, and ends the initials-entry flow.
-    void FinalizeInitialsEntry();
-
-    // Ends the initials-entry flow without saving anything.
-    void CancelInitialsEntry();
 
     // Paints the song list: a title row per scraped song (showing that
     // song's best score, if any), the currently-highlighted one picked out
@@ -269,10 +255,6 @@ private:
     // Draws m_lastResultText (the score from the song that was just played,
     // if any) in the gap between the header row and the song list.
     void DrawLastResult(HDC hdc);
-
-    // Draws the "enter your initials" prompt over the song list while
-    // m_enteringInitials is true - see HandleInitialsKeyDown.
-    void DrawInitialsPrompt(HDC hdc);
 
     // Returns the song list row index under the given client-space point, or -1 if none.
     int HitTestSongList(POINT pt) const;
@@ -302,7 +284,7 @@ private:
     // Parallel to m_songs: each song's current best score (from its high
     // score list's own #1 entry), or -1 if it has none yet. Rebuilt whenever
     // m_songs itself is (see RescanSongs) rather than re-read from Settings
-    // every paint, and patched in place by FinalizeInitialsEntry when a run
+    // every paint, and patched in place by HandleSongComplete when a run
     // just set a new best - DrawSongList reads this, never Settings directly.
     std::vector<int> m_songBestScores;
 
@@ -316,19 +298,6 @@ private:
     // Set by HandleSongComplete once a song finishes, shown by
     // DrawLastResult until the next song is chosen (ChooseSong clears it).
     std::wstring m_lastResultText;
-
-    // The initials-entry flow, live from the instant HandleSongComplete
-    // finds a qualifying score until FinalizeInitialsEntry/
-    // CancelInitialsEntry ends it - see HandleInitialsKeyDown/
-    // DrawInitialsPrompt. Blocks normal song-list input while true, same as
-    // m_captureLane != -1 does for input-assignment capture.
-    bool m_enteringInitials = false;
-    std::wstring m_initialsBuffer; // 0-3 letters, built up by HandleInitialsKeyDown
-    int m_pendingScore = 0;
-    std::wstring m_pendingSongKey;
-    std::wstring m_pendingSongTitle;
-    std::vector<HighScoreEntry> m_pendingHighScores; // the qualifying list, not yet including this run
-    int m_pendingSongIndex = -1;                     // index into m_songs/m_songBestScores to patch on save
 
     // Easy Mode toggle: loaded from Settings on startup, flipped by
     // clicking m_easyModeToggleRect (SongSelect screen only), saved back to
@@ -349,6 +318,16 @@ private:
     std::wstring m_captureRejectionMessage;
 
     AudioEngine m_audioEngine;
+
+    // One-shot HUD cues (see GameSession::SfxCue/DrainJudgements) - loaded
+    // once in OnCreate from Content/sfx/, alongside every chart's own
+    // stems. Invalid (IsValid() false) if the corresponding .wav wasn't
+    // found or wasn't a supported format - AudioEngine::PlaySfx on an
+    // invalid handle is already a harmless no-op, so a missing sound file
+    // just means silence for that cue rather than a crash or a load error.
+    SfxHandle m_sfxMultiplierUp;
+    SfxHandle m_sfxStreakBroken;
+
     GameSession m_gameSession;
     NoteLane m_noteLane;
     Settings m_settings;

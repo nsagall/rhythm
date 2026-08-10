@@ -62,14 +62,9 @@ void NoteLane::ShowJudgement(JudgementResult result, int lane, bool passing, boo
     m_renderer->OnJudgement(result, lane, passing, precise);
 }
 
-void NoteLane::ShowScoreBanked(int amount)
+void NoteLane::ShowHudValueChanged(GameSession::HudField field, int newValue)
 {
-    m_renderer->OnScoreBanked(amount);
-}
-
-void NoteLane::ShowScoreLost(int amount)
-{
-    m_renderer->OnScoreLost(amount);
+    m_renderer->OnHudValueChanged(field, newValue);
 }
 
 void NoteLane::Draw(HDC hdc, const GameSession& session)

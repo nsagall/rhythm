@@ -9,6 +9,7 @@
 #include "LaneConfig.h"
 #include "SectionInstance.h"
 #include "SongClock.h"
+#include "StreakTracker.h"
 
 // The stages a game session moves through, in order, once per song.
 enum class GamePhase
@@ -207,22 +208,43 @@ public:
 
     int CurrentStreak() const;
 
-    // Returns the running score for the song currently loaded/playing: the
-    // sum of every section's already-banked score plus whatever the current
-    // section has built up so far but hasn't banked yet - see
-    // RegisterHit/RegisterMiss/Update()'s own banking comment. Reset to 0 by
-    // every Start(); persists across a Pause()/Resume() and past
+    // Returns the permanent running total for the song currently loaded/
+    // playing: the sum of every section's own bank payout (bank amount at
+    // the instant it finished, times whatever the streak multiplier was
+    // then - see Update()'s own banking comment). Does NOT include
+    // CurrentBank()'s own not-yet-paid-out amount - the two are shown as
+    // separate HUD values (see ConsumeHudChangeEvents), not summed. Reset to
+    // 0 by every Start(); persists across a Pause()/Resume() and past
     // GamePhase::Complete (the caller reads it once the session reaches
     // Complete, before the next Start() zeroes it again).
     int CurrentScore() const;
 
-    // Returns the current section's not-yet-banked score alone (m_sessionScore -
-    // see CurrentScore()'s own comment): the amount still at risk to the next
-    // real miss, and what a "points building up" display should show apart
-    // from the permanent running total. 0 whenever nothing's been judged yet
-    // this section, including immediately after a bank/wipe - see
-    // ConsumeScoreEvents for the moment-of-transfer amount instead.
-    int PendingScore() const;
+    // Returns the not-yet-paid-out bank alone (m_bank): every precise/
+    // imprecise hit's points accumulate here (unlike the old per-section
+    // pending pile this replaces, an isolated miss does NOT wipe this) until
+    // either a section finishes (paid into CurrentScore(), multiplied by
+    // CurrentMultiplier() - see Update()'s own banking comment) or the
+    // shared streak trips (wiped to 0 outright - see RegisterMiss). 0
+    // immediately after either of those.
+    int CurrentBank() const;
+
+    // Returns the multiplier CurrentBank() will be paid out at if a section
+    // finished right now - see MultiplierForStreak. Purely a function of
+    // ScoringStreak(), exposed separately since the HUD shows it as its own
+    // value (e.g. "x2").
+    int CurrentMultiplier() const;
+
+    // Returns the scoring streak (m_streakTracker.Streak()) that
+    // CurrentMultiplier() is computed from - NOT the same thing as
+    // CurrentStreak() (the current section's own hitsRequired lock-in
+    // progress, which resets every section and freezes once passing). This
+    // one survives section boundaries that don't pay out anything (a
+    // Reset/Background section, or a Break with an empty bank), but resets
+    // to 0 both on the shared 3-miss trip AND every time a section's bank
+    // actually pays out (see Update()'s own banking comment) - see
+    // StreakTracker's own comment for exactly when this does and doesn't
+    // reset.
+    int ScoringStreak() const;
 
     // Returns the beat of the next note this lane is awaiting a press for.
     double NextExpectedBeatForLane(int lane) const;
@@ -260,8 +282,8 @@ public:
         // report): false if the press that earned this hit landed more than
         // half of the effective start tolerance away from the note's own
         // onset - still a correct, in-tolerance press, just not a precise
-        // one, and scored for less (see GameSession::RegisterHit/
-        // ScoreForHit). The note lane's ripple renders yellow instead of
+        // one, and scored for less (see GameSession::RegisterHit). The note
+        // lane's ripple renders yellow instead of
         // green for one of these, rather than treating every Hit alike.
         bool precise = true;
     };
@@ -278,31 +300,51 @@ public:
     // instead of the two being handled differently.
     std::vector<JudgementEvent> ConsumeJudgementEvents();
 
-    // One transfer in or out of the pending (not-yet-banked) score pool -
-    // Banked when a section finishes and m_sessionScore folds permanently
-    // into m_bankedScore (Update()'s own banking comment), Lost when a real
-    // miss wipes m_sessionScore back to 0 (RegisterMiss). Only ever pushed
-    // with amount > 0 - a section finishing (or a miss landing) with nothing
-    // pending produces no event, since there'd be nothing for a "points
-    // banking" animation to show moving.
-    struct ScoreEvent
+    // Which of the three HUD-visible values (CurrentScore()/CurrentBank()/
+    // CurrentMultiplier()) just changed - pushed once per actual change (see
+    // RegisterHit/RegisterMiss/Update()'s own banking comment), for the HUD
+    // to grow that value's text 2x for about a second.
+    enum class HudField
     {
-        enum class Kind
-        {
-            Banked,
-            Lost,
-        };
-        Kind kind = Kind::Banked;
-        int amount = 0;
+        Total,
+        Bank,
+        Multiplier,
     };
 
-    // Returns and clears every ScoreEvent since the last call - same
-    // drain-and-clear contract as ConsumeJudgementEvents, for the same
-    // reason (Update()'s own banking can fire independently of any
-    // OnPress/OnRelease call, so nothing here should be allowed to drop one
-    // between calls). Intended reader: the note lane's points-banking
-    // animation.
-    std::vector<ScoreEvent> ConsumeScoreEvents();
+    // field just changed to newValue (CurrentScore()/CurrentBank()/
+    // CurrentMultiplier(), matching field) - newValue lets a renderer tell a
+    // Bank field's ordinary per-hit increase apart from the moment it drops
+    // to exactly 0 (a streak trip wiping it - see RegisterMiss), without
+    // needing to track the previous value itself.
+    struct HudChangeEvent
+    {
+        HudField field = HudField::Total;
+        int newValue = 0;
+    };
+
+    // Returns and clears every HudChangeEvent recorded since the last call -
+    // same drain-and-clear contract as ConsumeJudgementEvents, for the same
+    // reason (Update()'s own banking can fire independently of any OnPress/
+    // OnRelease call, so nothing here should be allowed to drop one between
+    // calls). Intended reader: the note lane's HUD grow-pulse animation.
+    std::vector<HudChangeEvent> ConsumeHudChangeEvents();
+
+    // A one-shot sound cue to play - MultiplierUp when CurrentMultiplier()
+    // just increased (RegisterHit), StreakBroken when the shared streak just
+    // tripped and wiped a non-empty bank to 0 (RegisterMiss). Never pushed
+    // for a multiplier decrease or an empty-bank trip - see RegisterMiss's
+    // own comment.
+    enum class SfxCue
+    {
+        MultiplierUp,
+        StreakBroken,
+    };
+
+    // Returns and clears every SfxCue recorded since the last call - same
+    // drain-and-clear contract as ConsumeHudChangeEvents. Intended reader:
+    // MainWindow's one-shot SFX playback (GameSession itself knows nothing
+    // about AudioEngine's SFX API - see AudioEngine::PlaySfx).
+    std::vector<SfxCue> ConsumeSfxEvents();
 
     // Returns how a specific lane note (identified by its start beat) was
     // judged, for the note lane to color it once it's passed the line.
@@ -484,19 +526,26 @@ private:
     // exactly this call.
     void BeginSection(int sectionIndex, double scheduledBeat);
 
-    // Records a hit: advances the shared streak, resets the shared miss
-    // counter, and starts the current section's clip loop (phase-aligned,
-    // at init_volume) if it isn't already playing. The streak/miss counters
-    // are left alone once already passing, in Pass mode (frozen at their
-    // passing value) - they no longer drive anything at that point. In
-    // DontFail mode a hit while already passing is equally a no-op (there's
-    // nothing further to earn until a miss drops it back to failing). lane
-    // is only for the JudgementEvent this pushes (see ConsumeJudgementEvents) -
+    // Records a hit: pays kPrecisePoints or kImprecisePoints (per wasPrecise)
+    // into m_bank, registers with m_streakTracker (see StreakTracker's own
+    // comment - this is what the section's own hitsRequired lock-in
+    // progress no longer solely drives), and starts the current section's
+    // clip loop (phase-aligned, at init_volume) if it isn't already playing.
+    // This section's own hitsRequired progress is left alone once already
+    // passing, in Pass mode (frozen at its passing value) - it no longer
+    // drives anything at that point (but see IsLaneJudgeable/Update() for
+    // how the section keeps scoring anyway). In DontFail mode a hit while
+    // already passing is equally a no-op for that progress (there's nothing
+    // further to earn until a miss drops it back to failing) - m_bank still
+    // gets paid either way, every judged note is worth something. lane is
+    // only for the JudgementEvent this pushes (see ConsumeJudgementEvents) -
     // every caller already knows it, since a hit is always judged against a
     // specific lane's own note. wasPrecise is the press's own accuracy (see
-    // SectionInstance::LaneHoldWasPrecise) - scores fewer points via
-    // ScoreForHit when false, and is forwarded into the JudgementEvent so
-    // the note lane's ripple can render yellow instead of green for it.
+    // SectionInstance::LaneHoldWasPrecise) - scores fewer points when false,
+    // and is forwarded into the JudgementEvent so the note lane's ripple can
+    // render yellow instead of green for it. Pushes HudField::Bank always,
+    // and HudField::Multiplier/SfxCue::MultiplierUp when this hit's streak
+    // increment just crossed into a higher multiplier tier.
     void RegisterHit(int lane, bool wasPrecise);
 
     // Starts clipIndex's stem looping now (phase-aligned to its own
@@ -560,24 +609,26 @@ private:
     // Stops clipIndex's stem if it's playing.
     void StopClipLoop(int clipIndex);
 
-    // Records a miss: resets the shared streak, and stops the current
-    // section's clip loop after 3 in a row (unchanged in both modes). In
-    // Pass mode, a full no-op once already passing - further misses
-    // shouldn't stop the clip or unfreeze the streak display once it's
-    // proven itself, and (unlike every other case) this call doesn't even
-    // push a JudgementEvent: the note lane already flashes its own
-    // synthetic "hit" for these notes instead (see NoteLaneModel::
-    // BuildScene's passLineHitLanes), so a real Miss event here would just
-    // fight it for the same lane's flash. In DontFail mode, a miss while
-    // passing instead drops the section back to failing (see
-    // SectionInstance::RegisterMiss) and reverts the clip's volume to
-    // init_volume. Before passing, a miss's only effect on the section's
-    // own advance timing is indirect: resetting the streak makes passing
-    // (and therefore advancing) take longer to reach, possibly costing the
-    // clip another full loop's repeat - see Update()'s own comment. lane is
-    // only for the JudgementEvent this pushes (see ConsumeJudgementEvents) -
-    // every caller already knows it, since a miss is always judged against
-    // a specific lane's own note.
+    // Records a miss: registers with m_streakTracker (see its own comment -
+    // an isolated miss no longer wipes anything by itself) and stops the
+    // current section's clip loop once it trips (3 in a row, unchanged in
+    // both modes). In Pass mode, a full no-op once already passing - once
+    // locked in, IsLaneJudgeable already keeps real presses from ever
+    // reaching here again (see its own comment - Update()'s auto-accrual is
+    // the section's sole scorer from that instant on), and (unlike every
+    // other case) this call doesn't even push a JudgementEvent. In DontFail
+    // mode, a miss while passing instead drops the section back to failing
+    // (see SectionInstance::RegisterMiss) and reverts the clip's volume to
+    // init_volume. Before passing, a miss's only effect on the section's own
+    // advance timing is indirect: resetting this section's own hitsRequired
+    // progress makes passing (and therefore advancing) take longer to reach,
+    // possibly costing the clip another full loop's repeat - see Update()'s
+    // own comment. lane is only for the JudgementEvent this pushes (see
+    // ConsumeJudgementEvents) - every caller already knows it, since a miss
+    // is always judged against a specific lane's own note. When
+    // m_streakTracker trips, m_bank is wiped to 0 (HudField::Bank pushed,
+    // plus SfxCue::StreakBroken if it wasn't already empty) - see
+    // StreakTracker's own comment for why an isolated miss doesn't do this.
     void RegisterMiss(int lane);
 
     // Moves this lane's next-expected-note pointer forward to the next note after it.
@@ -660,6 +711,18 @@ private:
     // result == JudgementResult::Hit - see SectionInstance::OnsetPrecise.
     void RecordOnsetJudgement(double startBeat, int lane, JudgementResult result, bool precise = true);
 
+    // The multiplier a bank payout earns for a given whole-song scoring
+    // streak - x1 for 0-9, x2 for 10-19, x3 for 20-29, x4 for 30+. Shared by
+    // CurrentMultiplier() and every scoring path in the .cpp, so there's one
+    // place that knows the tier boundaries.
+    static int MultiplierForStreak(int streak);
+
+    // Appends to m_hudChangeEvents/m_sfxEvents respectively - tiny helpers so
+    // RegisterHit/RegisterMiss/Update()'s banking read as what they're doing
+    // rather than repeating push_back at every call site.
+    void PushHudChanged(HudField field, int newValue);
+    void PushSfx(SfxCue cue);
+
     AudioEngine& m_audioEngine;
     ChartSong m_song;
     std::vector<StemHandle> m_stemHandles; // one full-loop stem per clip, indexed by clip index
@@ -707,28 +770,38 @@ private:
     QueuedBackground m_queuedBackground;
     JudgementResult m_lastJudgement = JudgementResult::None;
 
-    // See CurrentScore(). m_comboCount is the running count of consecutive
-    // hits with no intervening real miss (a miss that doesn't even produce a
-    // JudgementEvent - see RegisterMiss's alreadyPassingInPassMode case -
-    // leaves it untouched, since the player was never shown a miss for it
-    // either); RegisterHit scores each hit off of it, then increments it.
-    //
-    // m_sessionScore/m_bankedScore split the running total in two:
-    // m_sessionScore is what the *current* section alone has built up since
-    // it began, entirely at risk - a real miss (the same one that zeroes
-    // m_comboCount) wipes it back to 0, same as the combo. m_bankedScore is
-    // the sum of every section that's actually finished (a Learn section
-    // locking in and reaching its own advance, or a Break section
-    // completing its wait - see Update()'s own banking comment) - once
-    // there, it's permanent for the rest of the song, immune to any later
-    // section's miss. CurrentScore() is simply their sum.
-    int m_bankedScore = 0;
-    int m_sessionScore = 0;
-    int m_comboCount = 0;
+    // See CurrentScore()/CurrentBank()/ScoringStreak(). m_streakTracker is
+    // the single shared streak/consecutive-miss tracker (see its own class
+    // comment) - owned here, not on m_currentInstance, and deliberately
+    // never reset by BeginSection itself; it survives a Reset/Background
+    // section, or a Break/Learn section whose own bank is empty when it
+    // finishes. It IS reset by Start(), by the shared 3-miss trip, and by
+    // Update()'s own banking code every time a section's bank actually pays
+    // out (see its own comment) - in practice that covers essentially every
+    // Learn section's own advance, since reaching one at all requires having
+    // just scored something. m_bank is every judged hit's points since the
+    // last payout or wipe (see RegisterHit/RegisterMiss); m_score is the
+    // permanent sum of every section's own payout (bank amount times the
+    // multiplier in effect at that instant), immune to anything after it
+    // happened. CurrentScore()/CurrentBank() return these two separately,
+    // not summed - the HUD shows them as distinct values.
+    int m_score = 0;
+    int m_bank = 0;
+    StreakTracker m_streakTracker;
+
+    // Per-lane cursor for Update()'s Pass-mode post-lock-in auto-accrual -
+    // the last beat already auto-scored for that lane, so each Update() call
+    // only walks the notes newly crossed since the previous one. Seeded to
+    // the lock-in instant by RegisterHit the moment a section starts
+    // passing (Pass mode only - see IsLaneJudgeable/Update()'s own comment).
+    double m_autoScoreCursorBeat[kLaneCount] = {};
+
     // See ConsumeJudgementEvents - populated by RegisterHit/RegisterMiss,
     // drained (and cleared) there.
     std::vector<JudgementEvent> m_judgementEvents;
-    // See ConsumeScoreEvents - populated by Update() (banking) and
-    // RegisterMiss (wiping), drained (and cleared) there.
-    std::vector<ScoreEvent> m_scoreEvents;
+    // See ConsumeHudChangeEvents/ConsumeSfxEvents - populated by
+    // RegisterHit/RegisterMiss/Update() (banking), drained (and cleared)
+    // there.
+    std::vector<HudChangeEvent> m_hudChangeEvents;
+    std::vector<SfxCue> m_sfxEvents;
 };

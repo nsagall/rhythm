@@ -4,6 +4,7 @@
 
 #include "ChartFile.h"
 #include "LaneConfig.h"
+#include "StreakTracker.h"
 
 // Result of judging a specific press/release against a note. Cleared once
 // read via GameSession::ConsumeLastJudgement().
@@ -110,28 +111,33 @@ public:
     // correct press) but closer to half than to dead-on. Set once by
     // StartLaneHold from the press itself; read back by GameSession::
     // RegisterHit (via OnRelease, or directly in easy mode) to decide how
-    // many points the eventual Hit is worth - see GameSession::ScoreForHit.
+    // many points the eventual Hit is worth - see GameSession::RegisterHit.
     // Only meaningful while IsLaneHeld(lane) is true.
     bool LaneHoldWasPrecise(int lane) const;
 
     void StartLaneHold(int lane, double startBeat, double expectedEndBeat, bool wasPrecise);
     void ClearLaneHold(int lane);
 
-    // Records a hit: advances the streak (unless already passing, where
-    // it's frozen at its passing value and no longer moves - true whether
-    // that's Pass mode's permanent lock-in or DontFail mode's current
-    // passing streak), and starts passing once the streak reaches
-    // hitsRequired. Returns true the instant passing is newly (re-)reached
-    // this call (so the caller can react - e.g. switching the clip's own
-    // volume), false every other time. No logic difference between modes
-    // needed here - see m_passing's own comment.
-    bool RegisterHit(int hitsRequired);
+    // Records a hit: always registers with streakTracker first (see its own
+    // comment - the shared streak keeps growing even once this section is
+    // already passing, since GameSession's post-lock-in
+    // auto-accrual depends on it), then advances this section's own
+    // hitsRequired progress (unless already passing, where it's frozen at
+    // its passing value and no longer moves - true whether that's Pass
+    // mode's permanent lock-in or DontFail mode's current passing streak),
+    // and starts passing once that progress reaches hitsRequired. Returns
+    // true the instant passing is newly (re-)reached this call (so the
+    // caller can react - e.g. switching the clip's own volume), false every
+    // other time. No logic difference between modes needed here - see
+    // m_passing's own comment.
+    bool RegisterHit(int hitsRequired, StreakTracker& streakTracker);
 
     // What RegisterMiss found happened - see its own comment.
     struct MissResult
     {
-        // kMaxConsecutiveMisses reached - same meaning, same threshold, in
-        // both modes; the caller should stop the clip's audio.
+        // streakTracker just tripped (StreakTracker::kMaxConsecutiveMisses
+        // reached) - same meaning, same threshold, in both modes; the
+        // caller should stop the clip's audio.
         bool shouldStopClip = false;
         // DontFail mode only: this section was passing, and this miss just
         // dropped it to failing - the caller should react (e.g. revert the
@@ -150,14 +156,16 @@ public:
     };
 
     // Records a miss: a no-op once passing, in Pass mode (frozen forever,
-    // exactly like RegisterHit). In easy mode, the very first miss each
-    // section is instead fully forgiven regardless of mode or current
-    // passing state (streak and consecutive-miss count both left
-    // untouched, and no mode-specific consequence fires either) - see the
-    // m_easyGraceAvailable field comment. Otherwise resets the streak and
-    // counts toward the consecutive-miss limit; in DontFail mode, a miss
-    // while passing additionally drops back to failing.
-    MissResult RegisterMiss(bool easyMode);
+    // exactly like RegisterHit) - streakTracker isn't touched either, same
+    // as every other consequence below. In easy mode, the very first miss
+    // each section is instead fully forgiven regardless of mode or current
+    // passing state (this section's own hitsRequired progress and
+    // streakTracker both left untouched, and no mode-specific consequence
+    // fires either) - see the m_easyGraceAvailable field comment. Otherwise
+    // resets this section's own hitsRequired progress and registers with
+    // streakTracker (see its own comment for what that does); in DontFail
+    // mode, a miss while passing additionally drops back to failing.
+    MissResult RegisterMiss(bool easyMode, StreakTracker& streakTracker);
 
     JudgementResult OnsetJudgement(double startBeat, int lane) const;
 
@@ -199,7 +207,6 @@ private:
     int m_sectionIndex = -1;
     LearnMode m_mode = LearnMode::Pass;
     int m_streak = 0;
-    int m_consecutiveMisses = 0;
 
     // One-note grace period (easy mode only): true until this section's
     // first miss consumes it in RegisterMiss - that miss is then fully

@@ -230,4 +230,35 @@ double ComputeClipPhaseSeconds(double originSeconds, double nowSeconds, const Ch
     return phase;
 }
 
+std::vector<double> OnsetsInRange(double originBeat, double afterBeatExclusive, double uptoBeatInclusive,
+                                   const std::vector<LaneNote>& notes, double spanBeats)
+{
+    std::vector<double> result;
+    if (notes.empty() || spanBeats <= 0.0 || uptoBeatInclusive <= afterBeatExclusive)
+    {
+        return result;
+    }
+
+    // Same epsilon-nudged bar-index convention as NextOnsetAfter - see its
+    // own comment for why an unguarded floor() is unsafe here.
+    double localAfter = afterBeatExclusive - originBeat;
+    double localUpto = uptoBeatInclusive - originBeat;
+    long long firstBar = static_cast<long long>(std::floor((localAfter + 1e-9) / spanBeats));
+    long long lastBar = static_cast<long long>(std::floor((localUpto + 1e-9) / spanBeats));
+
+    for (long long bar = firstBar; bar <= lastBar; ++bar)
+    {
+        for (const LaneNote& note : notes)
+        {
+            double candidate = bar * spanBeats + note.startBeat;
+            if (candidate > localAfter + 1e-9 && candidate <= localUpto + 1e-9)
+            {
+                result.push_back(originBeat + candidate);
+            }
+        }
+    }
+    std::sort(result.begin(), result.end());
+    return result;
+}
+
 } // namespace ChartTiming

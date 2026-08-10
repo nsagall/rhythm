@@ -30,6 +30,21 @@ inline bool operator!=(StemHandle a, StemHandle b)
     return !(a == b);
 }
 
+// A distinct type for a loaded one-shot sound effect (LoadSfx/PlaySfx) -
+// same "can't be silently confused with an unrelated int" reasoning as
+// StemHandle, and deliberately a different type from it: an SfxHandle is
+// never valid to pass to any stem-looping call (StartLooping, SetVolume,
+// ...), nor a StemHandle to PlaySfx.
+struct SfxHandle
+{
+    int value = -1;
+
+    bool IsValid() const
+    {
+        return value >= 0;
+    }
+};
+
 // Wraps XAudio2: loads WAV stems (each one clip's full loop) and
 // starts/stops them playing, seeking to the correct phase so a loop
 // entering mid-song stays in sync with the beat grid. All calls are
@@ -123,6 +138,20 @@ public:
     // for "one complete loop" of that stem.
     double GetStemDurationSeconds(StemHandle stemHandle) const;
 
+    // Loads a short PCM WAV file for one-shot, fire-and-forget playback
+    // (UI cues - e.g. a streak-multiplier-up "happy" sound - not a chart's
+    // own musical content, which always goes through LoadStem/StartLooping
+    // instead). Returns an SfxHandle, or an invalid one on failure (missing
+    // file or unsupported format) - same failure contract as LoadStem.
+    SfxHandle LoadSfx(const std::wstring& wavFilePath);
+
+    // Plays sfx once from the start, at unity gain, without looping - a
+    // no-op for an invalid handle. Safe to call again before a previous
+    // play of the same sfx has finished: each SfxHandle round-robins a
+    // small pool of voices (see kSfxVoicePoolSize) so a rapid re-fire gets
+    // its own voice instead of cutting the previous one off.
+    void PlaySfx(SfxHandle sfx);
+
 private:
     // One loaded WAV's playback state: the source voice actually playing
     // it, the raw PCM data XAudio2 streams from (kept alive for the
@@ -152,8 +181,27 @@ private:
     // is currently audible - see StartLooping's own call site comment.
     void AssertNoOtherStemForSameFilePlaying(StemHandle playingHandle) const;
 
+    // How many source voices each loaded Sfx gets, round-robinned by
+    // PlaySfx - enough to survive a rapid re-fire (e.g. two multiplier
+    // tier-ups a beat apart) without one play cutting its predecessor off,
+    // without needing a real voice-availability check.
+    static constexpr int kSfxVoicePoolSize = 3;
+
+    // One loaded one-shot sound's playback state - same pcmData/format
+    // shape as Stem, but a small fixed pool of voices instead of Stem's
+    // single one, since PlaySfx is fire-and-forget rather than
+    // start-once-and-hold like a stem's loop.
+    struct Sfx
+    {
+        std::vector<BYTE> pcmData;
+        WAVEFORMATEX format{};
+        IXAudio2SourceVoice* voices[kSfxVoicePoolSize] = {};
+        int nextVoice = 0;
+    };
+
     IXAudio2* m_xaudio2 = nullptr;
     IXAudio2MasteringVoice* m_masteringVoice = nullptr;
     std::vector<Stem> m_stems;
+    std::vector<Sfx> m_sfx;
     bool m_comInitialized = false;
 };

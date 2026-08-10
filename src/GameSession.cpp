@@ -33,35 +33,38 @@ constexpr double kEasyModeNoteDurationBeats = 0.5;
 // every single frame over nothing.
 constexpr double kClockResyncThresholdSeconds = 0.008;
 
-// Score awarded for a single hit, given the running combo count *after*
-// counting that hit (so the first hit of a fresh combo scores the base
-// value, and every consecutive hit after it scores progressively more) -
-// rewards sustained accuracy over isolated hits without needing a separate
-// multiplier field anywhere. A miss doesn't subtract score, only resets the
-// combo and the current section's not-yet-banked score (see RegisterMiss),
-// so a player's score never goes backwards mid-hit - only ever loses
-// already-built-up, still-at-risk points on a miss.
-constexpr int kBaseHitScore = 100;
-constexpr int kComboBonusPerHit = 10;
+// Points a single hit pays into the bank - flat, no combo scaling; the
+// streak multiplier (GameSession::MultiplierForStreak) is what rewards
+// sustained accuracy now, applied once at payout rather than per hit.
+constexpr int kPrecisePoints = 10;
+constexpr int kImprecisePoints = 5;
 
 // A press landing beyond this fraction of the effective start tolerance
 // (still within the full window, so still a correct press) is judged
 // imprecise rather than precise - see GameSession::OnPress's own comment.
 constexpr double kImprecisionToleranceFraction = 0.5;
 
-// An imprecise hit is worth this fraction of what the same combo count
-// would otherwise score - still rewarded (it was a correct press), just
-// less than a precise one, so accuracy actually matters beyond the binary
-// hit/miss line.
-constexpr double kImpreciseHitScoreMultiplier = 0.5;
-
-int ScoreForHit(int comboAfterHit, bool wasPrecise)
-{
-    int fullScore = kBaseHitScore + (comboAfterHit - 1) * kComboBonusPerHit;
-    return wasPrecise ? fullScore : static_cast<int>(fullScore * kImpreciseHitScoreMultiplier);
-}
+// Streak-length breakpoints for GameSession::MultiplierForStreak - streak
+// >= kMultiplierTierStreaks[i] earns a multiplier of (i + 2) (index 0 is the
+// first tier above the base x1), so { 10, 20, 30 } means 0-9 -> x1,
+// 10-19 -> x2, 20-29 -> x3, 30+ -> x4.
+constexpr int kMultiplierTierStreaks[] = {10, 20, 30};
 
 } // namespace
+
+// See the header's own comment.
+int GameSession::MultiplierForStreak(int streak)
+{
+    int multiplier = 1;
+    for (int tierStreak : kMultiplierTierStreaks)
+    {
+        if (streak >= tierStreak)
+        {
+            ++multiplier;
+        }
+    }
+    return multiplier;
+}
 
 // Binds this session to the audio engine it will drive.
 GameSession::GameSession(AudioEngine& audioEngine) : m_audioEngine(audioEngine)
@@ -179,10 +182,15 @@ void GameSession::Start()
         buffered = BufferedPress{};
     }
 
-    m_bankedScore = 0;
-    m_sessionScore = 0;
-    m_comboCount = 0;
-    m_scoreEvents.clear();
+    m_score = 0;
+    m_bank = 0;
+    m_streakTracker = StreakTracker();
+    for (double& cursor : m_autoScoreCursorBeat)
+    {
+        cursor = 0.0;
+    }
+    m_hudChangeEvents.clear();
+    m_sfxEvents.clear();
 
     m_clock.Start(m_song.bpm);
     m_phase = GamePhase::CountIn;
@@ -273,7 +281,22 @@ bool GameSession::IsLaneJudgeable(int lane) const
         return false; // break/reset/background: no judging, ever
     }
     const ChartClip& clip = m_song.clips[section.clipIndex];
-    return !clip.laneNotes[lane].empty();
+    if (clip.laneNotes[lane].empty())
+    {
+        return false;
+    }
+    // Once a Pass-mode section has locked in, Update()'s own post-lock-in
+    // auto-accrual becomes the section's sole scorer for every remaining
+    // note (see its own comment) - a real press reaching RegisterHit/
+    // RegisterMiss again from here on would double-count against the same
+    // notes the auto-walk is already crediting. DontFail is unaffected -
+    // its passing is reversible, so the player must keep actually playing
+    // to hold onto it.
+    if (clip.learnMode == LearnMode::Pass && m_currentInstance.IsPassing())
+    {
+        return false;
+    }
+    return true;
 }
 
 // Registers a key-down for lane; judges it against that lane's next expected note if the current section is learning.
@@ -338,7 +361,7 @@ void GameSession::ApplyInTolerancePress(int lane, const ChartSection& section, c
     // the tolerance window it was judged against - past
     // kImprecisionToleranceFraction of it, still a correct press (it's
     // within the full window), but not a precise one. See
-    // SectionInstance::LaneHoldWasPrecise/GameSession::ScoreForHit.
+    // SectionInstance::LaneHoldWasPrecise/GameSession::RegisterHit.
     bool wasPrecise = std::abs(pressSeconds - startSeconds) <= toleranceSeconds * kImprecisionToleranceFraction;
 
     StartClipLoop(section.clipIndex, clip.initVolume);
@@ -643,17 +666,28 @@ void GameSession::Update()
             m_currentInstance.ClearPendingAdvance();
 
             // The section genuinely finished (a passing Learn section, or a
-            // Break's own wait elapsed) - bank whatever score it built up so
-            // it's permanent for the rest of the song, immune to a later
-            // section's own miss (see RegisterMiss/CurrentScore()). Left at
-            // 0 either way once this runs, so the next section always
-            // starts its own build-up from a clean slate.
-            if (m_sessionScore > 0)
+            // Break's own wait elapsed) - pay out whatever's in the bank,
+            // multiplied by the streak multiplier in effect right now, into
+            // the permanent total (see RegisterHit/RegisterMiss/
+            // CurrentScore()/CurrentBank()), then reset the streak itself -
+            // a payout is the other trigger that zeroes m_streakTracker,
+            // distinct from (and unconditional on) the 3-miss trip inside
+            // RegisterMiss. Both bank and streak are left at 0 once this
+            // runs, so the next section always starts its own build-up from
+            // a clean slate, at the base x1 multiplier.
+            if (m_bank > 0)
             {
-                m_scoreEvents.push_back({ScoreEvent::Kind::Banked, m_sessionScore});
+                int multiplierBefore = MultiplierForStreak(m_streakTracker.Streak());
+                m_score += m_bank * multiplierBefore;
+                m_bank = 0;
+                m_streakTracker.Reset();
+                PushHudChanged(HudField::Total, m_score);
+                PushHudChanged(HudField::Bank, m_bank);
+                if (multiplierBefore != 1)
+                {
+                    PushHudChanged(HudField::Multiplier, 1);
+                }
             }
-            m_bankedScore += m_sessionScore;
-            m_sessionScore = 0;
 
             // A learn section reaching here is always passing (see
             // above) - its clip already switched from init_volume to
@@ -695,20 +729,49 @@ void GameSession::Update()
         if (section.kind == SectionKind::Learn)
         {
             const ChartClip& clip = m_song.clips[section.clipIndex];
-            double toleranceSeconds = EffectiveStartToleranceSeconds(clip);
-            for (int lane = 0; lane < kLaneCount; ++lane)
+            if (clip.learnMode == LearnMode::Pass && m_currentInstance.IsPassing())
             {
-                if (clip.laneNotes[lane].empty())
+                // Locked in, Pass mode: IsLaneJudgeable already keeps real
+                // presses from reaching RegisterHit/RegisterMiss again (see
+                // its own comment), so this is the section's sole scorer
+                // from here to its own advance - walk every lane forward
+                // from its own auto-score cursor and credit each note newly
+                // crossed as a precise hit, exactly "as though the player is
+                // playing perfectly for the remainder of the section."
+                double originBeat = CurrentClipOriginBeat();
+                double nowBeat = now / secondsPerBeat;
+                for (int lane = 0; lane < kLaneCount; ++lane)
                 {
-                    continue;
+                    if (clip.laneNotes[lane].empty())
+                    {
+                        continue;
+                    }
+                    for (double onsetBeat : ChartTiming::OnsetsInRange(originBeat, m_autoScoreCursorBeat[lane],
+                                                                         nowBeat, clip.laneNotes[lane], clip.spanBeats))
+                    {
+                        RegisterHit(lane, /*wasPrecise=*/true);
+                        RecordOnsetJudgement(onsetBeat, lane, JudgementResult::Hit, /*precise=*/true);
+                    }
+                    m_autoScoreCursorBeat[lane] = nowBeat;
                 }
-                double expectedBeat = m_currentInstance.NextExpectedBeatForLane(lane);
-                double onsetSeconds = expectedBeat * secondsPerBeat;
-                if (now > onsetSeconds + toleranceSeconds)
+            }
+            else
+            {
+                double toleranceSeconds = EffectiveStartToleranceSeconds(clip);
+                for (int lane = 0; lane < kLaneCount; ++lane)
                 {
-                    RegisterMiss(lane);
-                    RecordOnsetJudgement(expectedBeat, lane, JudgementResult::Miss);
-                    AdvanceExpectedNote(lane);
+                    if (clip.laneNotes[lane].empty())
+                    {
+                        continue;
+                    }
+                    double expectedBeat = m_currentInstance.NextExpectedBeatForLane(lane);
+                    double onsetSeconds = expectedBeat * secondsPerBeat;
+                    if (now > onsetSeconds + toleranceSeconds)
+                    {
+                        RegisterMiss(lane);
+                        RecordOnsetJudgement(expectedBeat, lane, JudgementResult::Miss);
+                        AdvanceExpectedNote(lane);
+                    }
                 }
             }
         }
@@ -776,13 +839,25 @@ int GameSession::CurrentStreak() const
 // See the header's own comment.
 int GameSession::CurrentScore() const
 {
-    return m_bankedScore + m_sessionScore;
+    return m_score;
 }
 
 // See the header's own comment.
-int GameSession::PendingScore() const
+int GameSession::CurrentBank() const
 {
-    return m_sessionScore;
+    return m_bank;
+}
+
+// See the header's own comment.
+int GameSession::CurrentMultiplier() const
+{
+    return MultiplierForStreak(m_streakTracker.Streak());
+}
+
+// See the header's own comment.
+int GameSession::ScoringStreak() const
+{
+    return m_streakTracker.Streak();
 }
 
 // Returns the beat of the next note this lane is awaiting a press for.
@@ -1002,13 +1077,32 @@ std::vector<GameSession::JudgementEvent> GameSession::ConsumeJudgementEvents()
     return events;
 }
 
-// Returns and clears every score transfer recorded since the last call -
+// Returns and clears every HudChangeEvent recorded since the last call -
 // see the header's own comment.
-std::vector<GameSession::ScoreEvent> GameSession::ConsumeScoreEvents()
+std::vector<GameSession::HudChangeEvent> GameSession::ConsumeHudChangeEvents()
 {
-    std::vector<ScoreEvent> events = std::move(m_scoreEvents);
-    m_scoreEvents.clear();
+    std::vector<HudChangeEvent> events = std::move(m_hudChangeEvents);
+    m_hudChangeEvents.clear();
     return events;
+}
+
+// Returns and clears every SfxCue recorded since the last call - see the
+// header's own comment.
+std::vector<GameSession::SfxCue> GameSession::ConsumeSfxEvents()
+{
+    std::vector<SfxCue> events = std::move(m_sfxEvents);
+    m_sfxEvents.clear();
+    return events;
+}
+
+void GameSession::PushHudChanged(HudField field, int newValue)
+{
+    m_hudChangeEvents.push_back({field, newValue});
+}
+
+void GameSession::PushSfx(SfxCue cue)
+{
+    m_sfxEvents.push_back(cue);
 }
 
 // Returns how a specific lane note was judged, or None if untracked.
@@ -1285,30 +1379,47 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
     }
 }
 
-// Records a hit: advances the shared streak, resets the shared miss
-// counter, and (re)starts the current section's clip loop if it isn't
-// already playing - only actually needed to recover a clip StopClipLoop
-// silenced after 3 consecutive misses, since BeginSection already started
-// it once. Once the streak reaches the clip's hits_required, starts the
-// section passing: IsPassing() flips true and the clip's volume switches
-// from init_volume to volume - purely a reward/feedback treatment, since
-// the section's own advance timing was already decided in BeginSection and
-// doesn't change either way. Once already passing, the streak/miss
-// counters are left alone (frozen at their passing value) since they no
-// longer drive anything - in Pass mode that's permanent; in DontFail mode
-// a later miss (see RegisterMiss) can still drop back to failing and start
-// the streak over. Also scores this hit into m_sessionScore (see
-// ScoreForHit) - full value if wasPrecise, less otherwise - regardless of
-// passing state, since every judged note is worth something.
+// Records a hit: pays kPrecisePoints/kImprecisePoints into m_bank and
+// registers with m_streakTracker (see its own comment - this drives
+// CurrentMultiplier() and no longer resets on an isolated miss), then
+// (re)starts the current section's clip loop if it isn't already playing -
+// only actually needed to recover a clip StopClipLoop silenced after 3
+// consecutive misses, since BeginSection already started it once. Once this
+// section's own hitsRequired progress reaches the clip's hits_required,
+// starts the section passing: IsPassing() flips true, the clip's volume
+// switches from init_volume to volume, and every lane's auto-score cursor
+// seeds to right now (see Update()'s own Pass-mode auto-accrual comment) -
+// purely a reward/feedback treatment for the volume switch, since the
+// section's own advance timing was already decided in BeginSection and
+// doesn't change either way. Once already passing, this section's own
+// hitsRequired progress is left alone (frozen at its passing value) since it
+// no longer drives anything - in Pass mode that's permanent; in DontFail
+// mode a later miss (see RegisterMiss) can still drop back to failing and
+// start it over. m_bank is paid regardless of passing state, since every
+// judged note is worth something - including, in Pass mode, the ones
+// Update() judges automatically after lock-in.
 void GameSession::RegisterHit(int lane, bool wasPrecise)
 {
     const ChartSection& section = m_song.sections[m_currentInstance.SectionIndex()];
     const ChartClip& clip = m_song.clips[section.clipIndex];
 
-    ++m_comboCount;
-    m_sessionScore += ScoreForHit(m_comboCount, wasPrecise);
+    int multiplierBefore = MultiplierForStreak(m_streakTracker.Streak());
+    m_bank += wasPrecise ? kPrecisePoints : kImprecisePoints;
+    PushHudChanged(HudField::Bank, m_bank);
 
-    if (m_currentInstance.RegisterHit(clip.hitsRequired))
+    bool newlyPassing = m_currentInstance.RegisterHit(clip.hitsRequired, m_streakTracker);
+
+    int multiplierAfter = MultiplierForStreak(m_streakTracker.Streak());
+    if (multiplierAfter != multiplierBefore)
+    {
+        PushHudChanged(HudField::Multiplier, multiplierAfter);
+        if (multiplierAfter > multiplierBefore)
+        {
+            PushSfx(SfxCue::MultiplierUp);
+        }
+    }
+
+    if (newlyPassing)
     {
         m_audioEngine.SetVolume(m_stemHandles[section.clipIndex], static_cast<float>(clip.volume));
 
@@ -1341,6 +1452,20 @@ void GameSession::RegisterHit(int lane, bool wasPrecise)
         if (extendedAdvance != m_currentInstance.PendingAdvanceAtSeconds())
         {
             m_currentInstance.SchedulePendingAdvance(extendedAdvance);
+        }
+
+        // Pass mode only (see IsLaneJudgeable/Update()'s own comment) - seed
+        // every lane's auto-score cursor to right now, so Update()'s
+        // post-lock-in auto-accrual starts walking from exactly this
+        // instant instead of from whatever stale value it last held (e.g.
+        // 0, or a previous section's own cursor position).
+        if (clip.learnMode == LearnMode::Pass)
+        {
+            double lockInBeat = now / secondsPerBeat;
+            for (double& cursor : m_autoScoreCursorBeat)
+            {
+                cursor = lockInBeat;
+            }
         }
     }
     StartClipLoop(section.clipIndex, clip.initVolume);
@@ -1439,16 +1564,45 @@ void GameSession::StopClipLoop(int clipIndex)
     it->second.isPlaying = false;
 }
 
-// Records a miss: resets the shared streak, and stops the current section's clip loop after 3 in a row - unchanged in both modes. In Pass mode, a no-op once already passing - further misses shouldn't stop the clip or unfreeze the streak display once it's proven itself, though the section's own advance timing was never affected by any of this either way. In DontFail mode, a miss while passing additionally drops the section back to failing and reverts the clip's volume to init_volume (the mirror of RegisterHit's own switch to volume on newly passing). In easy mode, the first miss each section is instead fully forgiven regardless of mode (see SectionInstance's own easy-grace comment) - streak and consecutive-miss count both left untouched, and neither of the above fires, as if it never happened.
+// Records a miss: registers with m_streakTracker (see its own comment - an
+// isolated miss no longer wipes m_bank or the multiplier by itself, only
+// counts toward the shared 3-in-a-row trip) and stops the current section's
+// clip loop once that trip fires - unchanged in both modes. In Pass mode, a
+// no-op once already passing - once locked in, IsLaneJudgeable already keeps
+// real presses from reaching here again, so this path is unreachable for a
+// real press; still no-ops defensively. In DontFail mode, a miss while
+// passing additionally drops the section back to failing and reverts the
+// clip's volume to init_volume (the mirror of RegisterHit's own switch to
+// volume on newly passing). In easy mode, the first miss each section is
+// instead fully forgiven regardless of mode (see SectionInstance's own
+// easy-grace comment) - streakTracker isn't touched, and neither of the
+// above fires, as if it never happened.
 void GameSession::RegisterMiss(int lane)
 {
     const ChartSection& section = m_song.sections[m_currentInstance.SectionIndex()];
     const ChartClip& clip = m_song.clips[section.clipIndex];
 
-    SectionInstance::MissResult result = m_currentInstance.RegisterMiss(m_easyMode);
+    int multiplierBefore = MultiplierForStreak(m_streakTracker.Streak());
+    SectionInstance::MissResult result = m_currentInstance.RegisterMiss(m_easyMode, m_streakTracker);
     if (result.shouldStopClip)
     {
         StopClipLoop(section.clipIndex);
+
+        // The shared streak just tripped - wipe whatever's built up in the
+        // bank (see StreakTracker's own comment: an isolated miss never
+        // does this, only the full trip does). Already-paid-out score from
+        // earlier, finished sections (m_score) is untouched.
+        if (m_bank > 0)
+        {
+            PushSfx(SfxCue::StreakBroken);
+        }
+        m_bank = 0;
+        PushHudChanged(HudField::Bank, m_bank);
+        int multiplierAfter = MultiplierForStreak(m_streakTracker.Streak());
+        if (multiplierAfter != multiplierBefore)
+        {
+            PushHudChanged(HudField::Multiplier, multiplierAfter);
+        }
     }
     if (result.justEnteredFailState)
     {
@@ -1458,25 +1612,11 @@ void GameSession::RegisterMiss(int lane)
     // Once a Pass-mode section is already passing, a miss is a genuine
     // no-op there (see SectionInstance::RegisterMiss's own early-return),
     // not just for the streak/clip-stopping consequences above - so it
-    // shouldn't produce a judgement event either. The note lane instead
-    // flashes its own synthetic "hit" for these notes (see
-    // NoteLaneModel::BuildScene's passLineHitLanes) - a real Miss event
-    // here would just fight it for the same lane's flash.
+    // shouldn't produce a judgement event either.
     if (result.wasNoOpAlreadyPassing)
     {
         return;
     }
-
-    // A real, player-visible miss - the same one that resets the combo also
-    // wipes whatever the current section has built up but not yet banked
-    // (see Update()'s own banking comment) - already-banked score from
-    // earlier, finished sections is untouched.
-    if (m_sessionScore > 0)
-    {
-        m_scoreEvents.push_back({ScoreEvent::Kind::Lost, m_sessionScore});
-    }
-    m_comboCount = 0;
-    m_sessionScore = 0;
 
     m_lastJudgement = JudgementResult::Miss;
     m_judgementEvents.push_back({JudgementResult::Miss, lane, m_currentInstance.IsPassing()});

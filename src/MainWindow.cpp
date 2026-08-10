@@ -342,6 +342,14 @@ void MainWindow::OnCreate(HWND hwnd)
     {
         MessageBoxW(hwnd, L"Failed to initialize the audio engine.", kWindowTitle, MB_OK | MB_ICONWARNING);
     }
+    else
+    {
+        // Missing/unsupported files are a silent no-op (see the header's
+        // own comment) - these are optional flourishes, not required
+        // content the way a chart's own stems are.
+        m_sfxMultiplierUp = m_audioEngine.LoadSfx(std::wstring(kContentRoot) + L"\\sfx\\multiplier_up.wav");
+        m_sfxStreakBroken = m_audioEngine.LoadSfx(std::wstring(kContentRoot) + L"\\sfx\\streak_broken.wav");
+    }
 
     // Zero connected MIDI devices is the normal case (keyboard-only play) -
     // no failure dialog, matching AudioEngine's own soft-failure style above.
@@ -437,11 +445,6 @@ void MainWindow::OnGetMinMaxInfo(LPARAM lParam)
 // BeginCapture() for the Assign Inputs button.
 void MainWindow::OnCommand(HWND hwnd, int controlId)
 {
-    if (m_enteringInitials)
-    {
-        return; // buttons are disabled for the run's duration anyway - defensive only
-    }
-
     if (controlId == IDC_BUTTON_REFRESH)
     {
         RescanSongs(/*reportValidationErrors=*/true);
@@ -473,12 +476,6 @@ void MainWindow::OnKeyDown(WPARAM key, LPARAM flags)
     if (m_captureLane != -1)
     {
         HandleCaptureKeyDown(static_cast<int>(key));
-        return;
-    }
-
-    if (m_enteringInitials)
-    {
-        HandleInitialsKeyDown(static_cast<int>(key));
         return;
     }
 
@@ -750,7 +747,7 @@ void MainWindow::CancelCapture()
 // chooses that song immediately.
 void MainWindow::OnLButtonDown(LPARAM lParam)
 {
-    if (m_screen != UiScreen::SongSelect || m_captureLane != -1 || m_enteringInitials)
+    if (m_screen != UiScreen::SongSelect || m_captureLane != -1)
     {
         return;
     }
@@ -814,16 +811,13 @@ void MainWindow::DrainJudgements()
     {
         m_noteLane.ShowJudgement(event.result, event.lane, event.passing, event.precise);
     }
-    for (const GameSession::ScoreEvent& event : m_gameSession.ConsumeScoreEvents())
+    for (const GameSession::HudChangeEvent& event : m_gameSession.ConsumeHudChangeEvents())
     {
-        if (event.kind == GameSession::ScoreEvent::Kind::Banked)
-        {
-            m_noteLane.ShowScoreBanked(event.amount);
-        }
-        else
-        {
-            m_noteLane.ShowScoreLost(event.amount);
-        }
+        m_noteLane.ShowHudValueChanged(event.field, event.newValue);
+    }
+    for (GameSession::SfxCue cue : m_gameSession.ConsumeSfxEvents())
+    {
+        m_audioEngine.PlaySfx(cue == GameSession::SfxCue::MultiplierUp ? m_sfxMultiplierUp : m_sfxStreakBroken);
     }
 }
 
@@ -868,84 +862,20 @@ void MainWindow::HandleSongComplete()
         return;
     }
 
-    m_enteringInitials = true;
-    EnableWindow(m_hButtonAssign, FALSE);
-    EnableWindow(m_hButtonRefresh, FALSE);
-    m_initialsBuffer.clear();
-    m_pendingScore = score;
-    m_pendingSongKey = songKey;
-    m_pendingSongTitle = m_playingSongTitle;
-    m_pendingHighScores = std::move(entries);
-    m_pendingSongIndex = -1;
+    // No initials prompt - a qualifying run just records itself immediately
+    // under a fixed placeholder (never shown anywhere; the high score list's
+    // own initials column has no reader left once the prompt that used to
+    // display it is gone) and refreshes this song's "Best" label right away.
+    Settings::InsertHighScore(entries, L"YOU", score);
+    m_settings.SaveHighScores(songKey, entries);
     for (size_t i = 0; i < m_songs.size(); ++i)
     {
-        if (m_songs[i].chartPath == m_playingChartPath)
+        if (m_songs[i].chartPath == m_playingChartPath && i < m_songBestScores.size())
         {
-            m_pendingSongIndex = static_cast<int>(i);
+            m_songBestScores[i] = entries.front().score;
             break;
         }
     }
-}
-
-// See the header's own comment.
-void MainWindow::HandleInitialsKeyDown(int vkCode)
-{
-    if (vkCode == VK_ESCAPE)
-    {
-        CancelInitialsEntry();
-        return;
-    }
-
-    if (vkCode == VK_BACK)
-    {
-        if (!m_initialsBuffer.empty())
-        {
-            m_initialsBuffer.pop_back();
-            InvalidateRect(m_hwnd, nullptr, FALSE);
-        }
-        return;
-    }
-
-    if (vkCode == VK_RETURN)
-    {
-        if (m_initialsBuffer.size() == 3)
-        {
-            FinalizeInitialsEntry();
-        }
-        return;
-    }
-
-    if (vkCode >= 'A' && vkCode <= 'Z' && m_initialsBuffer.size() < 3)
-    {
-        m_initialsBuffer.push_back(static_cast<wchar_t>(vkCode));
-        InvalidateRect(m_hwnd, nullptr, FALSE);
-    }
-}
-
-// See the header's own comment.
-void MainWindow::FinalizeInitialsEntry()
-{
-    Settings::InsertHighScore(m_pendingHighScores, m_initialsBuffer, m_pendingScore);
-    m_settings.SaveHighScores(m_pendingSongKey, m_pendingHighScores);
-
-    if (m_pendingSongIndex >= 0 && m_pendingSongIndex < static_cast<int>(m_songBestScores.size()))
-    {
-        m_songBestScores[m_pendingSongIndex] = m_pendingHighScores.front().score;
-    }
-
-    m_enteringInitials = false;
-    EnableWindow(m_hButtonAssign, TRUE);
-    EnableWindow(m_hButtonRefresh, TRUE);
-    InvalidateRect(m_hwnd, nullptr, FALSE);
-}
-
-// See the header's own comment.
-void MainWindow::CancelInitialsEntry()
-{
-    m_enteringInitials = false;
-    EnableWindow(m_hButtonAssign, TRUE);
-    EnableWindow(m_hButtonRefresh, TRUE);
-    InvalidateRect(m_hwnd, nullptr, FALSE);
 }
 
 // Bails out of the current song (Esc while Playing) and returns to the song
@@ -1025,7 +955,6 @@ void MainWindow::OnPaint(HWND hwnd)
             DrawLastResult(m_backBufferDC);
             DrawEasyModeToggle(m_backBufferDC);
             DrawCapturePrompt(m_backBufferDC);
-            DrawInitialsPrompt(m_backBufferDC);
         }
         else
         {
@@ -1236,14 +1165,12 @@ void MainWindow::DrawSongList(HDC hdc)
 
 // See the header's own comment. Drawn in the gap between the header row and
 // the song list, so it never competes with either for space. Suppressed
-// while either overlay prompt is up (m_enteringInitials/m_captureLane != -1) -
-// both spill downward from the same header-row starting point (see
-// DrawInitialsPrompt/DrawCapturePrompt) and would otherwise land right on
-// top of this text; the initials prompt already repeats the score in its
-// own headline, so nothing is lost by skipping this one while it's up.
+// while the capture-assignment overlay prompt is up (m_captureLane != -1) -
+// it spills downward from the same header-row starting point (see
+// DrawCapturePrompt) and would otherwise land right on top of this text.
 void MainWindow::DrawLastResult(HDC hdc)
 {
-    if (m_lastResultText.empty() || m_enteringInitials || m_captureLane != -1)
+    if (m_lastResultText.empty() || m_captureLane != -1)
     {
         return;
     }
@@ -1257,79 +1184,6 @@ void MainWindow::DrawLastResult(HDC hdc)
     SetBkMode(hdc, TRANSPARENT);
     SetTextColor(hdc, kSongRowHighlightColor);
     DrawTextW(hdc, m_lastResultText.c_str(), -1, &rect, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
-    SelectObject(hdc, oldFont);
-}
-
-// See the header's own comment.
-void MainWindow::DrawInitialsPrompt(HDC hdc)
-{
-    if (!m_enteringInitials)
-    {
-        return;
-    }
-
-    static HFONT promptFont =
-        CreateFontW(-16, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
-                    CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
-    static HFONT lettersFont =
-        CreateFontW(-30, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
-                    CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
-
-    // Pads the typed initials out to 3 slots with underscores, spaced apart
-    // (e.g. "AB_" -> "A B _") so each letter's own slot stays visually
-    // distinct instead of reading as one run of characters.
-    std::wstring padded = m_initialsBuffer;
-    while (padded.size() < 3)
-    {
-        padded.push_back(L'_');
-    }
-    std::wstring lettersText;
-    for (size_t i = 0; i < padded.size(); ++i)
-    {
-        if (i != 0)
-        {
-            lettersText += L"  ";
-        }
-        lettersText += padded[i];
-    }
-
-    std::wstring headline = L"New High Score on \"" + m_pendingSongTitle + L"\" - " +
-                             FormatScoreWithCommas(m_pendingScore);
-    std::wstring hint = L"Enter your initials - Enter to confirm, Esc to skip";
-
-    // Deliberately spills over the song list's own top rows, same as
-    // DrawCapturePrompt - input is fully blocked while entering initials
-    // (OnLButtonDown/OnKeyDown both guard on m_enteringInitials). Unlike
-    // DrawCapturePrompt, this draws over an opaque panel first: the letters
-    // typed here are the whole point of this screen, so they're not left to
-    // visually compete with whatever song-list text happens to sit
-    // underneath them.
-    int top = kRowTop + kControlHeight + 10;
-    RECT panelRect{kRowLeft - 6, top - 8, m_songListRect.right + 6, top + 118};
-    HBRUSH panelBrush = CreateSolidBrush(RGB(20, 14, 42));
-    HPEN oldPanelPen = (HPEN)SelectObject(hdc, GetStockObject(NULL_PEN));
-    HBRUSH oldPanelBrush = (HBRUSH)SelectObject(hdc, panelBrush);
-    RoundRect(hdc, panelRect.left, panelRect.top, panelRect.right, panelRect.bottom, 14, 14);
-    SelectObject(hdc, oldPanelBrush);
-    SelectObject(hdc, oldPanelPen);
-    DeleteObject(panelBrush);
-
-    RECT headlineRect{kRowLeft, top, m_songListRect.right, top + 26};
-    HFONT oldFont = (HFONT)SelectObject(hdc, promptFont);
-    SetBkMode(hdc, TRANSPARENT);
-    SetTextColor(hdc, kSongRowHighlightColor);
-    DrawTextW(hdc, headline.c_str(), -1, &headlineRect, DT_LEFT | DT_TOP | DT_WORDBREAK | DT_NOPREFIX);
-
-    RECT lettersRect{kRowLeft, headlineRect.bottom + 6, m_songListRect.right, headlineRect.bottom + 48};
-    SelectObject(hdc, lettersFont);
-    SetTextColor(hdc, kLabelTextColor);
-    DrawTextW(hdc, lettersText.c_str(), -1, &lettersRect, DT_LEFT | DT_TOP | DT_SINGLELINE | DT_NOPREFIX);
-
-    RECT hintRect{kRowLeft, lettersRect.bottom + 4, m_songListRect.right, lettersRect.bottom + 26};
-    SelectObject(hdc, promptFont);
-    SetTextColor(hdc, kHintTextColor);
-    DrawTextW(hdc, hint.c_str(), -1, &hintRect, DT_LEFT | DT_TOP | DT_WORDBREAK | DT_NOPREFIX);
-
     SelectObject(hdc, oldFont);
 }
 

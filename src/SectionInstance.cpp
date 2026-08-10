@@ -4,11 +4,6 @@
 
 #include "ChartTiming.h"
 
-namespace
-{
-constexpr int kMaxConsecutiveMisses = 3;
-} // namespace
-
 // Binds this instance to sectionIndex and mode; every other field starts at
 // its own "nothing has happened yet" default, except m_passing itself -
 // DontFail mode starts already passing (see the header's own comment).
@@ -114,14 +109,15 @@ void SectionInstance::ClearLaneHold(int lane)
     m_laneHolds[lane].active = false;
 }
 
-bool SectionInstance::RegisterHit(int hitsRequired)
+bool SectionInstance::RegisterHit(int hitsRequired, StreakTracker& streakTracker)
 {
+    streakTracker.RegisterHit();
+
     if (m_passing)
     {
         return false;
     }
     m_streak++;
-    m_consecutiveMisses = 0;
     if (m_streak >= hitsRequired)
     {
         m_passing = true;
@@ -130,7 +126,7 @@ bool SectionInstance::RegisterHit(int hitsRequired)
     return false;
 }
 
-SectionInstance::MissResult SectionInstance::RegisterMiss(bool easyMode)
+SectionInstance::MissResult SectionInstance::RegisterMiss(bool easyMode, StreakTracker& streakTracker)
 {
     MissResult result;
 
@@ -148,8 +144,7 @@ SectionInstance::MissResult SectionInstance::RegisterMiss(bool easyMode)
 
     bool wasPassing = m_passing;
     m_streak = 0;
-    m_consecutiveMisses++;
-    result.shouldStopClip = m_consecutiveMisses >= kMaxConsecutiveMisses;
+    result.shouldStopClip = streakTracker.RegisterMiss();
 
     if (wasPassing)
     {

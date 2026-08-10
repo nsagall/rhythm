@@ -46,10 +46,9 @@ public:
     // OnJudgement.
     void ShowJudgement(JudgementResult result, int lane, bool passing, bool precise);
 
-    // Forwards a points-banking/losing event to the renderer - see
-    // INoteLaneRenderer::OnScoreBanked/OnScoreLost.
-    void ShowScoreBanked(int amount);
-    void ShowScoreLost(int amount);
+    // Forwards a HUD value change to the renderer - see
+    // INoteLaneRenderer::OnHudValueChanged.
+    void ShowHudValueChanged(GameSession::HudField field, int newValue);
 
     // Builds this frame's scene from session and renders it.
     void Draw(HDC hdc, const GameSession& session);
