@@ -1,51 +1,57 @@
 [song]
-title = Voltage Run (AI Slop)
-bpm = 128
+title = Quiet Hours
+bpm = 84
 time_signature = 4/4
-start_tolerance_ms = 120
-release_tolerance_ms = 250
+start_tolerance_ms = 130
+release_tolerance_ms = 260
 
 [clip]
 display_name = Drum Intro
 name = drum_intro
-hits_required = 20
+hits_required = 6
 
 [clip]
 display_name = Full Beat
 name = drums
-volume = 0.8
+volume = 0.7
 
 [clip]
 display_name = Bass
 name = bass
-hits_required = 20
+hits_required = 6
 init_volume = 0.5
-volume = 0.6
+volume = 0.55
 
 [clip]
-display_name = Arp
-name = arp
-hits_required = 20
-init_volume = 0.7
-volume = 0.75
+display_name = Pad
+name = pad
+hits_required = 4
+init_volume = 0.45
+volume = 0.5
 
 [clip]
 display_name = Lead
 name = lead
-hits_required = 8
+hits_required = 6
 init_volume = 0.7
 volume = 0.75
 
 [clip]
+display_name = Bridge
+name = bridge
+hits_required = 6
+learn_mode = dontfail
+release_tolerance_ms = 700
+
+[clip]
 display_name = Drums 2
 name = drums_2
-hits_required = 24
-volume = 0.8
+volume = 0.7
 
 [clip]
 display_name = Lead 2
 name = lead_2
-hits_required = 10
+hits_required = 6
 init_volume = 0.7
 volume = 0.75
 
@@ -61,32 +67,36 @@ clip = drums
 clip = bass
 
 [learn]
-clip = arp
+clip = pad
 
 [learn]
 clip = lead
 
 [break]
-clip = arp
+clip = pad
 
 [background]
-clip = arp
+clip = pad
 
 [learn]
+clip = bridge
+
+[reset]
+
+[background]
 clip = drums_2
 
-[learn]
+[background]
 clip = bass
 
 [learn]
 clip = lead_2
 
 [break]
-clip = arp
+clip = pad
 
 [background]
-clip = arp
+clip = pad
 
 [learn]
 clip = drum_intro
-
