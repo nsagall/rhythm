@@ -16,7 +16,6 @@ name = drums_1
 [clip]
 display_name = Bass
 name = bass
-hits_required = 24
 
 [clip]
 display_name = Piano
@@ -25,6 +24,8 @@ name = piano
 [clip]
 display_name = Melody
 name = melody
+hits_required = 2
+learn_mode = dontfail
 release_tolerance_ms = 1000
 
 [clip]
@@ -35,6 +36,8 @@ hits_required = 24
 [clip]
 display_name = Melody 2
 name = melody_2
+hits_required = 2
+learn_mode = dontfail
 release_tolerance_ms = 1000
 
 [learn]
@@ -69,12 +72,24 @@ clip = bass
 [learn]
 clip = melody_2
 
-[break]
-clip = piano
+[reset]
+
+[learn]
+clip = drum_intro
+
+[reset]
+
+[background]
+clip = drums_2
 
 [background]
 clip = piano
 
 [learn]
-clip = drum_intro
+clip = bass
+
+[learn]
+clip = melody
+
+[reset]
 

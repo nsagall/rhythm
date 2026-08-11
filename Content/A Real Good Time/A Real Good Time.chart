@@ -98,11 +98,11 @@ clip = drums_intro
 [background]
 clip = arp_bg
 
-[background]
-clip = bass
-
 [learn]
 clip = drums
+
+[learn]
+clip = bass
 
 [learn]
 clip = chords
@@ -145,4 +145,16 @@ clip = you_had_him
 
 [break]
 clip = break_2
+
+[learn]
+clip = chords
+
+[learn]
+clip = drums
+
+[background]
+clip = good_time_bg
+
+[learn]
+clip = good_time
 
