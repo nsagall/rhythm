@@ -1197,11 +1197,12 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
 
         case SectionKind::Break:
         {
+            const ChartClip& clip = m_song.clips[section.clipIndex];
+
             // StopAllExcept this section's own clip, not StopAll() - if
             // that clip was already playing uninterrupted (e.g. as a
             // still-open background layer), it's about to be restarted
-            // fresh by StartClipLoop below regardless (the isPlaying=false
-            // fill just below makes sure of that) - stopping it here too
+            // fresh by StartClipLoop below regardless - stopping it here too
             // would just mean StartLooping's own Stop()/FlushSourceBuffers()
             // stops-and-reflushes the SAME voice a second time moments
             // later for no benefit, widening the window for a fragment of
@@ -1211,9 +1212,24 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
             // as its Break section begins). See AudioEngine::
             // StopAllExcept's own comment.
             m_audioEngine.StopAllExcept(m_stemHandles[section.clipIndex]);
+            // Every OTHER clip's entry gets isPlaying cleared here - but NOT
+            // clip's own (if it has one): ForgetStaleClipOrigin just below
+            // trusts isPlaying to decide whether there's a real groove worth
+            // preserving, and clip is exactly the voice StopAllExcept just
+            // chose not to silence. Clearing it here too used to fool
+            // ForgetStaleClipOrigin into erasing its still-live origin, so
+            // the restart below re-anchored to *now* and phase-seeked to
+            // sample 0 instead of picking up where the still-playing voice
+            // already was - the actual remaining mechanism behind the "tiny
+            // bit of the beginning" bug that StopAllExcept alone didn't
+            // fully fix. isPlaying gets flipped false further down instead,
+            // right before StartClipLoop, once the origin is safely read.
             for (auto& entry : m_clipInstances)
             {
-                entry.second.isPlaying = false;
+                if (entry.first != &clip)
+                {
+                    entry.second.isPlaying = false;
+                }
             }
 
             // Same kNoteFallBeats guarantee a learn section's own advance
@@ -1227,7 +1243,6 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
             double secondsPerBeat = 60.0 / m_song.bpm;
             double tFallSeconds = kNoteFallBeats * secondsPerBeat;
 
-            const ChartClip& clip = m_song.clips[section.clipIndex];
             double stemDuration = m_audioEngine.GetStemDurationSeconds(m_stemHandles[section.clipIndex]);
             double nowSeconds = m_clock.ElapsedSeconds();
 
@@ -1237,13 +1252,29 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
             // value. See EnsureClipInstance's own comment. ForgetStaleClipOrigin
             // first - see its own comment - so a break reusing a clip that's
             // gone silent since its last use re-anchors instead of picking
-            // up an old, no-longer-audible groove.
+            // up an old, no-longer-audible groove; correctly a no-op here
+            // when clip's own isPlaying was left untouched above, so a
+            // break reusing its own still-playing clip keeps that clip's
+            // real origin (and thus a phase-continuous restart) instead.
             ForgetStaleClipOrigin(&clip);
             EnsureClipInstance(&clip, nowSeconds);
             double originSeconds = m_clipInstances.at(&clip).startSeconds;
 
             ChartTiming::BreakAdvance advance =
                 ChartTiming::ComputeBreakAdvance(originSeconds, nowSeconds, stemDuration, section.loopCount, tFallSeconds);
+
+            // clip's own isPlaying may still be true here (left alone
+            // above, precisely to keep ForgetStaleClipOrigin from discarding
+            // a still-live origin) - flip it false right before StartClipLoop
+            // so it still performs its one necessary restart (an
+            // already-submitted buffer's loop count can't be changed in
+            // place, and this break needs its own, possibly finite, count
+            // applied) instead of early-returning as "already playing,
+            // nothing to do". originSeconds was already captured above from
+            // the untouched origin, so this restart's phase seek lands
+            // exactly where the still-playing voice already was, not at
+            // sample 0.
+            m_clipInstances.at(&clip).isPlaying = false;
 
             // Unlike a learn clip (which always loops forever - it might
             // still need to keep playing past this section's own end, if
