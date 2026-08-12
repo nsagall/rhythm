@@ -307,6 +307,62 @@ void AudioEngine::SetVolume(StemHandle stemHandle, float volume)
     }
 }
 
+// Ramps every voice in stems down together, then stops/flushes all of them -
+// see the header's own comment for why this exists instead of a bare
+// Stop()+FlushSourceBuffers() per voice.
+void AudioEngine::FadeOutAndStop(const std::vector<Stem*>& stems)
+{
+    if (stems.empty())
+    {
+        return;
+    }
+
+    // Read each voice's own current volume once, up front - a stem mid-
+    // Learn-section's own init_volume/volume split, or a break clip at
+    // less than unity gain, must fade from wherever it actually is, not
+    // from 1.0, or this would audibly jump louder for an instant before
+    // fading down.
+    std::vector<float> startVolumes(stems.size(), 0.0f);
+    for (size_t i = 0; i < stems.size(); ++i)
+    {
+        if (stems[i]->voice)
+        {
+            stems[i]->voice->GetVolume(&startVolumes[i]);
+        }
+    }
+
+    // A handful of small, evenly-spaced volume steps rather than one jump
+    // straight to silence - XAudio2's Stop() truncates a voice's waveform
+    // at whatever sample it's currently on, which is an audible click on
+    // its own, and considerably more so when several simultaneously-
+    // stopped voices (a Break/Reset's own stop-everything, in particular)
+    // all truncate at once. ~10ms total is short enough that even a
+    // fast-decaying note reads as a clean stop, not a lingering fade.
+    constexpr int kFadeSteps = 5;
+    constexpr DWORD kFadeStepMs = 2;
+    for (int step = 1; step <= kFadeSteps; ++step)
+    {
+        float remaining = 1.0f - static_cast<float>(step) / static_cast<float>(kFadeSteps);
+        for (size_t i = 0; i < stems.size(); ++i)
+        {
+            if (stems[i]->voice)
+            {
+                stems[i]->voice->SetVolume(startVolumes[i] * remaining);
+            }
+        }
+        Sleep(kFadeStepMs);
+    }
+
+    for (Stem* stem : stems)
+    {
+        if (stem->voice)
+        {
+            stem->voice->Stop();
+            stem->voice->FlushSourceBuffers();
+        }
+    }
+}
+
 // Stops a single stem.
 void AudioEngine::Stop(StemHandle stemHandle)
 {
@@ -315,43 +371,34 @@ void AudioEngine::Stop(StemHandle stemHandle)
         return;
     }
 
-    Stem& stem = m_stems[stemHandle.value];
-    if (stem.voice)
-    {
-        stem.voice->Stop();
-        stem.voice->FlushSourceBuffers();
-    }
+    FadeOutAndStop({&m_stems[stemHandle.value]});
 }
 
 // Stops every currently loaded stem.
 void AudioEngine::StopAll()
 {
+    std::vector<Stem*> stems;
+    stems.reserve(m_stems.size());
     for (Stem& stem : m_stems)
     {
-        if (stem.voice)
-        {
-            stem.voice->Stop();
-            stem.voice->FlushSourceBuffers();
-        }
+        stems.push_back(&stem);
     }
+    FadeOutAndStop(stems);
 }
 
 // Stops every currently loaded stem except keep - see the header's own comment.
 void AudioEngine::StopAllExcept(StemHandle keep)
 {
+    std::vector<Stem*> stems;
+    stems.reserve(m_stems.size());
     for (size_t i = 0; i < m_stems.size(); ++i)
     {
-        if (static_cast<int>(i) == keep.value)
+        if (static_cast<int>(i) != keep.value)
         {
-            continue;
-        }
-        Stem& stem = m_stems[i];
-        if (stem.voice)
-        {
-            stem.voice->Stop();
-            stem.voice->FlushSourceBuffers();
+            stems.push_back(&m_stems[i]);
         }
     }
+    FadeOutAndStop(stems);
 }
 
 // Pauses every currently loaded stem in place, without flushing its queued

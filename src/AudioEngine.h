@@ -181,6 +181,21 @@ private:
     // is currently audible - see StartLooping's own call site comment.
     void AssertNoOtherStemForSameFilePlaying(StemHandle playingHandle) const;
 
+    // Ramps every voice in stems down to silence together over a few
+    // milliseconds, then Stop()s/FlushSourceBuffers()s all of them - shared
+    // by Stop/StopAll/StopAllExcept so every stop, however many voices it
+    // silences at once, goes through the same brief fade instead of cutting
+    // straight from full amplitude to nothing. See Stop's own comment for
+    // why: XAudio2's Stop() truncates a voice's waveform at whatever sample
+    // it happens to be on, and doing that to several simultaneously-
+    // stopped voices at once (e.g. every Break/Reset's own stop-everything)
+    // produces an audible click/glitch, not just theoretical few-ms
+    // quantum bleed. Blocks the calling thread for the fade's duration
+    // (~10ms total regardless of how many stems are in the list, since
+    // every step ramps all of them together) - negligible against a
+    // section-transition event, which nothing else is timed against.
+    void FadeOutAndStop(const std::vector<Stem*>& stems);
+
     // How many source voices each loaded Sfx gets, round-robinned by
     // PlaySfx - enough to survive a rapid re-fire (e.g. two multiplier
     // tier-ups a beat apart) without one play cutting its predecessor off,
