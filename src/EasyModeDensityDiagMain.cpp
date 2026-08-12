@@ -1,0 +1,128 @@
+#include <algorithm>
+#include <cstdio>
+#include <string>
+#include <vector>
+
+#include "AudioEngine.h"
+#include "GameSession.h"
+
+// Standalone diagnostic (not part of the normal build): loads a handful of
+// real Content/ charts twice each - once with easyMode=false, once with
+// easyMode=true - through the real GameSession::LoadChart, and for every
+// judged (hasMidi) clip prints each lane's note count and a compact
+// {beat:lane} list before vs. after ApplyEasyModeTransform. Lets the
+// density-thinning rules (GameSession.cpp's ApplyEasyModeTransform) be
+// eyeballed directly against real content: a dense/syncopated clip should
+// visibly thin while keeping irregular (non-grid) gaps, and an
+// already-sparse clip (per tools/SongGenerator.cpp's own hand-authored
+// "chart stays sparse" convention) should come out with an identical note
+// list before and after.
+
+namespace
+{
+
+// One clip's {beat,lane} pairs across all 4 lanes, merged and sorted by
+// beat - mirrors the compact dump format used when this diagnostic's
+// design was worked out against real SongGenerator.cpp chart tables.
+struct FlatNote
+{
+    double beat;
+    int lane;
+    double duration;
+};
+
+std::vector<FlatNote> Flatten(const ChartClip& clip)
+{
+    std::vector<FlatNote> notes;
+    for (int lane = 0; lane < kLaneCount; ++lane)
+    {
+        for (const LaneNote& note : clip.laneNotes[lane])
+        {
+            notes.push_back({note.startBeat, lane, note.durationBeats});
+        }
+    }
+    std::sort(notes.begin(), notes.end(), [](const FlatNote& a, const FlatNote& b) {
+        if (a.beat != b.beat)
+        {
+            return a.beat < b.beat;
+        }
+        return a.lane < b.lane;
+    });
+    return notes;
+}
+
+void PrintFlat(const std::vector<FlatNote>& notes)
+{
+    printf("    ");
+    for (size_t i = 0; i < notes.size(); ++i)
+    {
+        printf("{%.2f,L%d,d%.2f}%s", notes[i].beat, notes[i].lane, notes[i].duration,
+               (i + 1 < notes.size()) ? " " : "");
+    }
+    printf("\n");
+}
+
+void DumpChart(const std::wstring& chartPath)
+{
+    AudioEngine engine;
+    if (!engine.Initialize())
+    {
+        wprintf(L"AudioEngine::Initialize failed for %ls\n", chartPath.c_str());
+        return;
+    }
+
+    GameSession hard(engine);
+    GameSession easy(engine);
+    std::wstring error;
+    bool hardOk = hard.LoadChart(chartPath, /*easyMode=*/false, error);
+    if (!hardOk)
+    {
+        wprintf(L"hard-mode LoadChart failed for %ls: %ls\n", chartPath.c_str(), error.c_str());
+        engine.Shutdown();
+        return;
+    }
+    bool easyOk = easy.LoadChart(chartPath, /*easyMode=*/true, error);
+    if (!easyOk)
+    {
+        wprintf(L"easy-mode LoadChart failed for %ls: %ls\n", chartPath.c_str(), error.c_str());
+        engine.Shutdown();
+        return;
+    }
+
+    wprintf(L"=== %ls (bpm=%.2f) ===\n", chartPath.c_str(), hard.Song().bpm);
+    const ChartSong& hardSong = hard.Song();
+    const ChartSong& easySong = easy.Song();
+    for (size_t i = 0; i < hardSong.clips.size(); ++i)
+    {
+        const ChartClip& hardClip = hardSong.clips[i];
+        const ChartClip& easyClip = easySong.clips[i];
+        if (!hardClip.hasMidi)
+        {
+            continue;
+        }
+        std::vector<FlatNote> before = Flatten(hardClip);
+        std::vector<FlatNote> after = Flatten(easyClip);
+        int totalBefore = static_cast<int>(before.size());
+        int totalAfter = static_cast<int>(after.size());
+        wprintf(L"  clip '%ls' span=%.2f: %d notes -> %d notes%ls\n", hardClip.name.c_str(), hardClip.spanBeats,
+                totalBefore, totalAfter, (totalBefore == totalAfter) ? L"  (unchanged - already sparse enough)" : L"");
+        printf("  before:\n");
+        PrintFlat(before);
+        printf("  after:\n");
+        PrintFlat(after);
+    }
+    printf("\n");
+
+    engine.Shutdown();
+}
+
+} // namespace
+
+int main()
+{
+    DumpChart(L"Content/Cool Boy/Cool Boy.chart");
+    DumpChart(L"Content/Byte Blaster (AI Slop)/Byte Blaster.chart");
+    DumpChart(L"Content/Better/better.chart");
+    DumpChart(L"Content/A Real Good Time/A Real Good Time.chart");
+    return 0;
+}

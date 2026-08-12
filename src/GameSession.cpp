@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
-#include <set>
 
 #include "ChartTiming.h"
 
@@ -18,10 +17,29 @@ constexpr double kEasyModeToleranceMultiplier = 1.5;
 // player get back on track.
 constexpr double kEasyModeStoppedToleranceMultiplier = 2.0;
 
-// How long an easy-mode note lasts, in beats - half the quarter-note grid
-// it's quantized to, so consecutive notes always leave a visible gap
-// instead of running into each other.
-constexpr double kEasyModeNoteDurationBeats = 0.5;
+// Easy mode's density-thinning targets, expressed as fixed millisecond
+// targets and converted to beats via the clip's own song bpm (see
+// EasyModeMsToBeats) rather than fixed beat counts, so felt difficulty
+// stays consistent across this game's real ~77-150bpm content range
+// instead of silently swinging with tempo - a fixed beat count is a much
+// shorter real gap at a fast tempo than a slow one. Starting points only,
+// expected to move after playtesting - see ApplyEasyModeTransform.
+constexpr double kEasyModePerLaneMinGapMs = 260.0;     // ~2.3 hits/sec cap within one lane
+constexpr double kEasyModeGlobalMinGapMs = 170.0;      // tighter cross-lane cap, catches fast lane-alternating patterns
+constexpr double kEasyModeNoteDurationFloorMs = 130.0; // a kept note is never shorter than this
+
+// Float-safety-only margin (not a musical rest) so a kept note's duration
+// can approach but never touch/overlap the next kept note in its own lane -
+// a lane can hold at most one note at a time (ChartMidi's own overlap
+// rejection at parse time relies on the same invariant), so an actual
+// overlap here would be a correctness bug, not a taste issue.
+constexpr double kEasyModeSafetyEpsilonBeats = 1e-4;
+
+// Below this, two kept notes (regardless of lane) are treated as
+// simultaneous for chord-collapse purposes - a floating-point-safety
+// epsilon, not a musical threshold (kEasyModeGlobalMinGapMs above is
+// always far bigger in practice; this is a defense-in-depth backstop).
+constexpr double kEasyModeChordEpsilonBeats = 1e-6;
 
 // How far the judging clock (a free-running QueryPerformanceCounter timer)
 // is allowed to drift from the actual audio hardware's playback position
@@ -49,6 +67,74 @@ constexpr double kImprecisionToleranceFraction = 0.5;
 // first tier above the base x1), so { 10, 20, 30 } means 0-9 -> x1,
 // 10-19 -> x2, 20-29 -> x3, 30+ -> x4.
 constexpr int kMultiplierTierStreaks[] = {10, 20, 30};
+
+// One candidate note being considered by ApplyEasyModeTransform's cross-lane
+// thinning pass - startBeat/durationBeats are carried straight from the
+// originating LaneNote, lane just tags which of the 4 lanes it came from so
+// the note can be written back after the lanes have been merged into one
+// combined time-ordered stream.
+struct EasyModeNote
+{
+    double startBeat = 0.0;
+    double durationBeats = 0.0;
+    int lane = 0;
+};
+
+// Converts a millisecond target to beats at bpm - see kEasyModePerLaneMinGapMs's
+// own comment for why easy mode's thresholds are expressed this way instead
+// of as fixed beat counts.
+double EasyModeMsToBeats(double ms, double bpm)
+{
+    return ms * bpm / 60000.0;
+}
+
+// Returns indices into startBeats (already ascending, all in [0, spanBeats))
+// to keep, such that no two consecutive kept notes - walking the circle,
+// including the wrap from the last kept note back to the first - start
+// closer together than minGapBeats. Greedy, seeded right after the single
+// largest circular gap: this makes an already-adequately-spaced input pass
+// through completely untouched (any starting point would keep everything),
+// and needs no separate wraparound fixup - the gap from the true last-kept
+// note back around to the seed can only be >= the largest original gap,
+// since this pass only ever drops notes (never adds or moves one), which
+// can only widen that gap further. Used by ApplyEasyModeTransform for both
+// its per-lane and cross-lane thinning passes. Returned indices are sorted
+// ascending (not in scan order), matching the ascending-by-startBeat order
+// callers elsewhere in this codebase (ChartTiming::NextOnsetAfter etc.)
+// require of a lane's notes.
+std::vector<int> CircularGreedyThinIndices(const std::vector<double>& startBeats, double spanBeats,
+                                            double minGapBeats)
+{
+    int count = static_cast<int>(startBeats.size());
+    if (count <= 1)
+    {
+        return count == 0 ? std::vector<int>{} : std::vector<int>{0};
+    }
+
+    std::vector<double> gaps(count);
+    for (int i = 0; i < count; ++i)
+    {
+        double next = (i + 1 < count) ? startBeats[i + 1] : startBeats[0] + spanBeats;
+        gaps[i] = next - startBeats[i];
+    }
+    int seed = static_cast<int>(std::max_element(gaps.begin(), gaps.end()) - gaps.begin());
+    seed = (seed + 1) % count;
+
+    std::vector<int> kept{seed};
+    double lastKeptUnrolled = startBeats[seed];
+    for (int step = 1; step < count; ++step)
+    {
+        int idx = (seed + step) % count;
+        double unrolled = startBeats[idx] + spanBeats * ((seed + step) / count); // 0 or 1 loops wrapped
+        if (unrolled - lastKeptUnrolled >= minGapBeats)
+        {
+            kept.push_back(idx);
+            lastKeptUnrolled = unrolled;
+        }
+    }
+    std::sort(kept.begin(), kept.end());
+    return kept;
+}
 
 } // namespace
 
@@ -113,7 +199,7 @@ bool GameSession::LoadChart(const std::wstring& chartFilePath, bool easyMode, st
         {
             if (easyMode)
             {
-                ApplyEasyModeTransform(clip);
+                ApplyEasyModeTransform(clip, song.bpm);
             }
 
             double stemDuration = m_audioEngine.GetStemDurationSeconds(handle);
@@ -1704,65 +1790,124 @@ double GameSession::CountInSeconds() const
 // doc comment for the full contract. Runs on one repetition's worth of
 // notes (before ExpandLaneNotesToFillClip tiles it), so spanBeats here
 // still means "one repetition's length."
-void GameSession::ApplyEasyModeTransform(ChartClip& clip)
+void GameSession::ApplyEasyModeTransform(ChartClip& clip, double bpm)
 {
     if (!clip.hasMidi || clip.spanBeats <= 0.0)
     {
         return;
     }
 
-    // spanBeats is always an exact whole number of beats - ChartFile's
-    // AlignToBarBoundary (called while parsing every clip's MIDI file) only
-    // ever produces a whole multiple of the song's integer beatsPerBar - so
-    // the integer beat arithmetic below is exact, with no epsilon-
-    // comparison hazard.
-    long long spanBeatsInt = static_cast<long long>(std::llround(clip.spanBeats));
+    double span = clip.spanBeats;
+    double perLaneMinGapBeats = EasyModeMsToBeats(kEasyModePerLaneMinGapMs, bpm);
+    double globalMinGapBeats = EasyModeMsToBeats(kEasyModeGlobalMinGapMs, bpm);
+    double durationFloorBeats = EasyModeMsToBeats(kEasyModeNoteDurationFloorMs, bpm);
 
-    // Per lane: round every original note UP to the next quarter-note beat
-    // (never down/nearest - a combined note starts at or after where the
-    // original notes began, never earlier). A std::set collapses multiple
-    // originals landing on the same beat into one automatically. Wrapping a
-    // note quantized off the loop's end back to beat 0 is correct, not a
-    // bug: once tiled/looped, beat spanBeatsInt IS beat 0 of the next
-    // repetition - the same absolute instant.
-    std::set<long long> laneBeats[kLaneCount];
+    // Stage 1: per-lane density thinning. A surviving note's startBeat is
+    // never moved - only which notes survive changes - so a lane whose
+    // original gaps are already all >= perLaneMinGapBeats passes through
+    // completely untouched (see CircularGreedyThinIndices's own comment).
+    std::vector<EasyModeNote> perLaneSurvivors[kLaneCount];
     for (int lane = 0; lane < kLaneCount; ++lane)
     {
-        for (const LaneNote& note : clip.laneNotes[lane])
+        const std::vector<LaneNote>& notes = clip.laneNotes[lane];
+        if (notes.empty())
         {
-            long long target = static_cast<long long>(std::ceil(note.startBeat - 1e-6));
-            target %= spanBeatsInt;
-            laneBeats[lane].insert(target);
+            continue;
+        }
+        std::vector<double> starts;
+        starts.reserve(notes.size());
+        for (const LaneNote& note : notes)
+        {
+            starts.push_back(note.startBeat);
+        }
+        for (int index : CircularGreedyThinIndices(starts, span, perLaneMinGapBeats))
+        {
+            perLaneSurvivors[lane].push_back(EasyModeNote{notes[index].startBeat, notes[index].durationBeats, lane});
         }
     }
 
-    // No simultaneous notes: a beat claimed by more than one lane survives
-    // only in the lowest-indexed lane that claims it.
-    for (long long beat = 0; beat < spanBeatsInt; ++beat)
-    {
-        bool claimed = false;
-        for (int lane = 0; lane < kLaneCount; ++lane)
-        {
-            if (laneBeats[lane].count(beat))
-            {
-                if (claimed)
-                {
-                    laneBeats[lane].erase(beat);
-                }
-                claimed = true;
-            }
-        }
-    }
-
+    // Stage 2: cross-lane thinning. Merge every lane's stage-1 survivors
+    // into one time-ordered stream - ties broken by lane index so a
+    // would-be chord deterministically favors the lowest lane, matching
+    // stage 3's own tie-break below - and thin again with a tighter gap.
+    // This is what catches a pattern that rapidly alternates lanes (e.g. a
+    // cycling arpeggio) where any single lane looks sparse on its own but
+    // the combined stream doesn't.
+    std::vector<EasyModeNote> merged;
     for (int lane = 0; lane < kLaneCount; ++lane)
     {
-        std::vector<LaneNote> quantized;
-        quantized.reserve(laneBeats[lane].size());
-        for (long long beat : laneBeats[lane]) // std::set iterates sorted ascending
+        for (const EasyModeNote& note : perLaneSurvivors[lane])
         {
-            quantized.push_back(LaneNote{static_cast<double>(beat), kEasyModeNoteDurationBeats});
+            merged.push_back(note);
         }
-        clip.laneNotes[lane] = std::move(quantized);
+    }
+    std::sort(merged.begin(), merged.end(), [](const EasyModeNote& a, const EasyModeNote& b) {
+        if (a.startBeat != b.startBeat)
+        {
+            return a.startBeat < b.startBeat;
+        }
+        return a.lane < b.lane;
+    });
+
+    std::vector<double> mergedStarts;
+    mergedStarts.reserve(merged.size());
+    for (const EasyModeNote& note : merged)
+    {
+        mergedStarts.push_back(note.startBeat);
+    }
+    std::vector<EasyModeNote> globallyThinned;
+    globallyThinned.reserve(merged.size());
+    for (int index : CircularGreedyThinIndices(mergedStarts, span, globalMinGapBeats))
+    {
+        globallyThinned.push_back(merged[index]);
+    }
+
+    // Stage 3: chord collapse - a defensive backstop, independent of
+    // however globalMinGapBeats gets tuned later. Any run of notes still
+    // within kEasyModeChordEpsilonBeats of the same beat (regardless of
+    // lane) survives only as its lowest-indexed lane's note - lanes are
+    // pitch-ordered ascending, so this keeps a chord's root/bass note.
+    // globallyThinned is already sorted (startBeat asc, lane asc) by the
+    // merge above and CircularGreedyThinIndices preserves that relative
+    // order, so a run of near-simultaneous notes is always contiguous here
+    // with the lowest lane first.
+    std::vector<EasyModeNote> collapsed;
+    collapsed.reserve(globallyThinned.size());
+    for (const EasyModeNote& note : globallyThinned)
+    {
+        if (!collapsed.empty() && note.startBeat - collapsed.back().startBeat < kEasyModeChordEpsilonBeats)
+        {
+            continue; // same near-simultaneous run as the previous (lower-lane) survivor
+        }
+        collapsed.push_back(note);
+    }
+
+    // Stage 4: duration. Each surviving note keeps its own authored length
+    // instead of a fixed blip, clamped to a floor (never imperceptibly
+    // short) and a ceiling of "don't run into the next surviving note in
+    // this lane" - computed circularly (a lane's last note is bounded by
+    // its own first note, one span later), since ExpandLaneNotesToFillClip
+    // tiles whole repetitions independently and won't clip an overrun
+    // against the next repetition. perLaneMinGapMs is always comfortably
+    // larger than kEasyModeNoteDurationFloorMs, so this ceiling can never
+    // actually fall below the floor in practice - the std::max below is
+    // just defensive insurance against changing those constants later.
+    std::vector<LaneNote> perLaneFinal[kLaneCount];
+    for (const EasyModeNote& note : collapsed)
+    {
+        perLaneFinal[note.lane].push_back(LaneNote{note.startBeat, note.durationBeats});
+    }
+    for (int lane = 0; lane < kLaneCount; ++lane)
+    {
+        std::vector<LaneNote>& notes = perLaneFinal[lane];
+        for (size_t i = 0; i < notes.size(); ++i)
+        {
+            double nextStart = (i + 1 < notes.size()) ? notes[i + 1].startBeat : notes[0].startBeat + span;
+            double ceiling = nextStart - notes[i].startBeat - kEasyModeSafetyEpsilonBeats;
+            notes[i].durationBeats =
+                std::clamp(notes[i].durationBeats, durationFloorBeats, std::max(durationFloorBeats, ceiling));
+        }
+        clip.laneNotes[lane] = std::move(notes);
     }
 }
 

@@ -157,14 +157,15 @@ public:
 
     // Records a miss: a no-op once passing, in Pass mode (frozen forever,
     // exactly like RegisterHit) - streakTracker isn't touched either, same
-    // as every other consequence below. In easy mode, the very first miss
-    // each section is instead fully forgiven regardless of mode or current
-    // passing state (this section's own hitsRequired progress and
-    // streakTracker both left untouched, and no mode-specific consequence
-    // fires either) - see the m_easyGraceAvailable field comment. Otherwise
-    // resets this section's own hitsRequired progress and registers with
-    // streakTracker (see its own comment for what that does); in DontFail
-    // mode, a miss while passing additionally drops back to failing.
+    // as every other consequence below. In easy mode, each of this
+    // section's first kEasyGraceMisses misses is instead fully forgiven
+    // regardless of mode or current passing state (this section's own
+    // hitsRequired progress and streakTracker both left untouched, and no
+    // mode-specific consequence fires either) - see the m_easyGraceRemaining
+    // field comment. Otherwise resets this section's own hitsRequired
+    // progress and registers with streakTracker (see its own comment for
+    // what that does); in DontFail mode, a miss while passing additionally
+    // drops back to failing.
     MissResult RegisterMiss(bool easyMode, StreakTracker& streakTracker);
 
     JudgementResult OnsetJudgement(double startBeat, int lane) const;
@@ -208,10 +209,12 @@ private:
     LearnMode m_mode = LearnMode::Pass;
     int m_streak = 0;
 
-    // One-note grace period (easy mode only): true until this section's
-    // first miss consumes it in RegisterMiss - that miss is then fully
-    // forgiven. Never consulted when easyMode is false.
-    bool m_easyGraceAvailable = true;
+    // Miss grace period (easy mode only): counts down each time RegisterMiss
+    // fully forgives a miss, starting at kEasyGraceMisses - so a beginner's
+    // first couple of stumbles in a section don't cost anything. Never
+    // consulted when easyMode is false.
+    static constexpr int kEasyGraceMisses = 2;
+    int m_easyGraceRemaining = kEasyGraceMisses;
 
     bool m_passing = false;
     bool m_hasPendingAdvance = false;
