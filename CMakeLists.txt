@@ -31,6 +31,17 @@ target_include_directories(RhythmCore PUBLIC src)
 target_compile_definitions(RhythmCore PUBLIC UNICODE _UNICODE)
 target_link_libraries(RhythmCore PUBLIC midifile xaudio2_9 ole32 winmm)
 
+# Colors.ini load/save for Colors.h's ClipColor::/GameColors:: globals -
+# its own tiny target (no midifile/xaudio2/audio deps at all) so
+# ColorEditor.exe can link just this instead of the much heavier
+# RhythmCore, while Rhythm still gets the exact same code the editor
+# writes with, no drift.
+add_library(RhythmColors STATIC
+    src/ColorConfig.cpp
+)
+target_include_directories(RhythmColors PUBLIC src)
+target_compile_definitions(RhythmColors PUBLIC UNICODE _UNICODE)
+
 add_executable(Rhythm WIN32
     src/main.cpp
     src/MainWindow.cpp
@@ -48,7 +59,7 @@ add_executable(Rhythm WIN32
 )
 
 target_compile_definitions(Rhythm PRIVATE UNICODE _UNICODE)
-target_link_libraries(Rhythm PRIVATE RhythmCore msimg32 xinput9_1_0)
+target_link_libraries(Rhythm PRIVATE RhythmCore RhythmColors msimg32 xinput9_1_0)
 
 if(MINGW)
     target_link_options(Rhythm PRIVATE -municode)
@@ -89,4 +100,21 @@ target_link_libraries(RhythmEditor PRIVATE RhythmCore imgui d3d11 dxgi d3dcompil
 
 if(MINGW)
     target_link_options(RhythmEditor PRIVATE -municode)
+endif()
+
+# Standalone Colors.ini tuning tool - lets an author see every game color
+# as a swatch (labeled with the same name Colors.ini/ColorConfig.cpp use)
+# and repaint it with an ImGui hue-wheel picker, side by side, without
+# touching game code. Reuses the same vendored ImGui + Win32/DX11 backend
+# as RhythmEditor, but links RhythmColors (not RhythmCore) - it has no
+# reason to touch chart/audio code at all.
+add_executable(ColorEditor WIN32
+    src/coloreditor/ColorEditorMain.cpp
+)
+target_include_directories(ColorEditor PRIVATE src)
+target_compile_definitions(ColorEditor PRIVATE UNICODE _UNICODE)
+target_link_libraries(ColorEditor PRIVATE RhythmColors imgui d3d11 dxgi d3dcompiler dwmapi)
+
+if(MINGW)
+    target_link_options(ColorEditor PRIVATE -municode)
 endif()

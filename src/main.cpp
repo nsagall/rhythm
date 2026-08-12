@@ -2,9 +2,17 @@
 
 #include <mmsystem.h>
 
+#include "ColorConfig.h"
+
 // Entry point: creates the main window and runs the message loop until it closes.
 int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow)
 {
+    // Overwrites Colors.h's compiled-in defaults with whatever Colors.ini
+    // (edited via ColorEditor.exe) has saved - must happen before
+    // MainWindow::Create, which reads GameColors::kWindowBgColor/
+    // kFieldBgColor to create GDI brushes immediately.
+    Colors::LoadFromIni();
+
     // Windows' default timer resolution (~15.6ms) is what SetTimer's ~16ms
     // frame timer (NoteLane's redraw tick, which also drives GameSession::
     // Update()) actually gets rounded/coalesced against - at that
