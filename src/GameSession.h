@@ -688,19 +688,39 @@ private:
     // editor's analytical block scheduler).
 
     // When easy mode is on, simplifies clip's MIDI-derived pattern before
-    // it's tiled/judged: every note is rounded up to the next quarter-note
-    // beat (never earlier - "combined" notes start at or after where the
-    // originals began), multiple originals landing on the same beat within
-    // a lane collapse into one, and a beat claimed by more than one lane
-    // survives only in the lowest-indexed lane that claims it (no
-    // simultaneous notes). Every surviving note is shortened to
-    // kEasyModeNoteDurationBeats (half the quarter-note grid it's spaced
-    // on), so consecutive notes always leave a visible gap instead of
-    // running into each other. No-op unless clip.hasMidi. Must run before
+    // it's tiled/judged, in three stages, run in order (see
+    // CircularGreedyThinIndices and its callers in the .cpp for the actual
+    // algorithm):
+    //   1. Per-lane density thinning: within each lane independently,
+    //      greedily drop notes so no two *kept* onsets in that lane start
+    //      closer than kEasyModePerLaneMinGapMs apart (converted to beats
+    //      via bpm) - circular, respecting the loop boundary at spanBeats.
+    //      A lane that's already sparse enough is left completely
+    //      untouched; a note's startBeat is never moved, only whether it
+    //      survives.
+    //   2. Cross-lane thinning: the stage-1 survivors, merged across all 4
+    //      lanes into one time-ordered stream, are thinned again by the
+    //      same rule using a tighter kEasyModeGlobalMinGapMs, so the player
+    //      is never asked to react to two different lanes closer together
+    //      than that (catches a fast lane-alternating pattern, e.g. a
+    //      cycling arpeggio, that looks sparse lane-by-lane but isn't as a
+    //      combined stream).
+    //   3. Chord collapse: any notes still within kEasyModeChordEpsilonBeats
+    //      of each other after (1)-(2) collapse to the lowest lane index
+    //      (lanes are pitch-ordered ascending, so this keeps a chord's
+    //      root/bass note) - no simultaneous notes survive.
+    // Every surviving note then keeps its own authored durationBeats,
+    // clamped to a floor (kEasyModeNoteDurationFloorMs) and a ceiling of
+    // "don't run into the next surviving note in the same lane" (computed
+    // circularly, wrapping to that lane's first note one spanBeats later) -
+    // a genuinely sustained note still reads and plays as a hold instead of
+    // being flattened to a uniform blip. No grid-snapping anywhere: a
+    // surviving note's startBeat is never altered, only which notes survive
+    // and how long they last. No-op unless clip.hasMidi. Must run before
     // ExpandLaneNotesToFillClip, while spanBeats still means "one
     // repetition's length" - tiling afterward just repeats whatever this
     // produces, so it never needs to know easy mode exists.
-    static void ApplyEasyModeTransform(ChartClip& clip);
+    static void ApplyEasyModeTransform(ChartClip& clip, double bpm);
 
     // ComputeLoopFloorSeconds moved to ChartTiming.h (shared with the
     // editor's analytical block scheduler).

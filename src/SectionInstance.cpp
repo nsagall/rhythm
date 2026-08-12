@@ -136,9 +136,9 @@ SectionInstance::MissResult SectionInstance::RegisterMiss(bool easyMode, StreakT
         return result;
     }
 
-    if (easyMode && m_easyGraceAvailable)
+    if (easyMode && m_easyGraceRemaining > 0)
     {
-        m_easyGraceAvailable = false;
+        --m_easyGraceRemaining;
         return result;
     }
 

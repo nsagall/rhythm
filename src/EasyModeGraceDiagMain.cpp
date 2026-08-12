@@ -8,18 +8,20 @@
 #include "GameSession.h"
 
 // Standalone diagnostic (not part of the normal build): verifies easy
-// mode's one-note grace period, which IntroOutroDiagMain.cpp's perfect
-// auto-player can't exercise (it never mistimes or skips a press). Drives
-// GameSession headlessly through the first 3 Learn sections of a chart in
-// easy mode, deliberately skipping presses to script misses:
-//   - Learn instance 0: skip 1 note - expect the streak never drops to 0
-//     (fully forgiven).
-//   - Learn instance 1: skip 4 notes in a row (1 forgiven + 3 real) -
+// mode's 2-miss grace period (SectionInstance::kEasyGraceMisses), which
+// IntroOutroDiagMain.cpp's perfect auto-player can't exercise (it never
+// mistimes or skips a press). Drives GameSession headlessly through the
+// first 3 Learn sections of a chart in easy mode, deliberately skipping
+// presses to script misses:
+//   - Learn instance 0: skip 2 notes in a row - expect the streak never
+//     drops to 0 (both fully forgiven - exercises the full grace budget,
+//     not just its first use).
+//   - Learn instance 1: skip 5 notes in a row (2 forgiven + 3 real) -
 //     expect the streak DOES drop to 0 (the real misses aren't forgiven),
 //     and the clip's stem actually stops after the 3rd real miss (proving
-//     the forgiven miss doesn't count toward the 3-consecutive-miss
-//     threshold either - if it did, the stem would stop one miss earlier).
-//   - Learn instance 2: skip 1 note again - expect it's forgiven too,
+//     the forgiven misses don't count toward the 3-consecutive-miss
+//     threshold either - if they did, the stem would stop earlier).
+//   - Learn instance 2: skip 2 notes again - expect they're forgiven too,
 //     proving the grace period refreshes every new section
 //     (BeginSection resets it).
 // Otherwise plays perfectly (same auto-press timing as IntroOutroDiagMain),
@@ -90,7 +92,7 @@ int main(int argc, char** argv)
     // How many consecutive onset events to skip pressing for after that,
     // per Learn section instance (0-indexed by order reached, not by chart
     // section index - background/solo sections don't count).
-    const int kMissesPerInstance[3] = {1, 4, 1};
+    const int kMissesPerInstance[3] = {2, 5, 2};
     bool streakDroppedToZero[3] = {false, false, false};
 
     int learnSectionInstance = -1;
@@ -257,14 +259,14 @@ int main(int argc, char** argv)
 
     printf("\n=== RESULTS ===\n");
     printf("Final phase: %ls\n", PhaseName(session.Phase()));
-    printf("Instance 0 (1 skip, expect forgiven - no streak drop): streakDropped=%s %s\n",
+    printf("Instance 0 (2 skips, expect both forgiven - no streak drop): streakDropped=%s %s\n",
            streakDroppedToZero[0] ? "true" : "false", streakDroppedToZero[0] ? "** MISMATCH - expected false **" : "");
-    printf("Instance 1 (2 real hits, then 4 skips: 1 forgiven + 3 real, expect a streak drop AND the "
+    printf("Instance 1 (2 real hits, then 5 skips: 2 forgiven + 3 real, expect a streak drop AND the "
            "already-playing stem to stop): everPlayed=%s streakDropped=%s%s stemStopped=%s%s\n",
            instance1StemEverPlayed ? "true" : "false", streakDroppedToZero[1] ? "true" : "false",
            streakDroppedToZero[1] ? "" : " ** MISMATCH - expected true **", instance1StemStopped ? "true" : "false",
            instance1StemStopped ? "" : " ** MISMATCH - expected true **");
-    printf("Instance 2 (1 skip, expect forgiven again - fresh grace per section): streakDropped=%s %s\n",
+    printf("Instance 2 (2 skips, expect both forgiven again - fresh grace per section): streakDropped=%s %s\n",
            streakDroppedToZero[2] ? "true" : "false", streakDroppedToZero[2] ? "** MISMATCH - expected false **" : "");
 
     session.Stop();
