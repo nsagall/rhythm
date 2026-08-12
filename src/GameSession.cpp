@@ -689,6 +689,8 @@ void GameSession::Update()
                 }
             }
 
+            int nextIndex = m_currentInstance.SectionIndex() + 1;
+
             // A learn section reaching here is always passing (see
             // above) - its clip already switched from init_volume to
             // volume back in RegisterHit, and keeps playing by design (to
@@ -704,10 +706,57 @@ void GameSession::Update()
                 // break/reset's StopAll() happens to kill it. (Reset can
                 // never be finishedSection here - it never sets a pending
                 // advance in the first place, see BeginSection.)
-                StopClipLoop(finishedSection.clipIndex);
+                //
+                // UNLESS the very next section immediately re-queues this
+                // exact clip as a background layer - a common chart idiom
+                // ("keep this riff going after its scripted break moment",
+                // e.g. Byte Blaster's [break] clip=arp -> [background]
+                // clip=arp). A plain StopClipLoop here would set isPlaying
+                // false, and BeginSection's queued-background realize -
+                // moments later, in this same synchronous chain - would
+                // then see that false isPlaying, have ForgetStaleClipOrigin
+                // treat it as "gone silent" (see its own comment), and
+                // restart it re-anchored to now instead of continuing the
+                // groove the chart author clearly intended to carry
+                // straight through - the same false-isPlaying-fools-
+                // ForgetStaleClipOrigin mechanism already fixed for a
+                // Break's own still-playing clip, just reached via this
+                // different path.
+                //
+                // The fix isn't to skip stopping it, though - unlike that
+                // other case, this clip's voice was submitted with the
+                // break's own finite loop_count (see StartClipLoop's
+                // finiteLoopCount), which needs to become infinite for a
+                // background layer, or it would still self-stop for good
+                // whenever that count runs out, orphaning the "background"
+                // section's clip in silence. So still perform the one
+                // necessary restart, exactly as the Break case does for
+                // itself: read the origin while isPlaying is still true
+                // (nothing has touched it yet at this point), then flip it
+                // false only right before StartClipLoop so THIS restart
+                // still happens - phase-continuous, with the default
+                // infinite loop count - instead of either leaking a
+                // silently-expiring finite loop or discarding the origin.
+                // BeginSection's own queued-background realize, when it
+                // reaches this same clip moments later, then sees isPlaying
+                // already true again and correctly no-ops, exactly as it
+                // already does for a genuinely still-open background layer.
+                bool immediatelyReusedAsBackground =
+                    nextIndex < static_cast<int>(m_song.sections.size()) &&
+                    m_song.sections[nextIndex].kind == SectionKind::Background &&
+                    m_song.sections[nextIndex].clipIndex == finishedSection.clipIndex;
+                if (immediatelyReusedAsBackground)
+                {
+                    const ChartClip& breakClip = m_song.clips[finishedSection.clipIndex];
+                    m_clipInstances.at(&breakClip).isPlaying = false;
+                    StartClipLoop(finishedSection.clipIndex, breakClip.volume);
+                }
+                else
+                {
+                    StopClipLoop(finishedSection.clipIndex);
+                }
             }
 
-            int nextIndex = m_currentInstance.SectionIndex() + 1;
             if (nextIndex < static_cast<int>(m_song.sections.size()))
             {
                 BeginSection(nextIndex, m_currentInstance.PendingAdvanceAtSeconds() / secondsPerBeat);
