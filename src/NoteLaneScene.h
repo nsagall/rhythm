@@ -4,7 +4,7 @@
 #include <vector>
 #include <windows.h>
 
-#include "ClipColor.h"
+#include "Colors.h"
 #include "LaneConfig.h"
 
 // Never dereferenced by a renderer (see ClipInstance::chartClip) - forward

@@ -3,8 +3,8 @@
 #include <algorithm>
 #include <cmath>
 
-#include "ClipColor.h"
 #include "ColorUtil.h"
+#include "Colors.h"
 
 using ColorUtil::ClampChannel;
 using ColorUtil::Darken;
@@ -84,40 +84,6 @@ constexpr double kRailWiggleSpeed = 1.0 / 130.0; // phase radians per tick (GetT
 constexpr int kRailWiggleStepPx = 3;             // polyline segment resolution - fine enough to resolve kRailWiggleCycles without aliasing into a jagged zigzag
 constexpr int kRailThicknessPx = 4;
 
-// Deep indigo-to-violet backdrop - moody enough to make bright note colors
-// pop, warm enough to not read as a cold "dev tool" dark mode.
-constexpr COLORREF kBgTop = RGB(46, 20, 92);
-constexpr COLORREF kBgBottom = RGB(15, 11, 42);
-constexpr COLORREF kBorderColor = RGB(120, 90, 190);
-constexpr COLORREF kTextColor = RGB(255, 250, 240);
-constexpr COLORREF kStreakColor = RGB(255, 205, 70); // still used as one of the confetti burst's colors
-
-// Pass/fail feedback: saturated, high-contrast green/red, pushed toward
-// each color's most vivid extreme (rather than a softer pastel) so the
-// judgement reads instantly at a glance - paired with a glow halo so it
-// pops rather than just being a flat color swap. kNoteColorHit doubles as
-// the "correctly held, not yet released" color.
-constexpr COLORREF kNoteColorHit = RGB(40, 235, 80);
-constexpr COLORREF kNoteColorMiss = RGB(255, 30, 30);
-
-// A hit whose press wasn't precise (see GameSession::JudgementEvent::precise/
-// SceneNote::precise) - still a correct press, just a sloppy one - renders
-// yellow instead of green: the ripple it spawns (OnJudgement), and (once
-// SceneNote::state settles to Hit) the note block itself, both via
-// ColorForNote. Receptor/flash colors stay kNoteColorHit regardless - those
-// are a single-frame press/release cue with no "how precise" of their own to
-// show, unlike a note block, which stays on screen long enough for the
-// distinction to actually be readable.
-constexpr COLORREF kNoteColorHitImprecise = RGB(255, 205, 40);
-
-// Palette confetti pieces are drawn from at lock-in - a small fixed set of
-// "party colors" of its own, deliberately independent of any clip's color
-// (this is a generic celebration, not an identity cue).
-constexpr COLORREF kConfettiPalette[] = {
-    RGB(255, 70, 235), RGB(56, 219, 255), RGB(255, 205, 70), RGB(190, 140, 255), kStreakColor, RGB(255, 255, 255),
-};
-constexpr int kConfettiPaletteSize = sizeof(kConfettiPalette) / sizeof(kConfettiPalette[0]);
-
 // Bank-wiped HUD flourish (see OnHudValueChanged/DrawScorePopups). A popup
 // sinks/shakes and fades over its own lifetime; the panel glow is a
 // separate, shorter pulse re-triggered by the same event.
@@ -125,9 +91,22 @@ constexpr DWORD kScorePopupDurationMs = 900;
 constexpr DWORD kScoreFlashDurationMs = 400;
 constexpr double kScorePopupSinkPx = 14.0;  // lost popup: total downward drift over its lifetime
 constexpr double kScorePopupShakePx = 5.0;  // lost popup: horizontal shake amplitude, decaying with t
-// Gold - used for the bank readout itself, so it reads as its own kind of
-// value rather than one more green flash among the ripples/glyphs.
-constexpr COLORREF kScorePopupBankedColor = RGB(255, 215, 90);
+
+using GameColors::kBgBottom;
+using GameColors::kBgTop;
+using GameColors::kBorderColor;
+using GameColors::kConfettiPalette;
+using GameColors::kConfettiPaletteSize;
+using GameColors::kHighlightWhite;
+using GameColors::kNoteColorHit;
+using GameColors::kNoteColorHitImprecise;
+using GameColors::kNoteColorMiss;
+using GameColors::kPanelBgAlpha;
+using GameColors::kPanelBgColor;
+using GameColors::kScorePopupBankedColor;
+using GameColors::kShadowColor;
+using GameColors::kStreakColor;
+using GameColors::kTextColor;
 
 // How long a HUD value's grow-pulse lasts (see OnHudValueChanged/
 // FontForGrowPulse) - the text starts at 2x size right when the value
@@ -478,7 +457,7 @@ void NoteLaneGdiRenderer::DrawNoteGlyph(HDC hdc, int x, int y, COLORREF color, b
     }
 
     // Soft drop shadow for a little lift off the background.
-    DrawAlphaCircle(hdc, x + 2, y + 3, kGlyphRadiusX, RGB(0, 0, 0), 70);
+    DrawAlphaCircle(hdc, x + 2, y + 3, kGlyphRadiusX, kShadowColor, 70);
 
     HPEN nullPen = (HPEN)GetStockObject(NULL_PEN);
     HPEN oldPen = (HPEN)SelectObject(hdc, nullPen);
@@ -581,7 +560,7 @@ void NoteLaneGdiRenderer::DrawSparkles(HDC hdc, RECT laneRect, double beatPulse)
         int sx = laneRect.left + static_cast<int>(fx * (laneRect.right - laneRect.left));
         int sy = laneRect.top + static_cast<int>(fy * (laneRect.bottom - laneRect.top));
         int radius = (i % 3 == 0) ? 2 : 1;
-        DrawAlphaCircle(hdc, sx, sy, radius, RGB(255, 255, 255), static_cast<BYTE>(ClampChannel(alpha)));
+        DrawAlphaCircle(hdc, sx, sy, radius, kHighlightWhite, static_cast<BYTE>(ClampChannel(alpha)));
     }
 }
 
@@ -608,7 +587,7 @@ void NoteLaneGdiRenderer::DrawMeasureLines(HDC hdc, RECT laneRect, const NoteLan
         int y = YForBeatsFromNow(laneRect, measureBeat - scene.nowBeat);
         int cx = (laneRect.left + laneRect.right) / 2;
         int halfWidth = (laneRect.right - laneRect.left) / 2 - 10;
-        DrawAlphaRect(hdc, cx, y, halfWidth, 1, RGB(255, 255, 255), 28);
+        DrawAlphaRect(hdc, cx, y, halfWidth, 1, kHighlightWhite, 28);
     }
 }
 
@@ -895,7 +874,7 @@ void NoteLaneGdiRenderer::DrawHud(HDC hdc, RECT laneRect, const std::wstring& st
                                    const std::wstring& bankText, const std::wstring& multiplierText)
 {
     RECT panelRect{laneRect.left + 8, laneRect.top + 8, laneRect.right - 8, laneRect.top + 44};
-    DrawAlphaRoundRect(hdc, panelRect, 14, RGB(12, 8, 28), 175);
+    DrawAlphaRoundRect(hdc, panelRect, 14, kPanelBgColor, kPanelBgAlpha);
 
     if (!m_hudFont)
     {
@@ -929,7 +908,7 @@ void NoteLaneGdiRenderer::DrawHud(HDC hdc, RECT laneRect, const std::wstring& st
     RECT shadowRect = textRect;
     shadowRect.left += 1;
     shadowRect.top += 1;
-    SetTextColor(hdc, RGB(0, 0, 0));
+    SetTextColor(hdc, kShadowColor);
     DrawTextW(hdc, statusText.c_str(), -1, &shadowRect, kTextFlags);
     SetTextColor(hdc, kTextColor);
     DrawTextW(hdc, statusText.c_str(), -1, &textRect, kTextFlags);
@@ -940,7 +919,7 @@ void NoteLaneGdiRenderer::DrawHud(HDC hdc, RECT laneRect, const std::wstring& st
         RECT scoreShadowRect = scoreRect;
         scoreShadowRect.left += 1;
         scoreShadowRect.top += 1;
-        SetTextColor(hdc, RGB(0, 0, 0));
+        SetTextColor(hdc, kShadowColor);
         DrawTextW(hdc, scoreText.c_str(), -1, &scoreShadowRect, kScoreFlags);
         SetTextColor(hdc, kTextColor);
         DrawTextW(hdc, scoreText.c_str(), -1, &scoreRect, kScoreFlags);
@@ -1050,7 +1029,7 @@ void NoteLaneGdiRenderer::DrawHitsMeter(HDC hdc, RECT hitsMeterRect, const NoteL
     constexpr int kCornerRadius = 8;
     constexpr int kInsetPx = 3;
 
-    DrawAlphaRoundRect(hdc, hitsMeterRect, kCornerRadius, RGB(12, 8, 28), 175);
+    DrawAlphaRoundRect(hdc, hitsMeterRect, kCornerRadius, kPanelBgColor, kPanelBgAlpha);
 
     HPEN oldPen = (HPEN)SelectObject(hdc, CachedSolidPen(2, kBorderColor));
     HBRUSH oldBrush = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
@@ -1105,7 +1084,7 @@ void NoteLaneGdiRenderer::ToggleDebugOverlay()
 void NoteLaneGdiRenderer::DrawDebugOverlay(HDC hdc, RECT laneRect, const NoteLaneScene& scene)
 {
     RECT panelRect{laneRect.left + 8, laneRect.top + 50, laneRect.right - 8, laneRect.top + 104};
-    DrawAlphaRoundRect(hdc, panelRect, 10, RGB(12, 8, 28), 175);
+    DrawAlphaRoundRect(hdc, panelRect, 10, kPanelBgColor, kPanelBgAlpha);
 
     if (!m_hudFont)
     {

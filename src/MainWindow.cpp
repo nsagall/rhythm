@@ -5,9 +5,21 @@
 #include <mmsystem.h>
 
 #include "ColorUtil.h"
+#include "Colors.h"
 
 using ColorUtil::Darken;
 using ColorUtil::Lighten;
+using GameColors::kAssignButtonColor;
+using GameColors::kFieldBgColor;
+using GameColors::kHintTextColor;
+using GameColors::kLabelTextColor;
+using GameColors::kRefreshButtonColor;
+using GameColors::kSongRowHighlightColor;
+using GameColors::kSongRowHighlightTextColor;
+using GameColors::kToggleKnobColor;
+using GameColors::kToggleTrackOffColor;
+using GameColors::kToggleTrackOnColor;
+using GameColors::kWindowBgColor;
 
 namespace
 {
@@ -79,20 +91,6 @@ constexpr int IDC_BUTTON_ASSIGN = 111;
 // this, OnMidiData drops the message entirely rather than treating it as
 // either a press or a release.
 constexpr BYTE kMinMidiPressVelocity = 20;
-
-// Matches NoteLane's palette so the whole window reads as one theme
-// instead of a colorful game view floating in plain system-gray chrome.
-constexpr COLORREF kWindowBgColor = RGB(15, 11, 30);
-constexpr COLORREF kFieldBgColor = RGB(30, 23, 56);
-constexpr COLORREF kLabelTextColor = RGB(230, 222, 245);
-constexpr COLORREF kRefreshButtonColor = RGB(255, 205, 70);
-constexpr COLORREF kAssignButtonColor = RGB(150, 220, 140);
-constexpr COLORREF kSongRowHighlightColor = RGB(56, 219, 255);
-constexpr COLORREF kSongRowHighlightTextColor = RGB(10, 10, 20);
-constexpr COLORREF kHintTextColor = RGB(150, 140, 175);
-constexpr COLORREF kToggleTrackOffColor = kFieldBgColor;
-constexpr COLORREF kToggleTrackOnColor = kSongRowHighlightColor;
-constexpr COLORREF kToggleKnobColor = RGB(245, 242, 250);
 
 // Returns value formatted with thousands separators (e.g. 12345 -> "12,345") -
 // scores read a lot more easily this way than as a bare digit run.
