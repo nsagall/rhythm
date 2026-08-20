@@ -72,8 +72,11 @@ clip = arp
 [learn]
 clip = lead
 
+[reset]
+
 [break]
 clip = arp
+loop_count = 3
 
 [background]
 clip = arp

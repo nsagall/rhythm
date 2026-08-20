@@ -72,8 +72,11 @@ clip = pad
 [learn]
 clip = lead
 
+[reset]
+
 [break]
 clip = pad
+loop_count = 3
 
 [background]
 clip = pad

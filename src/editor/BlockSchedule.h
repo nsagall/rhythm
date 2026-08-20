@@ -45,9 +45,9 @@ struct Entry
     // necessarily mean the underlying audio voice re-seeks its phase at
     // this instant.
     double audioStartSeconds = 0.0;
-    // This clip's own persistent phase reference - the wall-clock second it
-    // was first ever started at, whether that was this entry or an earlier
-    // one (see Build()'s own ClipBuildState::originEstablished) - not
+    // The current arrangement's shared phase reference - the wall-clock
+    // second its first clip began at, whether that was this entry or an
+    // earlier one (see Build()'s own arrangementOriginSeconds) - not
     // necessarily == audioStartSeconds. Every phase/loop-boundary
     // computation for this entry's clip is measured relative to this, not
     // absolute second 0, so Seek() can correctly reproduce where the real, phase-seeked audio
@@ -96,7 +96,7 @@ struct VoiceWindow
     double volumeBeforeLockIn = 1.0;
     double volumeAfterLockIn = 1.0;
     double lockInSeconds = -1.0;
-    // This clip's own persistent phase reference - see Entry::originSeconds
+    // The arrangement's shared phase reference - see Entry::originSeconds
     // for what this is and why it's not necessarily == startSeconds.
     double originSeconds = 0.0;
 };
@@ -141,7 +141,7 @@ struct ActiveVoice
 {
     const ChartClip* clip = nullptr; // points into the ChartSong passed to Build()
     double volume = 1.0;
-    // This clip's own persistent phase reference - see
+    // The arrangement's shared phase reference - see
     // VoiceWindow::originSeconds - needed by BlockPlayer::ApplyAudioForPosition
     // to phase-seek a newly-active voice exactly like the real game would.
     double originSeconds = 0.0;

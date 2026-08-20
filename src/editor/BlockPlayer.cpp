@@ -103,6 +103,10 @@ bool BlockPlayer::RebuildSchedule(const EditorDocument& doc, std::vector<std::ws
     // m_song.clips has its own final, stable addresses.
     std::vector<double> durationsByPosition(song.clips.size(), 0.0);
     std::vector<StemHandle> handlesByPosition(song.clips.size());
+    // Captured before ExpandLaneNotesToFillClip (below) can widen any clip's
+    // spanBeats to its real audio length - see GameSession::LoadChart's own
+    // identical comment and ChartTiming::ClipAlignmentInfo's for why.
+    std::unordered_map<const ChartClip*, ChartTiming::ClipAlignmentInfo> clipAlignmentInfo;
     for (size_t i = 0; i < song.clips.size() && i < doc.clips.size(); ++i)
     {
         StemHandle handle = GetStemForEditorClipId(doc.clips[i].id);
@@ -111,6 +115,7 @@ bool BlockPlayer::RebuildSchedule(const EditorDocument& doc, std::vector<std::ws
         durationsByPosition[i] = duration;
 
         ChartClip& clip = song.clips[i];
+        clipAlignmentInfo[&clip] = {clip.spanBeats, duration};
         if (clip.hasMidi)
         {
             // Mirrors GameSession::LoadChart's own rejection check - a
@@ -128,6 +133,14 @@ bool BlockPlayer::RebuildSchedule(const EditorDocument& doc, std::vector<std::ws
             }
             ChartTiming::ExpandLaneNotesToFillClip(clip, duration, song.bpm);
         }
+    }
+
+    // Same whole-chart bar-alignment invariant GameSession::LoadChart
+    // checks, needed here too since the editor can build a schedule for a
+    // chart the real game would refuse to even load.
+    if (!ChartTiming::ValidateArrangementAlignment(song, clipAlignmentInfo, outErrors))
+    {
+        return false;
     }
 
     m_song = std::move(song);

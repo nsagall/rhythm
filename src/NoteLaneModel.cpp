@@ -194,9 +194,9 @@ void NoteLaneModel::CollectNotes(const GameSession& session, const ClipInstance*
                 else if (sceneNote.startBeat < session.NextExpectedBeatForLane(lane) - 1e-6)
                 {
                     // Never held or judged - only possible for a clip's
-                    // first-ever appearance, which anchors to its
-                    // pattern's true beginning (GameSession's
-                    // ClipInstance/ForgetStaleClipOrigin) and so can start
+                    // first-ever appearance, which anchors to its pattern's
+                    // true beginning (see GameSession.h's own
+                    // m_arrangementOriginSeconds comment) and so can start
                     // partway into a bar. Never included in the scene.
                     continue;
                 }
