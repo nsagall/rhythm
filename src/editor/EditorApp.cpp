@@ -676,11 +676,24 @@ void EditorApp::RebuildBlockSchedule()
         return;
     }
     // BlockPlayer::RebuildSchedule leaves the previous schedule in place on
-    // failure (see its own doc comment) - errors here are already
-    // reflected in m_currentErrors via the validation pass that triggered
-    // this call, so there's nothing extra to surface.
+    // failure (see its own doc comment). It re-validates internally too
+    // (EditorChartIO::ValidateDocument), so if m_currentErrors is already
+    // non-empty its own errors would just be a duplicate of the same
+    // failure - skip it and keep the text-level errors already showing.
+    // Only when text-level validation passed does this add anything new:
+    // the audio-dependent checks ValidateDocument itself can't run
+    // (ClipFitsOneLoop, ChartTiming::ValidateArrangementAlignment) - both
+    // "the real game would refuse to load this chart" checks, surfaced
+    // here so the editor catches them before a save ever reaches that far.
+    if (!m_currentErrors.empty())
+    {
+        return;
+    }
     std::vector<std::wstring> scheduleErrors;
-    m_blockPlayer.RebuildSchedule(m_doc, scheduleErrors);
+    if (!m_blockPlayer.RebuildSchedule(m_doc, scheduleErrors))
+    {
+        m_currentErrors = std::move(scheduleErrors);
+    }
 }
 
 void EditorApp::SyncClipSelectionFromBlock()
@@ -770,6 +783,24 @@ void EditorApp::DoSave()
     {
         return;
     }
+
+    // Force a fresh check right now rather than trusting whatever the
+    // debounced live-edit pass last found (Update()'s own 300ms debounce) -
+    // saving within that window of the last keystroke could otherwise slip
+    // past a check that hadn't caught up yet. This is also the only path
+    // that catches the audio-dependent checks EditorChartIO::SaveDocument's
+    // own ValidateDocument call can't run on its own (ClipFitsOneLoop,
+    // ChartTiming::ValidateArrangementAlignment) - see RebuildBlockSchedule's
+    // own comment.
+    EditorChartIO::ValidateDocument(m_doc, m_currentErrors);
+    m_lastValidatedVersion = m_doc.docVersion;
+    RebuildBlockSchedule();
+    if (!m_currentErrors.empty())
+    {
+        ShowErrorModal("Could not save chart:", m_currentErrors);
+        return;
+    }
+
     std::vector<std::wstring> errors;
     if (!EditorChartIO::SaveDocument(m_doc, errors))
     {
@@ -791,6 +822,20 @@ void EditorApp::DoSaveAs()
     std::wstring defaultName = (m_doc.title.empty() ? std::wstring(L"chart") : m_doc.title) + L".chart";
     if (!FileDialogs::PickSaveFile(m_hwnd, L"Chart files", L"*.chart", defaultName.c_str(), path))
     {
+        return;
+    }
+
+    // Same forced fresh check DoSave does, and for the same reason - see
+    // its own comment. The clips' own content isn't changing here (just
+    // where the chart file lives), so validating against the
+    // still-current folderPath's stems before SaveDocumentAs's own copy
+    // is exactly as meaningful as validating after.
+    EditorChartIO::ValidateDocument(m_doc, m_currentErrors);
+    m_lastValidatedVersion = m_doc.docVersion;
+    RebuildBlockSchedule();
+    if (!m_currentErrors.empty())
+    {
+        ShowErrorModal("Could not save chart:", m_currentErrors);
         return;
     }
 

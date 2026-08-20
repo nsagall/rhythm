@@ -152,6 +152,8 @@ clip = chords
 [learn]
 clip = drums
 
+[reset]
+
 [background]
 clip = good_time_bg
 

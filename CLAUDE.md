@@ -81,15 +81,23 @@ lane pitches (`kLaneMidiPitches` in `src/LaneConfig.h`) from a clip's MIDI file;
 `kLaneCount`/`kLaneMidiPitches`/`kNoteFallBeats` in `LaneConfig.h` are the single
 source of truth other lane-shaped code sizes itself off.
 
-A clip's loop boundaries are anchored to whenever it *actually* first starts
-playing in a given run — not absolute beat/second 0 — because a chart author
-routinely wants several independent clips playing simultaneously with no shared
-phase relationship. This "persistent phase origin" concept
-(`GameSession::ClipInstance::startSeconds`, `BlockSchedule::Entry::originSeconds`)
-recurs throughout `ChartTiming.h`'s function signatures (`originBeat`/
-`originSeconds` parameters) — read `ChartTiming.h`'s doc comments before touching
-any of this timing code, they explain the *why* in detail and are treated as the
-canonical spec.
+Every clip's loop boundaries are anchored to a shared **arrangement origin** —
+the wall-clock beat/second the first clip of an unbroken run of
+continuously-sounding clips began at (`GameSession::m_arrangementOriginSeconds`,
+`BlockSchedule::Build`'s own local equivalent) — not absolute beat/second 0, and
+not a separate origin per clip. This rests on three chart-authoring assumptions,
+checked once at load time by `ChartTiming::ValidateArrangementAlignment` (never
+at runtime, so a validated chart can't fail mid-song): every clip's length is a
+whole number of bars; clips that ever sound concurrently are the same length or
+whole multiples of each other; and a clip only ever joins an arrangement already
+in progress on one of its own bar boundaries — restricted, for whatever joins
+right after a Learn section specifically, to "evenly divides that Learn clip's
+own length," since a real player's loop count there is unbounded and unknowable
+at load time (see the function's own doc comment for why). This is what lets a
+clip's very first onset use the exact same formula (`ChartTiming::
+NextOnsetAfter`) as a later reuse, with no separate "fresh start" case anywhere.
+Read `ChartTiming.h`'s doc comments before touching any of this timing code,
+they explain the *why* in detail and are treated as the canonical spec.
 
 ### Editor's document model is deliberately separate from the runtime model
 

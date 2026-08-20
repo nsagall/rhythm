@@ -1,5 +1,6 @@
 #pragma once
 
+#include <unordered_map>
 #include <vector>
 
 #include "ChartFile.h"
@@ -11,32 +12,32 @@
 // GameSession) so the two can never compute different answers for the same
 // inputs. Every function here operates only on its parameters, with no
 // wall-clock/instance-state dependency of any kind.
+//
+// All of it rests on one invariant, enforced by ValidateArrangementAlignment
+// at load time rather than re-derived per call: every clip's spanBeats is a
+// whole number of bars, and every clip, whenever it joins a group of other
+// clips already sounding together (an "arrangement"), starts on one of its
+// own bar boundaries measured from that arrangement's single shared origin -
+// the wall-clock beat/second the arrangement's first clip began at. That
+// makes originBeat/originSeconds below always the *arrangement's* origin,
+// never a per-clip one: two clips sounding together necessarily agree on it,
+// and a clip starting fresh still lands on its own true pattern beginning
+// (see NextOnsetAfter) without needing a separate "first start" formula.
 namespace ChartTiming
 {
 
 // Returns this lane's next note onset (absolute beats) strictly after afterBeat.
-//   originBeat - beat this clip's pattern was first anchored at (see FreshOnsetForAllLanes); not beat 0.
+//   originBeat - current arrangement's shared origin (see namespace comment), not absolute beat 0.
 //   afterBeat  - returned onset is strictly after this beat.
 //   clip       - clip whose pattern to tile.
 //   lane       - which lane to search.
-// A clip's cycle boundaries are fixed wherever it actually first started playing, not the
-// song's beat-0-aligned grid - every call for the same clip must pass the same originBeat.
+// Also covers a clip's very first onset in a fresh arrangement: querying at (joinBeat - epsilon)
+// returns joinBeat + this lane's own first note, since the alignment invariant guarantees
+// joinBeat already sits on one of this clip's own cycle boundaries from originBeat.
 double NextOnsetAfter(double originBeat, double afterBeat, const ChartClip& clip, int lane);
 
-// Computes each lane's first onset for a clip's very first-ever start.
-//   originBeat - beat this start happens at; becomes the clip's persistent phase reference for
-//                every later call (NextOnsetAfter, ComputeClipPhaseSeconds, ComputeLearnAdvanceSeconds,
-//                ComputeBreakAdvance) against this clip.
-//   clip       - clip whose pattern to anchor.
-//   outBeats   - [out] one onset beat per lane.
-// Each lane starts from its own earliest note offset by originBeat, so the clip judges from its
-// true beginning immediately rather than waiting for a cycle boundary. A lane with no notes gets
-// originBeat + clip.spanBeats (matches NextOnsetAfter's empty-lane placeholder).
-void FreshOnsetForAllLanes(double originBeat, const ChartClip& clip, double outBeats[kLaneCount]);
-
 // Computes the wall-clock second at which loopCount full loops complete.
-//   originSeconds    - wall-clock second this clip's pattern was first anchored at (originBeat
-//                       converted to seconds - see FreshOnsetForAllLanes).
+//   originSeconds    - current arrangement's shared origin (see namespace comment).
 //   loopStartSeconds - wall-clock second the clip's loop actually started.
 //   stemDuration     - length of one loop of the clip's audio, in seconds.
 //   loopCount        - number of full loops to count.
@@ -66,13 +67,13 @@ void ExpandLaneNotesToFillClip(ChartClip& clip, double stemDurationSeconds, doub
 bool ClipFitsOneLoop(const ChartClip& clip, double stemDurationSeconds, double bpm);
 
 // Computes the wall-clock second a Learn section should hand off to the next section.
-//   originSeconds      - clip's persistent phase reference (see FreshOnsetForAllLanes);
-//                         sectionStartSeconds/loopStartSeconds share this same timeline.
+//   originSeconds       - current arrangement's shared origin (see namespace comment);
+//                          sectionStartSeconds/loopStartSeconds share this same timeline.
 //   sectionStartSeconds - wall-clock second the section itself began.
-//   loopStartSeconds   - wall-clock second the clip's loop actually started.
-//   stemDuration       - length of one loop of the clip's audio, in seconds.
-//   loopCount          - section's declared loop_count.
-//   tFallSeconds       - minimum preview lead time required (kNoteFallBeats worth of seconds).
+//   loopStartSeconds    - wall-clock second the clip's loop actually started.
+//   stemDuration        - length of one loop of the clip's audio, in seconds.
+//   loopCount           - section's declared loop_count.
+//   tFallSeconds        - minimum preview lead time required (kNoteFallBeats worth of seconds).
 // Mirrors GameSession::BeginSection's Learn case: a Learn section starts its clip and schedules
 // its advance immediately, same as Break - whether the player meets hits_required doesn't affect
 // this. Result is the next loop boundary at/after sectionStartSeconds, floored by loopCount, and
@@ -88,7 +89,7 @@ struct BreakAdvance
 };
 
 // Computes the loop count and advance time for a Break section.
-//   originSeconds      - clip's persistent phase reference (see FreshOnsetForAllLanes);
+//   originSeconds      - current arrangement's shared origin (see namespace comment);
 //                         loopStartSeconds shares this same timeline.
 //   loopStartSeconds   - wall-clock second the clip's loop actually started.
 //   stemDuration       - length of one loop of the clip's audio, in seconds.
@@ -115,7 +116,7 @@ double ExtendAdvanceForFallLeadTime(double advanceSeconds, double referenceSecon
                                      double tFallSeconds);
 
 // Computes the audio-seek phase (seconds into the loop) for a clip starting/resuming at nowSeconds.
-//   originSeconds - clip's persistent phase reference (see FreshOnsetForAllLanes).
+//   originSeconds - current arrangement's shared origin (see namespace comment).
 //   nowSeconds    - wall-clock second the clip is starting/resuming at.
 //   clip          - clip being started.
 //   stemDuration  - clip's measured audio length, in seconds.
@@ -123,17 +124,16 @@ double ExtendAdvanceForFallLeadTime(double advanceSeconds, double referenceSecon
 // Uses clip.spanBeats (the pattern's exact cycle length) as the phase modulus when the clip has a
 // pattern (hasMidi), rather than the audio's raw measured duration - real WAV export rarely lands
 // a stem's sample count on an exact beat boundary, and that per-loop imprecision would otherwise
-// compound over many loops until the clip audibly starts partway through its loop instead of at
-// its pattern's true beginning. Falls back to raw stemDuration for a clip with no pattern
-// (Break/Background only), where nothing is compared against it. Returns 0 for a first-ever start
-// (nowSeconds == originSeconds).
+// compound into audible drift over many loops. Falls back to raw stemDuration for a clip with no
+// pattern (Break/Background only), where nothing is compared against it. Returns exactly 0
+// whenever nowSeconds lands on one of the clip's own cycle boundaries from originSeconds - always
+// true for a fresh arrangement join, per the alignment invariant.
 double ComputeClipPhaseSeconds(double originSeconds, double nowSeconds, const ChartClip& clip, double stemDuration,
                                 double bpm);
 
 // Returns every onset for a lane's pattern falling in (afterBeatExclusive, uptoBeatInclusive],
 // ascending.
-//   originBeat          - clip's phase reference, same tiling convention as NextOnsetAfter/
-//                          FreshOnsetForAllLanes.
+//   originBeat         - current arrangement's shared origin, same tiling convention as NextOnsetAfter.
 //   afterBeatExclusive - lower bound, exclusive.
 //   uptoBeatInclusive  - upper bound, inclusive.
 //   notes              - lane's pattern notes to tile.
@@ -145,5 +145,79 @@ double ComputeClipPhaseSeconds(double originSeconds, double nowSeconds, const Ch
 // notes is empty, spanBeats <= 0, or the range is empty/inverted.
 std::vector<double> OnsetsInRange(double originBeat, double afterBeatExclusive, double uptoBeatInclusive,
                                    const std::vector<LaneNote>& notes, double spanBeats);
+
+// A judged clip's own timing inputs to ValidateArrangementAlignment - kept
+// deliberately separate from ChartClip::spanBeats itself, since that field
+// gets overwritten by ExpandLaneNotesToFillClip to the raw audio's own
+// measured length whenever a clip's declared pattern is shorter than its
+// stem (e.g. an 8-beat riff authored once but rendered into a 16-beat stem
+// that repeats it twice, so the game gets one continuous, seamless-loop
+// audio file instead of two - a real, legitimate, common authoring shape).
+// Always capture authoredSpanBeats/stemDurationSeconds BEFORE calling
+// ExpandLaneNotesToFillClip, never after.
+//
+// Whenever a clip widens this way, ValidateArrangementAlignment needs BOTH
+// its authored length and its real one, for two genuinely different roles a
+// clip can play, at different points in the very same chart:
+//   - As the clip a Learn/Break section is CURRENTLY PLAYING: what governs
+//     when that section's own advance can happen (and so what a later,
+//     ambiguous-position clip's join must align to) is the real audio's own
+//     wrap length, never the shorter authored one - ComputeLearnAdvanceSeconds/
+//     ComputeBreakAdvance always step forward in whole multiples of
+//     stemDuration, so a section can only ever hand off at a multiple of the
+//     clip's real length, even though its two (or more) repeats are
+//     identical.
+//   - As the clip JOINING an arrangement: what matters for ITS OWN judging/
+//     audio-phase correctness is only its authored length - starting
+//     partway into its own widened audio buffer (at an exact multiple of
+//     the authored repeat, just not of the whole widened length) is
+//     inaudible and judges identically, since every repeat inside that
+//     buffer is the same content.
+// Get this backwards - using the widened length for a joining clip's own
+// check, or the authored length for what a just-finished section's own
+// advance actually steps by - and the check either rejects a perfectly safe
+// chart or accepts a genuinely unsafe one.
+struct ClipAlignmentInfo
+{
+    // The clip's own bar-aligned pattern length, exactly as ChartFile::Load
+    // (AlignToBarBoundary) produced it - before any ExpandLaneNotesToFillClip
+    // widening.
+    double authoredSpanBeats = 0.0;
+    // The clip's real, AudioEngine-measured stem duration.
+    double stemDurationSeconds = 0.0;
+};
+
+// Checks the whole-chart invariant every function above relies on (see the
+// namespace comment): every clip's own authored length (ClipAlignmentInfo,
+// not ChartClip::spanBeats post-widening) is a whole number of bars, and
+// every clip lands on one of its own bar boundaries wherever it actually
+// joins an arrangement - see ClipAlignmentInfo's own comment for exactly
+// which of a clip's two lengths (authored vs. real/widened) governs which
+// side of that check. Call once every judged clip's real stem duration is
+// known, but before ExpandLaneNotesToFillClip runs on any of them - clipInfo
+// is keyed by address into song.clips, same convention as BlockSchedule::
+// Build; a clip with no entry (or hasMidi false) is treated as having no
+// pattern to align - nothing else in the chart needs to relate to it
+// bar-wise.
+//
+// A join's exact beat is only ever ambiguous in one situation: right after a
+// Learn section, whose real advance depends on how many extra loops an
+// actual player needs to reach hits_required - unbounded, and not knowable
+// at load time. Rather than assert something that could only fail live
+// (mid-song, for a real player), that case is instead restricted to what's
+// true for *every* possible loop count: whatever joins immediately after a
+// Learn section (directly, or through a chain of zero-duration Background/
+// Reset sections) must have an authored length that evenly divides that
+// Learn clip's own real (possibly widened) length - never a longer,
+// unrelated span. Every other transition (Break, Background realized after
+// a Break/Reset, Reset itself) has a fully deterministic advance, so it's
+// checked exactly.
+//
+// Returns false with outErrors describing every violation found (which two
+// clips, and why) if the chart can't satisfy this - the chart author needs
+// to fix the chart; nothing here is recoverable at runtime.
+bool ValidateArrangementAlignment(const ChartSong& song,
+                                   const std::unordered_map<const ChartClip*, ClipAlignmentInfo>& clipInfo,
+                                   std::vector<std::wstring>& outErrors);
 
 } // namespace ChartTiming

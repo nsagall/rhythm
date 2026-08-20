@@ -9,7 +9,7 @@
 // Standalone diagnostic (not part of the normal build): verifies the fix for
 // "the very first note of a section is much harder to hit than every other
 // note." That note's onset coincides exactly with the section's own start
-// instant (see ChartTiming::FreshOnsetForAllLanes), so before this fix,
+// instant (see ChartTiming::NextOnsetAfter), so before this fix,
 // IsLaneJudgeable(lane) was false for any press landing before that instant
 // - even one well within the note's own start tolerance - silently
 // discarding the early half of its window (see GameSession::

@@ -38,11 +38,11 @@ private:
     // overlaps [fromBeat, toBeat] at all, not just ones whose start falls
     // inside it - a note that started earlier but whose tail carries past
     // fromBeat must stay visible until it actually scrolls off. originBeat
-    // is this clip's own persistent phase origin (GameSession::
+    // is the current arrangement's shared origin (GameSession::
     // CurrentClipOriginBeat/PreviewClipOriginBeat): the pattern repeats
     // every spanBeats starting from there, not from absolute beat 0,
     // matching how GameSession itself judges these notes (ChartTiming::
-    // NextOnsetAfter/FreshOnsetForAllLanes). Each returned SceneNote
+    // NextOnsetAfter). Each returned SceneNote
     // carries lane/startBeat/durationBeats only - state stays Normal and
     // clip stays null, since pure beat-tiling arithmetic has no way to
     // know either; the caller fills both in.
