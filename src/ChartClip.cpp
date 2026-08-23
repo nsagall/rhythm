@@ -1,4 +1,4 @@
-#include "ChartFile.h"
+#include "ChartSong.h"
 
 #include <algorithm>
 #include <cmath>
@@ -275,14 +275,14 @@ bool ChartClip::ValidateArrangementAlignment(const ChartSong& song,
     outErrors.clear();
     if (song.bpm <= 0.0 || song.beatsPerBar <= 0)
     {
-        return true; // nothing sensible to check - ChartFile::Load already rejects this
+        return true; // nothing sensible to check - ChartSong::Load already rejects this
     }
     double secondsPerBeat = 60.0 / song.bpm;
     double tFallSeconds = kNoteFallBeats * secondsPerBeat;
     // Same slop ExpandLaneNotesToFillClip/ClipFitsOneLoop already tolerate
     // between a clip's declared beat length and its real, audio-measured one
     // - needed only for drivingSpanBeats below (derived from real stem
-    // duration), never for authoredSpanBeats (ChartFile::Load's
+    // duration), never for authoredSpanBeats (ChartSong::Load's
     // AlignToBarBoundary output, already an exact whole multiple of
     // beatsPerBar with no audio-measurement slop of its own).
     double toleranceBeats = kClipLengthToleranceSeconds / secondsPerBeat;

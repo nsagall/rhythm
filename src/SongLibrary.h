@@ -22,7 +22,7 @@ public:
     // file is silently skipped either way - there's nothing to validate.
     // A subdirectory whose .chart file fails to parse is always skipped
     // from the returned list too, but if outValidationErrors is non-null,
-    // one descriptive message (chart path + every error ChartFile::Load
+    // one descriptive message (chart path + every error ChartSong::Load
     // reported) is appended to it per such failure, so a caller that wants
     // to surface these (e.g. an explicit user-initiated rescan) can, while
     // the default (nullptr) stays a casual, silent-skip library listing.

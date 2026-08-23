@@ -9,9 +9,9 @@
 
 // Never dereferenced by a renderer (see ClipInstance::chartClip) - forward
 // declared only so that field can exist as a pointer, without pulling
-// ChartFile.h's actual definition into every renderer that includes this
+// ChartClip.h's actual definition into every renderer that includes this
 // header.
-struct ChartClip;
+class ChartClip;
 
 // The contract between NoteLaneModel (logic) and whatever draws it
 // (NoteLaneRenderer.h). Everything here is beats, lane indices, and

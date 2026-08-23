@@ -7,7 +7,6 @@
 #include <vector>
 
 #include "AudioEngine.h"
-#include "ChartFile.h"
 
 // Standalone diagnostic (not part of the normal build): plays one stem at
 // two different volumes while capturing the actual rendered output via

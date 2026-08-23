@@ -38,7 +38,7 @@ void DrawBoldText(ImDrawList* drawList, ImVec2 pos, ImU32 color, const char* tex
 }
 
 // isDontFailLearn is only ever true for a Learn block whose clip declared
-// learn_mode = dontfail (see ChartFile.h's LearnMode) - darkening it a
+// learn_mode = dontfail (see ChartClip.h's LearnMode) - darkening it a
 // little is enough to tell it apart from a Pass Learn block at a glance,
 // without needing a legend or crowding the block's own label.
 ImVec4 BlockKindColor(SectionKind kind, bool isDontFailLearn)

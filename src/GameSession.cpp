@@ -162,7 +162,7 @@ bool GameSession::LoadChart(const std::wstring& chartFilePath, bool easyMode, st
 {
     ChartSong song;
     std::vector<std::wstring> errors;
-    if (!ChartFile::Load(chartFilePath, song, errors))
+    if (!song.Load(chartFilePath, errors))
     {
         outError.clear();
         for (const std::wstring& error : errors)
@@ -181,7 +181,7 @@ bool GameSession::LoadChart(const std::wstring& chartFilePath, bool easyMode, st
     std::vector<StemHandle> stemHandles;
     // Captured before ExpandLaneNotesToFillClip (below) can widen any clip's
     // spanBeats to its real audio length - ValidateArrangementAlignment
-    // needs each clip's own AUTHORED bar-aligned length (ChartFile::Load's
+    // needs each clip's own AUTHORED bar-aligned length (ChartSong::Load's
     // AlignToBarBoundary output), not that widened one, to check other
     // clips' lengths against - see ChartClip::ClipAlignmentInfo's own
     // comment for why those are two different things.

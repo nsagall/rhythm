@@ -1,4 +1,4 @@
-#include "ChartFile.h"
+#include "ChartSong.h"
 
 #include <algorithm>
 #include <cmath>
@@ -173,8 +173,7 @@ double AlignToBarBoundary(double totalBeats, int beatsPerBar)
 
 } // namespace
 
-// Parses and validates a .chart text file. Returns false if the file can't be opened or fails validation.
-bool ChartFile::Load(const std::wstring& chartFilePath, ChartSong& outSong, std::vector<std::wstring>& outErrors)
+bool ChartSong::Load(const std::wstring& chartFilePath, std::vector<std::wstring>& outErrors)
 {
     outErrors.clear();
 
@@ -671,7 +670,6 @@ bool ChartFile::Load(const std::wstring& chartFilePath, ChartSong& outSong, std:
         return false;
     }
 
-    outSong = std::move(song);
+    *this = std::move(song);
     return true;
 }
-

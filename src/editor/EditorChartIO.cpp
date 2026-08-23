@@ -16,7 +16,7 @@ using ChartTextUtil::GetDirectory;
 // Formats a double as plain fixed-point text with trailing zeros (and a
 // bare trailing '.') trimmed off, e.g. 120.0 -> "120", 87.5 -> "87.5" -
 // deliberately never scientific notation, purely for readability of the
-// saved file (ChartFile::Load's TryParseStrictDouble would accept either
+// saved file (ChartSong::Load's TryParseStrictDouble would accept either
 // form).
 std::wstring FormatDouble(double value)
 {
@@ -60,7 +60,7 @@ namespace EditorChartIO
 bool LoadIntoDocument(const std::wstring& chartFilePath, EditorDocument& outDoc, std::vector<std::wstring>& outErrors)
 {
     ChartSong song;
-    if (!ChartFile::Load(chartFilePath, song, outErrors))
+    if (!song.Load(chartFilePath, outErrors))
     {
         return false;
     }
@@ -82,7 +82,7 @@ bool LoadIntoDocument(const std::wstring& chartFilePath, EditorDocument& outDoc,
         editorClip.id = doc.nextClipId++;
         editorClip.name = clip.name;
         editorClip.displayName = clip.displayName;
-        // ChartFile::Load already guarantees the .wav exists (it's a hard
+        // ChartSong::Load already guarantees the .wav exists (it's a hard
         // load error otherwise), so a clip that made it into `song.clips`
         // always has one.
         editorClip.hasWav = true;
@@ -94,7 +94,7 @@ bool LoadIntoDocument(const std::wstring& chartFilePath, EditorDocument& outDoc,
         editorClip.spanBeats = clip.spanBeats;
         editorClip.hitsRequired = clip.hitsRequired;
         editorClip.learnMode = clip.learnMode;
-        // "Equals the song default" heuristic: ChartFile::Load assigns a
+        // "Equals the song default" heuristic: ChartSong::Load assigns a
         // non-overriding clip's tolerance from song.startToleranceMs
         // verbatim, so an unset override is bit-identical to the song
         // value here; an explicit override that happens to match the
@@ -217,7 +217,7 @@ bool ValidateDocument(const EditorDocument& doc, std::vector<std::wstring>& outE
     }
 
     ChartSong tempSong;
-    bool ok = ChartFile::Load(tempPath, tempSong, outErrors);
+    bool ok = tempSong.Load(tempPath, outErrors);
     DeleteFileW(tempPath.c_str());
     if (ok && outSong != nullptr)
     {

@@ -5,7 +5,7 @@
 #include <vector>
 
 #include "AudioEngine.h"
-#include "ChartFile.h"
+#include "ChartSong.h"
 #include "LaneConfig.h"
 #include "SectionInstance.h"
 #include "SongClock.h"
@@ -736,7 +736,7 @@ private:
     // ComputeBreakAdvance) uses this, never absolute beat/second 0 - see
     // ChartClip's own class comment for why every clip that ever
     // sounds together with another lands on one of its own bar boundaries
-    // from here, chart-authoring assumptions ChartFile::Load/GameSession::
+    // from here, chart-authoring assumptions ChartSong::Load/GameSession::
     // LoadChart validate up front (ChartClip::ValidateArrangementAlignment)
     // so this can never need to special-case an unaligned join at runtime.
     // m_arrangementOriginValid is false whenever nothing is currently

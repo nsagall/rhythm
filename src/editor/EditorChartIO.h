@@ -10,9 +10,9 @@
 // no I/O dependencies of its own.
 namespace EditorChartIO
 {
-    // Parses chartFilePath via the real ChartFile::Load and, only if that
+    // Parses chartFilePath via the real ChartSong::Load and, only if that
     // succeeds, converts the result into outDoc. Returns false (with
-    // outErrors describing every problem, exactly as ChartFile::Load would
+    // outErrors describing every problem, exactly as ChartSong::Load would
     // report them) if the chart doesn't already validate cleanly - the
     // editor intentionally does not attempt to load a partially-broken
     // chart, since that would need a second, error-tolerant reimplementation
@@ -32,19 +32,19 @@ namespace EditorChartIO
     std::wstring SerializeToText(const EditorDocument& doc);
 
     // Writes SerializeToText(doc) to a throwaway file inside doc.folderPath
-    // itself (not system temp - ChartFile::Load derives every clip's
+    // itself (not system temp - ChartSong::Load derives every clip's
     // wav/mid path from the chart file's own directory) and runs it
-    // through the real ChartFile::Load, deleting the temp file afterward
+    // through the real ChartSong::Load, deleting the temp file afterward
     // either way. This is the sole validation strategy - no rule is
     // reimplemented here, so the editor can never produce a chart the game
     // itself would reject, and stays correct automatically as
-    // ChartFile.cpp evolves. Requires doc.folderPath to already exist. If
+    // ChartSong.cpp evolves. Requires doc.folderPath to already exist. If
     // outSong is non-null and validation succeeds, it's filled with the
     // real, already-parsed ChartSong (not yet ExpandLaneNotesToFillClip'd -
     // that needs real stem durations this function doesn't have) - used by
     // the editor's analytical block scheduler (src/editor/BlockSchedule.h)
     // to get a fully-resolved song without a second round-trip through
-    // ChartFile::Load.
+    // ChartSong::Load.
     bool ValidateDocument(const EditorDocument& doc, std::vector<std::wstring>& outErrors, ChartSong* outSong = nullptr);
 
     // Validates doc first; on failure, doc.chartFilePath is never touched

@@ -3,13 +3,13 @@
 #include <string>
 #include <vector>
 
-#include "ChartFile.h"
+#include "ChartSong.h"
 #include "ChartMidi.h"
 #include "LaneConfig.h"
 
 // The editor's own in-memory representation of a chart being assembled -
 // deliberately a separate type from ChartSong/ChartClip/ChartSection
-// (ChartFile.h), which are the *runtime* structs produced by parsing an
+// (ChartSong.h/ChartClip.h), which are the *runtime* structs produced by parsing an
 // already-valid chart. Those lose information the editor needs while a
 // chart is still being built: whether an optional field was explicitly set
 // versus left to inherit a song-level default, and stable identities for
@@ -19,7 +19,7 @@
 // changes for that clip's lifetime).
 //
 // Note on vocabulary: the .chart file format and the shared runtime
-// (ChartFile.h/GameSession.h) call a [learn]/[break]/[reset]/[background]
+// (ChartSong.h/GameSession.h) call a [learn]/[break]/[reset]/[background]
 // entry a "section" - that term is kept everywhere it mirrors the file
 // format or the live game. The editor's own UI presents these as "blocks"
 // on a horizontal timeline instead (see src/editor/BlockTimeline.h), so
@@ -28,7 +28,7 @@
 
 // A field that may either be explicitly set on a clip or left to inherit
 // its song-level default. Mirrors the "was this key present" bit
-// ChartFile::Load itself tracks internally while resolving a clip's
+// ChartSong::Load itself tracks internally while resolving a clip's
 // tolerances, but doesn't expose - only the resolved value survives into
 // ChartSong/ChartClip.
 template <typename T>
@@ -51,7 +51,7 @@ struct EditorClip
     // clips never silently repoints a block at the wrong one.
     int id = 0;
 
-    // Mirrors ChartClip::name/displayName - see ChartFile.h for the full
+    // Mirrors ChartClip::name/displayName - see ChartClip.h for the full
     // semantics (name is both the cross-reference key and, once saved, the
     // literal file stem for this clip's .wav/.mid).
     std::wstring name;
@@ -69,13 +69,13 @@ struct EditorClip
     // already-valid chart) - shown in the clip inspector as a note
     // count/span readout. NOT the authoritative source of truth for what
     // gets saved; the real, bar-aligned lane notes only ever come from
-    // ChartFile::Load re-parsing the actual .mid file at validate/save
+    // ChartSong::Load re-parsing the actual .mid file at validate/save
     // time, so this can be stale/absent without blocking anything.
     std::vector<LaneNote> laneNotes[kLaneCount];
     double spanBeats = 4.0;
 
     int hitsRequired = 16;
-    // Declared per-clip only (no song-level default) - see ChartFile.h's
+    // Declared per-clip only (no song-level default) - see ChartClip.h's
     // LearnMode for the full semantics. Only meaningful for a clip used in
     // a [learn] section; harmless but inert otherwise.
     LearnMode learnMode = LearnMode::Pass;
@@ -112,12 +112,12 @@ struct EditorDocument
     std::wstring chartFilePath;
     // Directory containing chartFilePath, and every clip's .wav/.mid -
     // paths are always derived as folderPath + name + extension, never
-    // stored independently (matching how ChartFile.h derives them).
+    // stored independently (matching how ChartSong.cpp derives them).
     std::wstring folderPath;
 
     std::wstring title;
     double bpm = 120.0;
-    // The only part of time_signature with runtime effect (ChartFile::Load
+    // The only part of time_signature with runtime effect (ChartSong::Load
     // validates the denominator but discards it).
     int beatsPerBar = 4;
     // Cosmetic-only - not stored on ChartSong at all, so LoadIntoDocument

@@ -21,9 +21,9 @@ target_include_directories(midifile PUBLIC third_party/midifile/include)
 # target so both executables always compile these files identically instead
 # of risking their flags/definitions drifting apart.
 add_library(RhythmCore STATIC
-    src/ChartFile.cpp
+    src/ChartSong.cpp
+    src/ChartClip.cpp
     src/ChartMidi.cpp
-    src/ChartTiming.cpp
     src/AudioEngine.cpp
     src/SongClock.cpp
 )

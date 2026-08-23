@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <filesystem>
 
-#include "ChartFile.h"
+#include "ChartSong.h"
 
 namespace fs = std::filesystem;
 
@@ -41,7 +41,7 @@ std::vector<SongEntry> SongLibrary::Scrape(const std::wstring& contentRoot, std:
 
         ChartSong song;
         std::vector<std::wstring> errors;
-        if (!ChartFile::Load(chartPath, song, errors))
+        if (!song.Load(chartPath, errors))
         {
             if (outValidationErrors)
             {

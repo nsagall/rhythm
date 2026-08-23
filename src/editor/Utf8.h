@@ -5,7 +5,7 @@
 #include <string>
 
 // Dear ImGui's text widgets speak UTF-8 exclusively; the rest of this
-// codebase (ChartFile, file paths, Win32 wide APIs) speaks std::wstring
+// codebase (chart parsing, file paths, Win32 wide APIs) speaks std::wstring
 // throughout. These are the only two conversion points the editor needs.
 inline std::string ToUtf8(const std::wstring& wide)
 {

@@ -38,6 +38,6 @@ public:
     // file can't be read, isn't a well-formed Standard MIDI File, has a
     // note-on with no matching note-off, or has no notes on any tracked
     // lane pitch - outError then describes the problem, mirroring
-    // ChartFile::Load's error-reporting style.
+    // ChartSong::Load's error-reporting style.
     static bool LoadLaneNotes(const std::wstring& midiFilePath, MidiLaneData& outData, std::wstring& outError);
 };

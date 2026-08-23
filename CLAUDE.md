@@ -36,10 +36,10 @@ There is no `test`/`ctest` target — see **Diagnostics instead of a test suite*
 `CMakeLists.txt` defines two static libraries and two executables:
 
 - **`RhythmCore`** — UI-agnostic chart/audio core shared by both executables:
-  `ChartFile`/`ChartMidi` (parsing; `ChartClip` also carries the pure timing
-  math, see below), `AudioEngine` (XAudio2 wrapper), `SongClock`. Kept as its
-  own CMake target specifically so both executables always compile these files
-  with identical flags/definitions rather than risking drift.
+  `ChartSong`/`ChartClip`/`ChartMidi` (parsing; `ChartClip` also carries the
+  pure timing math, see below), `AudioEngine` (XAudio2 wrapper), `SongClock`.
+  Kept as its own CMake target specifically so both executables always compile
+  these files with identical flags/definitions rather than risking drift.
 - **`Rhythm`** — the game: `MainWindow` (Win32/GDI), `GameSession` (live judging
   state machine), `SectionInstance`, `NoteLane`/`NoteLaneModel`/
   `NoteLaneGdiRenderer` (rendering), `SongLibrary`, `Settings`.
@@ -49,8 +49,8 @@ There is no `test`/`ctest` target — see **Diagnostics instead of a test suite*
 - **`midifile`** — vendored `craigsapp/midifile` (BSD-2-Clause), wrapped by
   `ChartMidi`.
 
-`ChartClip`'s own timing methods (declared alongside its data in `src/ChartFile.h`,
-implemented in `src/ChartTiming.cpp`) are the crux of the shared-core design:
+`ChartClip`'s own timing methods (declared alongside its data in `src/ChartClip.h`,
+implemented in `src/ChartClip.cpp`) are the crux of the shared-core design:
 all note-onset and loop/advance-timing arithmetic is pure functions of their
 parameters plus `*this` (no wall-clock or other instance state) — non-static
 methods for anything that reads a single clip's own data (`NextOnsetAfter`,
@@ -79,7 +79,7 @@ ordered list of section blocks that actually drive gameplay:
 - `[background]` — queue this clip to start (without stopping anything) when the
   *next* section begins, then loop indefinitely.
 
-`ChartFile::Load` (`src/ChartFile.h/.cpp`) is the *only* way a `ChartSong` is
+`ChartSong::Load` (`src/ChartSong.h/.cpp`) is the *only* way a `ChartSong` is
 constructed — it parses and fully validates the text format plus the referenced
 `.wav`/`.mid` files. `ChartMidi::LoadLaneNotes` extracts notes for the 4 fixed
 lane pitches (`kLaneMidiPitches` in `src/LaneConfig.h`) from a clip's MIDI file;
@@ -101,21 +101,21 @@ own length," since a real player's loop count there is unbounded and unknowable
 at load time (see the function's own doc comment for why). This is what lets a
 clip's very first onset use the exact same formula (`ChartClip::
 NextOnsetAfter`) as a later reuse, with no separate "fresh start" case anywhere.
-Read `ChartClip`'s timing-method doc comments (`src/ChartFile.h`) before
+Read `ChartClip`'s timing-method doc comments (`src/ChartClip.h`) before
 touching any of this timing code, they explain the *why* in detail and are
 treated as the canonical spec.
 
 ### Editor's document model is deliberately separate from the runtime model
 
 `src/editor/EditorDocument.h` (`EditorDocument`/`EditorClip`/`EditorBlock`) is a
-distinct type from `ChartFile.h`'s `ChartSong`/`ChartClip`/`ChartSection` — the
+distinct type from `ChartSong.h`/`ChartClip.h`'s `ChartSong`/`ChartClip`/`ChartSection` — the
 runtime structs are produced by parsing an already-valid chart and throw away
 information the editor needs while a chart is still being assembled (whether a
 tolerance was explicitly overridden vs. inherited, stable IDs that survive
 reordering/renaming). The editor's UI calls a section a "block" (see
 `BlockTimeline`), but the underlying `.chart` file format and runtime code always
 say "section" — that vocabulary split is intentional, not inconsistent naming.
-`EditorChartIO` re-validates by round-tripping through the real `ChartFile::Load`,
+`EditorChartIO` re-validates by round-tripping through the real `ChartSong::Load`,
 so the editor and the live game never disagree about what's valid.
 
 ### Renderer/model separation
@@ -134,14 +134,14 @@ There is no automated test framework. Verification happens through standalone
 `*DiagMain.cpp` files in `src/` (e.g. `ChartValidationDiagMain.cpp`,
 `MelodicaDiagMain.cpp`, `RepeatUntilLockedInDiagMain.cpp`,
 `EasyModeGraceDiagMain.cpp`) — each is a `main()` that headlessly drives
-`GameSession`/`ChartFile`/`ChartMidi` against real or fixture charts
+`GameSession`/`ChartSong`/`ChartMidi` against real or fixture charts
 (`test_charts/`, including deliberately-`broken_*.chart` files meant to fail
 validation) and prints results for manual inspection. **None of these are wired
 into `CMakeLists.txt`** — compile one directly against `RhythmCore` when you need
 it, e.g.:
 
 ```powershell
-g++ -std=c++20 -Isrc -Ithird_party/midifile/include src/ChartValidationDiagMain.cpp src/ChartFile.cpp src/ChartMidi.cpp src/ChartTiming.cpp third_party/midifile/src/*.cpp -o diag.exe
+g++ -std=c++20 -Isrc -Ithird_party/midifile/include src/ChartValidationDiagMain.cpp src/ChartSong.cpp src/ChartClip.cpp src/ChartMidi.cpp third_party/midifile/src/*.cpp -o diag.exe
 ```
 
 When adding a diagnostic for new behavior, follow the existing files' pattern:
@@ -164,8 +164,8 @@ To author a new generated song, keep everything above `main()` and replace only
 ## Working conventions specific to this codebase
 
 - Header comments in this codebase are long and treated as the authoritative
-  spec for *why*, not just *what* — e.g. `ChartFile.h` (including `ChartClip`'s
-  own timing methods), `GameSession.h` explain subtle invariants (phase origins, Pass vs. DontFail
+  spec for *why*, not just *what* — e.g. `ChartClip.h` (including its own
+  timing methods), `ChartSong.h`, `GameSession.h` explain subtle invariants (phase origins, Pass vs. DontFail
   lock-in semantics, count-in catch-up) that aren't obvious from the code alone.
   Read the relevant header comment before modifying timing/judging logic, and
   keep new code held to the same standard when the invariant is genuinely

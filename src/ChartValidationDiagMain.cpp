@@ -2,9 +2,9 @@
 #include <string>
 #include <vector>
 
-#include "ChartFile.h"
+#include "ChartSong.h"
 
-// Standalone diagnostic (not part of the normal build): runs ChartFile::Load
+// Standalone diagnostic (not part of the normal build): runs ChartSong::Load
 // against a deliberately broken chart (to confirm every kind of validation
 // error is caught and reported), against a handful of charts each
 // deliberately broken in one midi_file-specific way, and against every real
@@ -18,7 +18,7 @@ void RunOne(const std::wstring& path, bool expectSuccess)
 {
     ChartSong song;
     std::vector<std::wstring> errors;
-    bool ok = ChartFile::Load(path, song, errors);
+    bool ok = song.Load(path, errors);
 
     wprintf(L"=== %ls ===\n", path.c_str());
     wprintf(L"  Load() returned %ls (expected %ls)\n", ok ? L"true" : L"false", expectSuccess ? L"true" : L"false");

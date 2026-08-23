@@ -3,7 +3,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "ChartFile.h"
+#include "ChartSong.h"
 
 // An analytical, seekable schedule of what a chart's blocks would do if a
 // player hit every note correctly - built once from a fully-resolved
@@ -12,7 +12,7 @@
 // of direction: seeking backwards to an arbitrary point is exactly as
 // correct as playing forward to it, since Seek() is a pure function of the
 // precomputed Schedule and the requested position. All timing math here
-// delegates to ChartClip's own timing methods (src/ChartFile.h), the same
+// delegates to ChartClip's own timing methods (src/ChartClip.h), the same
 // functions GameSession itself uses for live play, so the two can never compute
 // different answers for the same chart.
 //
