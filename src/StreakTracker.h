@@ -1,7 +1,7 @@
 #pragma once
 
 // Tracks one running "how many in a row" streak against one shared trip
-// rule - kMaxConsecutiveMisses misses in a row resets everything back to 0
+// rule - c_MaxConsecutiveMisses misses in a row resets everything back to 0
 // and reports it. This is the single piece of logic behind two otherwise-
 // independent decisions that must never disagree: SectionInstance::
 // RegisterMiss's "should the current section's clip stop playing" (a
@@ -10,7 +10,7 @@
 // per-section) and GameSession's own scoring streak/multiplier (see
 // GameSession::MultiplierForStreak). A single miss - or even two, so long
 // as a hit lands before the third - never resets the streak on its own;
-// only reaching kMaxConsecutiveMisses does, at which point both the streak
+// only reaching c_MaxConsecutiveMisses does, at which point both the streak
 // and the miss count reset together. GameSession::Update() also calls
 // Reset() directly, on the unrelated occasion a section's bank actually
 // pays out - see its own banking comment for why that's a second, distinct
@@ -18,7 +18,7 @@
 class StreakTracker
 {
 public:
-    static constexpr int kMaxConsecutiveMisses = 3;
+    static constexpr int c_MaxConsecutiveMisses = 3;
 
     int Streak() const
     {
@@ -30,7 +30,7 @@ public:
     void RegisterHit();
 
     // Counts one more miss toward the trip. Returns true exactly when this
-    // call reached kMaxConsecutiveMisses - at which point the streak and the
+    // call reached c_MaxConsecutiveMisses - at which point the streak and the
     // miss count have both already been reset to 0 by this same call, ready
     // to start over from nothing rather than left sitting at the trip
     // threshold.

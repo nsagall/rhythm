@@ -27,11 +27,11 @@ class ChartClip;
 // How far into the future/past of the pattern timeline is considered
 // "current" - shared between NoteLaneModel (which notes are even
 // candidates for the scene) and a renderer (how far the timeline spans on
-// screen). kBeatsAhead intentionally equals kNoteFallBeats (LaneConfig.h) -
+// screen). c_BeatsAhead intentionally equals c_NoteFallBeats (LaneConfig.h) -
 // GameSession's own lock-in advance-timing floor - so a locked-in
 // section's advance always leaves a full lookahead of preview time.
-constexpr double kBeatsAhead = kNoteFallBeats;
-constexpr double kBeatsBehind = 1.0;
+constexpr double c_BeatsAhead = c_NoteFallBeats;
+constexpr double c_BeatsBehind = 1.0;
 
 // One live playthrough of a ChartClip, for rendering purposes only - NOT
 // the same object as GameSession's own private per-clip playback voice
@@ -71,7 +71,7 @@ struct ClipInstance
     // resolved once when NoteLaneModel creates this instance, so a
     // renderer never needs its own palette or index-to-color scheme just
     // to draw a clip in a consistent, recognizable color.
-    COLORREF color = ClipColor::kNeutral;
+    COLORREF color = ClipColor::c_Neutral;
 
     // Whether this playthrough is currently passing, for a renderer's own
     // supplementary "correct" cue (a glow outline) - independent of any one
@@ -112,7 +112,7 @@ struct SceneNote
     // false for a correct press that landed outside half the tolerance
     // window (a "partial miss" - still counted as a hit, worth less score,
     // but a renderer should color it differently from a precise one - see
-    // NoteLaneGdiRenderer::ColorForNote/kNoteColorHitImprecise).
+    // NoteLaneGdiRenderer::ColorForNote/c_NoteColorHitImprecise).
     bool precise = true;
 
     // Never null for a note that actually made it into NoteLaneScene::
@@ -144,7 +144,7 @@ struct NoteLaneScene
     // neutral color.
     const ClipInstance* primaryClip = nullptr;
 
-    SceneReceptor receptors[kLaneCount];
+    SceneReceptor receptors[c_LaneCount];
     std::vector<SceneNote> notes;
 
     // Edge-triggered this frame only (never stays true across frames) -

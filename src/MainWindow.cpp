@@ -9,60 +9,60 @@
 
 using ColorUtil::Darken;
 using ColorUtil::Lighten;
-using GameColors::kAssignButtonColor;
-using GameColors::kFieldBgColor;
-using GameColors::kHintTextColor;
-using GameColors::kLabelTextColor;
-using GameColors::kRefreshButtonColor;
-using GameColors::kSongRowHighlightColor;
-using GameColors::kSongRowHighlightTextColor;
-using GameColors::kToggleKnobColor;
-using GameColors::kToggleTrackOffColor;
-using GameColors::kToggleTrackOnColor;
-using GameColors::kWindowBgColor;
+using GameColors::c_AssignButtonColor;
+using GameColors::c_FieldBgColor;
+using GameColors::c_HintTextColor;
+using GameColors::c_LabelTextColor;
+using GameColors::c_RefreshButtonColor;
+using GameColors::c_SongRowHighlightColor;
+using GameColors::c_SongRowHighlightTextColor;
+using GameColors::c_ToggleKnobColor;
+using GameColors::c_ToggleTrackOffColor;
+using GameColors::c_ToggleTrackOnColor;
+using GameColors::c_WindowBgColor;
 
 namespace
 {
 
-constexpr wchar_t kWindowClassName[] = L"RhythmWindowClass";
-constexpr wchar_t kWindowTitle[] = L"Rhythm";
+constexpr wchar_t c_WindowClassName[] = L"RhythmWindowClass";
+constexpr wchar_t c_WindowTitle[] = L"Rhythm";
 
 // Where the song library is scraped from, relative to the process's
 // working directory - matches the convention the diag-mains already use
 // for "Content/..." paths.
-constexpr wchar_t kContentRoot[] = L"Content";
+constexpr wchar_t c_ContentRoot[] = L"Content";
 
-constexpr int kControlHeight = 24;
-constexpr int kRowTop = 10;
-constexpr int kRowLeft = 10;
-constexpr int kRowRightMargin = 15;
-constexpr int kRefreshButtonWidth = 90;
+constexpr int c_ControlHeight = 24;
+constexpr int c_RowTop = 10;
+constexpr int c_RowLeft = 10;
+constexpr int c_RowRightMargin = 15;
+constexpr int c_RefreshButtonWidth = 90;
 
 // The Easy Mode toggle sits on the same header row, immediately to the
 // left of the refresh button.
-constexpr int kEasyModeToggleWidth = 130;
-constexpr int kEasyModeToggleGap = 15;
-constexpr int kToggleTrackWidth = 40;
-constexpr int kToggleTrackHeight = 20;
-constexpr int kToggleKnobRadius = 8;
+constexpr int c_EasyModeToggleWidth = 130;
+constexpr int c_EasyModeToggleGap = 15;
+constexpr int c_ToggleTrackWidth = 40;
+constexpr int c_ToggleTrackHeight = 20;
+constexpr int c_ToggleKnobRadius = 8;
 
 // The Assign Inputs button sits on the same header row, immediately to the
 // left of the Easy Mode toggle.
-constexpr int kAssignButtonWidth = 130;
-constexpr int kAssignButtonGap = 15;
+constexpr int c_AssignButtonWidth = 130;
+constexpr int c_AssignButtonGap = 15;
 
 // The lane (while playing) and the song list (while selecting) both sit
 // below this same header row, filling the available space: each grows/
 // shrinks with the window but is clamped to a sane range so it never
 // becomes an unusably tiny sliver or an absurdly wide single column, and
 // stays horizontally centered in whatever room is left over.
-constexpr int kToolbarHeight = 46;
-constexpr int kLaneMargin = 20;
-constexpr int kLaneMinWidth = 200;
-constexpr int kLaneMaxWidth = 480;
-constexpr int kLaneMinHeight = 320;
-constexpr int kSongListMaxWidth = 560;
-constexpr int kSongRowHeight = 46;
+constexpr int c_ToolbarHeight = 46;
+constexpr int c_LaneMargin = 20;
+constexpr int c_LaneMinWidth = 200;
+constexpr int c_LaneMaxWidth = 480;
+constexpr int c_LaneMinHeight = 320;
+constexpr int c_SongListMaxWidth = 560;
+constexpr int c_SongRowHeight = 46;
 
 // The hits meter panel sits to the lane's right as its own small, separate
 // widget - fixed-size (unlike the lane itself) since it only ever shows a
@@ -70,15 +70,15 @@ constexpr int kSongRowHeight = 46;
 // height shorter than the lane's own (vertically centered - see Layout())
 // keep it reading as clearly detached from the playfield rather than an
 // extra column welded onto it.
-constexpr int kHitsMeterWidth = 16;
-constexpr int kHitsMeterGap = 34;
-constexpr double kHitsMeterHeightFraction = 0.5;
-constexpr int kHintAreaHeight = 34; // reserved below the song list rect for DrawSongList's hint line
+constexpr int c_HitsMeterWidth = 16;
+constexpr int c_HitsMeterGap = 34;
+constexpr double c_HitsMeterHeightFraction = 0.5;
+constexpr int c_HintAreaHeight = 34; // reserved below the song list rect for DrawSongList's hint line
 
 // Smallest client area the header row + a minimally-usable lane/list can
 // fit in, enforced via WM_GETMINMAXINFO so nothing can overlap/clip.
-constexpr int kMinClientWidth = 480;
-constexpr int kMinClientHeight = kToolbarHeight + kLaneMargin + kLaneMinHeight + kLaneMargin;
+constexpr int c_MinClientWidth = 480;
+constexpr int c_MinClientHeight = c_ToolbarHeight + c_LaneMargin + c_LaneMinHeight + c_LaneMargin;
 
 constexpr int IDC_BUTTON_REFRESH = 110;
 constexpr int IDC_BUTTON_ASSIGN = 111;
@@ -90,7 +90,7 @@ constexpr int IDC_BUTTON_ASSIGN = 111;
 // as a binding) any more than an accidental brush of a key would. Below
 // this, OnMidiData drops the message entirely rather than treating it as
 // either a press or a release.
-constexpr BYTE kMinMidiPressVelocity = 20;
+constexpr BYTE c_MinMidiPressVelocity = 20;
 
 // Returns value formatted with thousands separators (e.g. 12345 -> "12,345") -
 // scores read a lot more easily this way than as a bare digit run.
@@ -184,8 +184,8 @@ MainWindow::MainWindow() : m_gameSession(m_audioEngine)
 // Registers the window class and creates/shows the window.
 bool MainWindow::Create(HINSTANCE hInstance, int nCmdShow)
 {
-    m_windowBrush = CreateSolidBrush(kWindowBgColor);
-    m_fieldBrush = CreateSolidBrush(kFieldBgColor);
+    m_windowBrush = CreateSolidBrush(c_WindowBgColor);
+    m_fieldBrush = CreateSolidBrush(c_FieldBgColor);
 
     WNDCLASSEXW wc = {};
     wc.cbSize = sizeof(wc);
@@ -194,7 +194,7 @@ bool MainWindow::Create(HINSTANCE hInstance, int nCmdShow)
     wc.hInstance = hInstance;
     wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
     wc.hbrBackground = m_windowBrush;
-    wc.lpszClassName = kWindowClassName;
+    wc.lpszClassName = c_WindowClassName;
     wc.hIcon = LoadIcon(nullptr, IDI_APPLICATION);
     wc.hIconSm = wc.hIcon;
 
@@ -205,8 +205,8 @@ bool MainWindow::Create(HINSTANCE hInstance, int nCmdShow)
 
     HWND hwnd = CreateWindowExW(
         0,
-        kWindowClassName,
-        kWindowTitle,
+        c_WindowClassName,
+        c_WindowTitle,
         WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT, CW_USEDEFAULT,
         1024, 840,
@@ -338,15 +338,15 @@ void MainWindow::OnCreate(HWND hwnd)
 
     if (!m_audioEngine.Initialize())
     {
-        MessageBoxW(hwnd, L"Failed to initialize the audio engine.", kWindowTitle, MB_OK | MB_ICONWARNING);
+        MessageBoxW(hwnd, L"Failed to initialize the audio engine.", c_WindowTitle, MB_OK | MB_ICONWARNING);
     }
     else
     {
         // Missing/unsupported files are a silent no-op (see the header's
         // own comment) - these are optional flourishes, not required
         // content the way a chart's own stems are.
-        m_sfxMultiplierUp = m_audioEngine.LoadSfx(std::wstring(kContentRoot) + L"\\sfx\\multiplier_up.wav");
-        m_sfxStreakBroken = m_audioEngine.LoadSfx(std::wstring(kContentRoot) + L"\\sfx\\streak_broken.wav");
+        m_sfxMultiplierUp = m_audioEngine.LoadSfx(std::wstring(c_ContentRoot) + L"\\sfx\\multiplier_up.wav");
+        m_sfxStreakBroken = m_audioEngine.LoadSfx(std::wstring(c_ContentRoot) + L"\\sfx\\streak_broken.wav");
     }
 
     // Zero connected MIDI devices is the normal case (keyboard-only play) -
@@ -374,24 +374,24 @@ void MainWindow::Layout()
         return; // minimized - nothing to lay out
     }
 
-    int refreshLeft = width - kRowRightMargin - kRefreshButtonWidth;
-    MoveWindow(m_hButtonRefresh, refreshLeft, kRowTop - 1, kRefreshButtonWidth, kControlHeight + 2, TRUE);
+    int refreshLeft = width - c_RowRightMargin - c_RefreshButtonWidth;
+    MoveWindow(m_hButtonRefresh, refreshLeft, c_RowTop - 1, c_RefreshButtonWidth, c_ControlHeight + 2, TRUE);
 
-    int toggleRight = refreshLeft - kEasyModeToggleGap;
-    int toggleLeft = toggleRight - kEasyModeToggleWidth;
-    m_easyModeToggleRect = RECT{toggleLeft, kRowTop - 1, toggleRight, kRowTop - 1 + kControlHeight + 2};
+    int toggleRight = refreshLeft - c_EasyModeToggleGap;
+    int toggleLeft = toggleRight - c_EasyModeToggleWidth;
+    m_easyModeToggleRect = RECT{toggleLeft, c_RowTop - 1, toggleRight, c_RowTop - 1 + c_ControlHeight + 2};
 
-    int assignRight = toggleLeft - kAssignButtonGap;
-    int assignLeft = assignRight - kAssignButtonWidth;
-    MoveWindow(m_hButtonAssign, assignLeft, kRowTop - 1, kAssignButtonWidth, kControlHeight + 2, TRUE);
+    int assignRight = toggleLeft - c_AssignButtonGap;
+    int assignLeft = assignRight - c_AssignButtonWidth;
+    MoveWindow(m_hButtonAssign, assignLeft, c_RowTop - 1, c_AssignButtonWidth, c_ControlHeight + 2, TRUE);
 
-    int listWidth = std::min(std::max(width - 2 * kLaneMargin, kLaneMinWidth), kSongListMaxWidth);
+    int listWidth = std::min(std::max(width - 2 * c_LaneMargin, c_LaneMinWidth), c_SongListMaxWidth);
     int listLeft = (width - listWidth) / 2;
-    int listTop = kToolbarHeight + kLaneMargin;
+    int listTop = c_ToolbarHeight + c_LaneMargin;
     // Leaves room below the list for DrawSongList's hint line, which is
     // drawn just under this rect's bottom edge - without this, a short
     // window clips the hint against (or past) the actual window edge.
-    int listBottom = std::max(listTop + kLaneMinHeight, height - kLaneMargin - kHintAreaHeight);
+    int listBottom = std::max(listTop + c_LaneMinHeight, height - c_LaneMargin - c_HintAreaHeight);
     m_songListRect = RECT{listLeft, listTop, listLeft + listWidth, listBottom};
 
     // The lane and the hits meter beside it are laid out as one combined,
@@ -399,20 +399,20 @@ void MainWindow::Layout()
     // min/max width it always has, just computed against the width left
     // over once the meter's own fixed footprint is reserved, so the pair
     // together stays centered instead of the lane alone.
-    int hitsMeterFootprint = kHitsMeterGap + kHitsMeterWidth;
-    int laneAvailableWidth = width - 2 * kLaneMargin - hitsMeterFootprint;
-    int laneWidth = std::min(std::max(laneAvailableWidth, kLaneMinWidth), kLaneMaxWidth);
+    int hitsMeterFootprint = c_HitsMeterGap + c_HitsMeterWidth;
+    int laneAvailableWidth = width - 2 * c_LaneMargin - hitsMeterFootprint;
+    int laneWidth = std::min(std::max(laneAvailableWidth, c_LaneMinWidth), c_LaneMaxWidth);
     int combinedWidth = laneWidth + hitsMeterFootprint;
     int laneLeft = (width - combinedWidth) / 2;
-    int laneTop = kToolbarHeight + kLaneMargin;
-    int laneBottom = std::max(laneTop + kLaneMinHeight, height - kLaneMargin);
+    int laneTop = c_ToolbarHeight + c_LaneMargin;
+    int laneBottom = std::max(laneTop + c_LaneMinHeight, height - c_LaneMargin);
     RECT laneRect{laneLeft, laneTop, laneLeft + laneWidth, laneBottom};
     m_noteLane.SetLaneRect(laneRect);
 
     int laneHeight = laneBottom - laneTop;
-    int hitsMeterHeight = static_cast<int>(laneHeight * kHitsMeterHeightFraction);
+    int hitsMeterHeight = static_cast<int>(laneHeight * c_HitsMeterHeightFraction);
     int hitsMeterTop = laneTop + (laneHeight - hitsMeterHeight) / 2;
-    RECT hitsMeterRect{laneRect.right + kHitsMeterGap, hitsMeterTop, laneRect.right + hitsMeterFootprint,
+    RECT hitsMeterRect{laneRect.right + c_HitsMeterGap, hitsMeterTop, laneRect.right + hitsMeterFootprint,
                         hitsMeterTop + hitsMeterHeight};
     m_noteLane.SetHitsMeterRect(hitsMeterRect);
 
@@ -431,7 +431,7 @@ void MainWindow::OnSize()
 // much chrome this window style adds before being reported.
 void MainWindow::OnGetMinMaxInfo(LPARAM lParam)
 {
-    RECT rect{0, 0, kMinClientWidth, kMinClientHeight};
+    RECT rect{0, 0, c_MinClientWidth, c_MinClientHeight};
     AdjustWindowRectEx(&rect, WS_OVERLAPPEDWINDOW, FALSE, 0);
 
     MINMAXINFO& info = *reinterpret_cast<MINMAXINFO*>(lParam);
@@ -594,7 +594,7 @@ void MainWindow::OnMidiData(WPARAM /*wParam*/, LPARAM lParam)
     }
 
     bool isNoteOnRaw = (command == 0x90 && message.data2 > 0);
-    if (isNoteOnRaw && message.data2 < kMinMidiPressVelocity)
+    if (isNoteOnRaw && message.data2 < c_MinMidiPressVelocity)
     {
         return; // too light to count as a real press - not a press or a release
     }
@@ -722,7 +722,7 @@ void MainWindow::AdvanceCapture()
 {
     ++m_captureLane;
     m_captureRejectionMessage.clear();
-    if (m_captureLane >= kLaneCount)
+    if (m_captureLane >= c_LaneCount)
     {
         m_captureLane = -1;
         EnableWindow(m_hButtonAssign, TRUE);
@@ -976,11 +976,11 @@ void MainWindow::OnDrawItem(LPARAM lParam)
     const DRAWITEMSTRUCT& item = *reinterpret_cast<const DRAWITEMSTRUCT*>(lParam);
     if (item.CtlID == IDC_BUTTON_REFRESH)
     {
-        DrawGameButton(item, kRefreshButtonColor, L"Refresh");
+        DrawGameButton(item, c_RefreshButtonColor, L"Refresh");
     }
     else if (item.CtlID == IDC_BUTTON_ASSIGN)
     {
-        DrawGameButton(item, kAssignButtonColor, L"Assign Inputs");
+        DrawGameButton(item, c_AssignButtonColor, L"Assign Inputs");
     }
 }
 
@@ -1000,7 +1000,7 @@ void MainWindow::RescanSongs(bool reportValidationErrors)
     }
 
     std::vector<std::wstring> validationErrors;
-    m_songs = SongLibrary::Scrape(kContentRoot, reportValidationErrors ? &validationErrors : nullptr);
+    m_songs = SongLibrary::Scrape(c_ContentRoot, reportValidationErrors ? &validationErrors : nullptr);
 
     // Rebuilt alongside m_songs, not read from Settings on every paint - see
     // m_songBestScores's own comment.
@@ -1036,7 +1036,7 @@ void MainWindow::RescanSongs(bool reportValidationErrors)
         {
             message += L"\r\n" + error + L"\r\n";
         }
-        MessageBoxW(m_hwnd, message.c_str(), kWindowTitle, MB_OK | MB_ICONWARNING);
+        MessageBoxW(m_hwnd, message.c_str(), c_WindowTitle, MB_OK | MB_ICONWARNING);
     }
 }
 
@@ -1053,7 +1053,7 @@ void MainWindow::ChooseSong(int index)
     if (!m_gameSession.LoadChart(m_songs[index].chartPath, m_easyMode, loadError))
     {
         std::wstring message = L"That chart couldn't be loaded:\r\n\r\n" + loadError;
-        MessageBoxW(m_hwnd, message.c_str(), kWindowTitle, MB_OK | MB_ICONWARNING);
+        MessageBoxW(m_hwnd, message.c_str(), c_WindowTitle, MB_OK | MB_ICONWARNING);
         return;
     }
 
@@ -1092,16 +1092,16 @@ void MainWindow::DrawSongList(HDC hdc)
 
     SetBkMode(hdc, TRANSPARENT);
 
-    RECT headerRect{kRowLeft, kRowTop, kRowLeft + 260, kRowTop + kControlHeight + 6};
+    RECT headerRect{c_RowLeft, c_RowTop, c_RowLeft + 260, c_RowTop + c_ControlHeight + 6};
     HFONT oldFont = (HFONT)SelectObject(hdc, titleFont);
-    SetTextColor(hdc, kLabelTextColor);
+    SetTextColor(hdc, c_LabelTextColor);
     DrawTextW(hdc, L"Choose a Song", -1, &headerRect, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
 
     SelectObject(hdc, rowFont);
 
     if (m_songs.empty())
     {
-        SetTextColor(hdc, kLabelTextColor);
+        SetTextColor(hdc, c_LabelTextColor);
         RECT emptyRect = rect;
         DrawTextW(hdc, L"No songs found in Content\\ - add a song folder, then press Refresh.", -1, &emptyRect,
                   DT_CENTER | DT_VCENTER | DT_WORDBREAK | DT_NOPREFIX);
@@ -1111,8 +1111,8 @@ void MainWindow::DrawSongList(HDC hdc)
 
     for (size_t i = 0; i < m_songs.size(); ++i)
     {
-        RECT rowRect{rect.left, rect.top + static_cast<int>(i) * kSongRowHeight, rect.right,
-                     rect.top + static_cast<int>(i + 1) * kSongRowHeight};
+        RECT rowRect{rect.left, rect.top + static_cast<int>(i) * c_SongRowHeight, rect.right,
+                     rect.top + static_cast<int>(i + 1) * c_SongRowHeight};
         if (rowRect.top >= rect.bottom)
         {
             break;
@@ -1121,7 +1121,7 @@ void MainWindow::DrawSongList(HDC hdc)
         bool selected = (static_cast<int>(i) == m_selectedSongIndex);
         if (selected)
         {
-            HBRUSH highlightBrush = CreateSolidBrush(kSongRowHighlightColor);
+            HBRUSH highlightBrush = CreateSolidBrush(c_SongRowHighlightColor);
             HPEN oldPen = (HPEN)SelectObject(hdc, GetStockObject(NULL_PEN));
             HBRUSH oldRowBrush = (HBRUSH)SelectObject(hdc, highlightBrush);
             RoundRect(hdc, rowRect.left, rowRect.top + 2, rowRect.right, rowRect.bottom - 2, 10, 10);
@@ -1137,7 +1137,7 @@ void MainWindow::DrawSongList(HDC hdc)
         RECT textRect = rowRect;
         textRect.left += 16;
         textRect.right -= 16;
-        SetTextColor(hdc, selected ? kSongRowHighlightTextColor : kLabelTextColor);
+        SetTextColor(hdc, selected ? c_SongRowHighlightTextColor : c_LabelTextColor);
 
         if (i < m_songBestScores.size() && m_songBestScores[i] >= 0)
         {
@@ -1154,7 +1154,7 @@ void MainWindow::DrawSongList(HDC hdc)
 
     RECT hintRect{rect.left, rect.bottom + 10, rect.right, rect.bottom + 34};
     SelectObject(hdc, hintFont);
-    SetTextColor(hdc, kHintTextColor);
+    SetTextColor(hdc, c_HintTextColor);
     DrawTextW(hdc, L"Click a song, or use \x2191/\x2193 and any other key to start it.", -1, &hintRect,
               DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
 
@@ -1177,10 +1177,10 @@ void MainWindow::DrawLastResult(HDC hdc)
         CreateFontW(-15, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
                     CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
 
-    RECT rect{kRowLeft, kToolbarHeight, m_songListRect.right, kToolbarHeight + kLaneMargin};
+    RECT rect{c_RowLeft, c_ToolbarHeight, m_songListRect.right, c_ToolbarHeight + c_LaneMargin};
     HFONT oldFont = (HFONT)SelectObject(hdc, resultFont);
     SetBkMode(hdc, TRANSPARENT);
-    SetTextColor(hdc, kSongRowHighlightColor);
+    SetTextColor(hdc, c_SongRowHighlightColor);
     DrawTextW(hdc, m_lastResultText.c_str(), -1, &rect, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
     SelectObject(hdc, oldFont);
 }
@@ -1201,23 +1201,23 @@ void MainWindow::DrawEasyModeToggle(HDC hdc)
                     CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
 
     int centerY = (rect.top + rect.bottom) / 2;
-    RECT trackRect{rect.right - kToggleTrackWidth, centerY - kToggleTrackHeight / 2, rect.right,
-                    centerY + kToggleTrackHeight / 2};
+    RECT trackRect{rect.right - c_ToggleTrackWidth, centerY - c_ToggleTrackHeight / 2, rect.right,
+                    centerY + c_ToggleTrackHeight / 2};
 
     HPEN oldPen = (HPEN)SelectObject(hdc, GetStockObject(NULL_PEN));
 
-    HBRUSH trackBrush = CreateSolidBrush(m_easyMode ? kToggleTrackOnColor : kToggleTrackOffColor);
+    HBRUSH trackBrush = CreateSolidBrush(m_easyMode ? c_ToggleTrackOnColor : c_ToggleTrackOffColor);
     HBRUSH oldBrush = (HBRUSH)SelectObject(hdc, trackBrush);
-    RoundRect(hdc, trackRect.left, trackRect.top, trackRect.right, trackRect.bottom, kToggleTrackHeight,
-              kToggleTrackHeight);
+    RoundRect(hdc, trackRect.left, trackRect.top, trackRect.right, trackRect.bottom, c_ToggleTrackHeight,
+              c_ToggleTrackHeight);
     SelectObject(hdc, oldBrush);
     DeleteObject(trackBrush);
 
-    int knobCenterX = m_easyMode ? trackRect.right - kToggleTrackHeight / 2 : trackRect.left + kToggleTrackHeight / 2;
-    HBRUSH knobBrush = CreateSolidBrush(kToggleKnobColor);
+    int knobCenterX = m_easyMode ? trackRect.right - c_ToggleTrackHeight / 2 : trackRect.left + c_ToggleTrackHeight / 2;
+    HBRUSH knobBrush = CreateSolidBrush(c_ToggleKnobColor);
     SelectObject(hdc, knobBrush);
-    Ellipse(hdc, knobCenterX - kToggleKnobRadius, centerY - kToggleKnobRadius, knobCenterX + kToggleKnobRadius,
-            centerY + kToggleKnobRadius);
+    Ellipse(hdc, knobCenterX - c_ToggleKnobRadius, centerY - c_ToggleKnobRadius, knobCenterX + c_ToggleKnobRadius,
+            centerY + c_ToggleKnobRadius);
     SelectObject(hdc, oldBrush);
     DeleteObject(knobBrush);
 
@@ -1226,7 +1226,7 @@ void MainWindow::DrawEasyModeToggle(HDC hdc)
     RECT labelRect{rect.left, rect.top, trackRect.left - 8, rect.bottom};
     HFONT oldFont = (HFONT)SelectObject(hdc, labelFont);
     SetBkMode(hdc, TRANSPARENT);
-    SetTextColor(hdc, kLabelTextColor);
+    SetTextColor(hdc, c_LabelTextColor);
     DrawTextW(hdc, L"Easy Mode", -1, &labelRect, DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
     SelectObject(hdc, oldFont);
 }
@@ -1244,7 +1244,7 @@ void MainWindow::DrawCapturePrompt(HDC hdc)
                     CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
 
     std::wstring text = L"Press a key, MIDI note, or gamepad button for lane " + std::to_wstring(m_captureLane + 1) +
-                         L" of " + std::to_wstring(kLaneCount) + L" - Esc to stop";
+                         L" of " + std::to_wstring(c_LaneCount) + L" - Esc to stop";
     if (!m_captureRejectionMessage.empty())
     {
         text += L"\r\n" + m_captureRejectionMessage;
@@ -1254,11 +1254,11 @@ void MainWindow::DrawCapturePrompt(HDC hdc)
     // input is fully blocked while capturing (OnLButtonDown/OnKeyDown both
     // guard on m_captureLane), so overlapping them briefly is harmless and
     // keeps this from needing its own dedicated layout real estate.
-    int promptTop = kRowTop + kControlHeight + 10;
-    RECT rect{kRowLeft, promptTop, m_songListRect.right, promptTop + 60};
+    int promptTop = c_RowTop + c_ControlHeight + 10;
+    RECT rect{c_RowLeft, promptTop, m_songListRect.right, promptTop + 60};
     HFONT oldFont = (HFONT)SelectObject(hdc, promptFont);
     SetBkMode(hdc, TRANSPARENT);
-    SetTextColor(hdc, kSongRowHighlightColor);
+    SetTextColor(hdc, c_SongRowHighlightColor);
     DrawTextW(hdc, text.c_str(), -1, &rect, DT_LEFT | DT_TOP | DT_WORDBREAK | DT_NOPREFIX);
     SelectObject(hdc, oldFont);
 }
@@ -1272,7 +1272,7 @@ int MainWindow::HitTestSongList(POINT pt) const
         return -1;
     }
 
-    int row = (pt.y - m_songListRect.top) / kSongRowHeight;
+    int row = (pt.y - m_songListRect.top) / c_SongRowHeight;
     if (row < 0 || row >= static_cast<int>(m_songs.size()))
     {
         return -1;

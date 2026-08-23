@@ -303,9 +303,9 @@ void ClipPanel::DrawInspector(EditorDocument& doc, HWND owner)
         MarkDirty(doc);
     }
 
-    static const char* kLearnModeNames[] = {"Pass", "Don't Fail"};
+    static const char* c_LearnModeNames[] = {"Pass", "Don't Fail"};
     int learnModeIndex = clip->learnMode == LearnMode::DontFail ? 1 : 0;
-    if (ImGui::Combo("Learn Mode", &learnModeIndex, kLearnModeNames, 2))
+    if (ImGui::Combo("Learn Mode", &learnModeIndex, c_LearnModeNames, 2))
     {
         clip->learnMode = learnModeIndex == 1 ? LearnMode::DontFail : LearnMode::Pass;
         MarkDirty(doc);
@@ -366,14 +366,14 @@ void ClipPanel::DrawInspector(EditorDocument& doc, HWND owner)
     if (clip->hasMidi)
     {
         int totalNotes = 0;
-        for (int lane = 0; lane < kLaneCount; ++lane)
+        for (int lane = 0; lane < c_LaneCount; ++lane)
         {
             totalNotes += static_cast<int>(clip->laneNotes[lane].size());
         }
         ImGui::Text("MIDI: %d note(s), spans %.2f beats", totalNotes, clip->spanBeats);
-        for (int lane = 0; lane < kLaneCount; ++lane)
+        for (int lane = 0; lane < c_LaneCount; ++lane)
         {
-            ImGui::BulletText("Lane %d (pitch %d): %d note(s)", lane, kLaneMidiPitches[lane],
+            ImGui::BulletText("Lane %d (pitch %d): %d note(s)", lane, c_LaneMidiPitches[lane],
                                static_cast<int>(clip->laneNotes[lane].size()));
         }
     }
@@ -541,7 +541,7 @@ void ClipPanel::CompleteImport(EditorDocument& doc, EditorClip& clip, const std:
         std::wstring midiError;
         if (ChartMidi::LoadLaneNotes(dst, midiData, midiError))
         {
-            for (int lane = 0; lane < kLaneCount; ++lane)
+            for (int lane = 0; lane < c_LaneCount; ++lane)
             {
                 clip.laneNotes[lane] = midiData.lanes[lane];
             }
@@ -639,7 +639,7 @@ void ClipPanel::DetectClips(EditorDocument& doc)
             std::wstring midiError;
             if (ChartMidi::LoadLaneNotes(doc.folderPath + stem + L".mid", midiData, midiError))
             {
-                for (int lane = 0; lane < kLaneCount; ++lane)
+                for (int lane = 0; lane < c_LaneCount; ++lane)
                 {
                     clip.laneNotes[lane] = midiData.lanes[lane];
                 }

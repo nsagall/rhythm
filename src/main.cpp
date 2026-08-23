@@ -9,8 +9,8 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow)
 {
     // Overwrites Colors.h's compiled-in defaults with whatever Colors.ini
     // (edited via ColorEditor.exe) has saved - must happen before
-    // MainWindow::Create, which reads GameColors::kWindowBgColor/
-    // kFieldBgColor to create GDI brushes immediately.
+    // MainWindow::Create, which reads GameColors::c_WindowBgColor/
+    // c_FieldBgColor to create GDI brushes immediately.
     Colors::LoadFromIni();
 
     // Windows' default timer resolution (~15.6ms) is what SetTimer's ~16ms

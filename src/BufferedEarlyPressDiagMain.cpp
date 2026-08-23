@@ -68,8 +68,8 @@ int main(int argc, char** argv)
     const ChartClip& clip = session.Song().clips[session.Song().sections[0].clipIndex];
     double secondsPerBeat = 60.0 / session.Song().bpm;
 
-    bool laneHasFreshFirstNote[kLaneCount] = {};
-    for (int lane = 0; lane < kLaneCount; ++lane)
+    bool laneHasFreshFirstNote[c_LaneCount] = {};
+    for (int lane = 0; lane < c_LaneCount; ++lane)
     {
         laneHasFreshFirstNote[lane] =
             !clip.laneNotes[lane].empty() && std::abs(clip.laneNotes[lane].front().startBeat) < 1e-6;
@@ -77,7 +77,7 @@ int main(int argc, char** argv)
 
     int fastTapLane = -1;
     int holdThroughLane = -1;
-    for (int lane = 0; lane < kLaneCount; ++lane)
+    for (int lane = 0; lane < c_LaneCount; ++lane)
     {
         if (!laneHasFreshFirstNote[lane])
         {
@@ -100,18 +100,18 @@ int main(int argc, char** argv)
     }
     printf("fastTapLane=%d holdThroughLane=%d\n", fastTapLane, holdThroughLane);
 
-    bool triedBuffer[kLaneCount] = {};
-    bool wasJudgeableAtPressTime[kLaneCount] = {};
-    bool bufferSucceeded[kLaneCount] = {};
-    double bufferedOnsetBeat[kLaneCount];
-    for (int lane = 0; lane < kLaneCount; ++lane)
+    bool triedBuffer[c_LaneCount] = {};
+    bool wasJudgeableAtPressTime[c_LaneCount] = {};
+    bool bufferSucceeded[c_LaneCount] = {};
+    double bufferedOnsetBeat[c_LaneCount];
+    for (int lane = 0; lane < c_LaneCount; ++lane)
     {
         bufferedOnsetBeat[lane] = -1.0;
     }
-    bool heldByUs[kLaneCount] = {};
-    double releaseAtSeconds[kLaneCount] = {};
-    bool judgedHit[kLaneCount] = {};
-    bool judgedMiss[kLaneCount] = {};
+    bool heldByUs[c_LaneCount] = {};
+    double releaseAtSeconds[c_LaneCount] = {};
+    bool judgedHit[c_LaneCount] = {};
+    bool judgedMiss[c_LaneCount] = {};
     bool anyStuckHeld = false;
 
     DWORD startTick = GetTickCount();
@@ -122,7 +122,7 @@ int main(int argc, char** argv)
 
         if (session.Phase() == GamePhase::CountIn)
         {
-            for (int lane = 0; lane < kLaneCount; ++lane)
+            for (int lane = 0; lane < c_LaneCount; ++lane)
             {
                 if (!laneHasFreshFirstNote[lane] || triedBuffer[lane])
                 {

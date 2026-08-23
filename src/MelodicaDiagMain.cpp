@@ -78,10 +78,10 @@ int main(int argc, char** argv)
     GamePhase lastPhase = GamePhase::Idle;
     int lastSection = -2;
 
-    bool heldByUs[kLaneCount] = {};
-    double releaseAtSeconds[kLaneCount] = {};
-    double lastPressedBeat[kLaneCount];
-    for (int lane = 0; lane < kLaneCount; ++lane)
+    bool heldByUs[c_LaneCount] = {};
+    double releaseAtSeconds[c_LaneCount] = {};
+    double lastPressedBeat[c_LaneCount];
+    for (int lane = 0; lane < c_LaneCount; ++lane)
     {
         lastPressedBeat[lane] = -1.0;
     }
@@ -125,7 +125,7 @@ int main(int argc, char** argv)
                 printf("  spanBeats=%.4f sectionStartBeat=%.4f audioPhaseSeconds=%.4f (should be ~0 for a "
                        "first-ever appearance)\n",
                        clip->spanBeats, sectionStartBeat, engine.GetPositionSeconds(stem));
-                for (int lane = 0; lane < kLaneCount; ++lane)
+                for (int lane = 0; lane < c_LaneCount; ++lane)
                 {
                     if (clip->laneNotes[lane].empty())
                     {
@@ -140,7 +140,7 @@ int main(int argc, char** argv)
             }
         }
 
-        for (int lane = 0; lane < kLaneCount; ++lane)
+        for (int lane = 0; lane < c_LaneCount; ++lane)
         {
             if (heldByUs[lane] && session.Clock().ElapsedSeconds() >= releaseAtSeconds[lane])
             {
@@ -169,7 +169,7 @@ int main(int argc, char** argv)
         {
             const ChartClip& clip = session.Song().clips[session.Song().sections[sectionIndex].clipIndex];
             bool isTarget = clip.name == targetClipName;
-            for (int lane = 0; lane < kLaneCount; ++lane)
+            for (int lane = 0; lane < c_LaneCount; ++lane)
             {
                 if (clip.laneNotes[lane].empty() || heldByUs[lane])
                 {

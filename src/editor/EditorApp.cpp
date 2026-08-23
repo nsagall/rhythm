@@ -178,8 +178,8 @@ void EditorApp::Update()
     float contentWidth = io.DisplaySize.x;
     float contentHeight = io.DisplaySize.y - menuBarHeight;
 
-    constexpr float kSplitterThickness = 6.0f;
-    constexpr float kMinPaneSize = 80.0f;
+    constexpr float c_SplitterThickness = 6.0f;
+    constexpr float c_MinPaneSize = 80.0f;
 
     if (m_leftColumnWidth <= 0.0f)
     {
@@ -207,19 +207,19 @@ void EditorApp::Update()
     float leftColumnWidth = m_leftColumnWidth;
     float songPaneHeight = m_songPaneHeight;
 
-    if (timelineHeight < kMinPaneSize)
+    if (timelineHeight < c_MinPaneSize)
     {
-        timelineHeight = kMinPaneSize;
+        timelineHeight = c_MinPaneSize;
     }
-    if (bottomHeight < kMinPaneSize)
+    if (bottomHeight < c_MinPaneSize)
     {
-        bottomHeight = kMinPaneSize;
+        bottomHeight = c_MinPaneSize;
     }
-    float maxTimelinePlusBottom = contentHeight - kMinPaneSize - kSplitterThickness * 2.0f;
+    float maxTimelinePlusBottom = contentHeight - c_MinPaneSize - c_SplitterThickness * 2.0f;
     if (timelineHeight + bottomHeight > maxTimelinePlusBottom)
     {
         float excess = (timelineHeight + bottomHeight) - maxTimelinePlusBottom;
-        float takeFromTimeline = timelineHeight - kMinPaneSize;
+        float takeFromTimeline = timelineHeight - c_MinPaneSize;
         if (takeFromTimeline > excess)
         {
             takeFromTimeline = excess;
@@ -232,45 +232,45 @@ void EditorApp::Update()
         if (excess > 0.0f)
         {
             bottomHeight -= excess;
-            if (bottomHeight < kMinPaneSize)
+            if (bottomHeight < c_MinPaneSize)
             {
-                bottomHeight = kMinPaneSize;
+                bottomHeight = c_MinPaneSize;
             }
         }
     }
 
-    float upperHeight = contentHeight - timelineHeight - bottomHeight - kSplitterThickness * 2.0f;
-    if (upperHeight < kMinPaneSize)
+    float upperHeight = contentHeight - timelineHeight - bottomHeight - c_SplitterThickness * 2.0f;
+    if (upperHeight < c_MinPaneSize)
     {
-        upperHeight = kMinPaneSize;
+        upperHeight = c_MinPaneSize;
     }
 
-    if (leftColumnWidth < kMinPaneSize)
+    if (leftColumnWidth < c_MinPaneSize)
     {
-        leftColumnWidth = kMinPaneSize;
+        leftColumnWidth = c_MinPaneSize;
     }
-    float maxLeftColumnWidth = contentWidth - kMinPaneSize - kSplitterThickness;
+    float maxLeftColumnWidth = contentWidth - c_MinPaneSize - c_SplitterThickness;
     if (leftColumnWidth > maxLeftColumnWidth)
     {
-        leftColumnWidth = maxLeftColumnWidth > kMinPaneSize ? maxLeftColumnWidth : kMinPaneSize;
+        leftColumnWidth = maxLeftColumnWidth > c_MinPaneSize ? maxLeftColumnWidth : c_MinPaneSize;
     }
-    float rightColumnX = leftColumnWidth + kSplitterThickness;
+    float rightColumnX = leftColumnWidth + c_SplitterThickness;
     float rightColumnWidth = contentWidth - rightColumnX;
 
-    if (songPaneHeight < kMinPaneSize)
+    if (songPaneHeight < c_MinPaneSize)
     {
-        songPaneHeight = kMinPaneSize;
+        songPaneHeight = c_MinPaneSize;
     }
-    float maxSongPaneHeight = upperHeight - kMinPaneSize - kSplitterThickness;
+    float maxSongPaneHeight = upperHeight - c_MinPaneSize - c_SplitterThickness;
     if (songPaneHeight > maxSongPaneHeight)
     {
-        songPaneHeight = maxSongPaneHeight > kMinPaneSize ? maxSongPaneHeight : kMinPaneSize;
+        songPaneHeight = maxSongPaneHeight > c_MinPaneSize ? maxSongPaneHeight : c_MinPaneSize;
     }
-    float clipsY = contentY + songPaneHeight + kSplitterThickness;
-    float clipsHeight = upperHeight - songPaneHeight - kSplitterThickness;
+    float clipsY = contentY + songPaneHeight + c_SplitterThickness;
+    float clipsHeight = upperHeight - songPaneHeight - c_SplitterThickness;
 
-    float timelineY = contentY + upperHeight + kSplitterThickness;
-    float bottomY = timelineY + timelineHeight + kSplitterThickness;
+    float timelineY = contentY + upperHeight + c_SplitterThickness;
+    float bottomY = timelineY + timelineHeight + c_SplitterThickness;
 
     DrawSongPropertiesWindow(0.0f, contentY, leftColumnWidth, songPaneHeight);
     DrawClipsWindow(0.0f, clipsY, leftColumnWidth, clipsHeight);
@@ -290,7 +290,7 @@ void EditorApp::Update()
     // of this frame's (possibly clamped) displayed position, since that's
     // where the user visually grabbed the splitter from.
     float leftRightDelta = DrawPaneSplitter("##SplitLeftRight", ImVec2(leftColumnWidth, contentY),
-                                             ImVec2(kSplitterThickness, upperHeight), false);
+                                             ImVec2(c_SplitterThickness, upperHeight), false);
     if (leftRightDelta != 0.0f)
     {
         m_leftColumnWidth = leftColumnWidth + leftRightDelta;
@@ -299,8 +299,8 @@ void EditorApp::Update()
 
     // Song/Clips boundary within the left column: Song is the stored
     // value, Clips absorbs the change as a remainder.
-    float songClipsDelta = DrawPaneSplitter("##SplitSongClips", ImVec2(0.0f, clipsY - kSplitterThickness),
-                                             ImVec2(leftColumnWidth, kSplitterThickness), true);
+    float songClipsDelta = DrawPaneSplitter("##SplitSongClips", ImVec2(0.0f, clipsY - c_SplitterThickness),
+                                             ImVec2(leftColumnWidth, c_SplitterThickness), true);
     if (songClipsDelta != 0.0f)
     {
         m_songPaneHeight = songPaneHeight + songClipsDelta;
@@ -310,8 +310,8 @@ void EditorApp::Update()
     // Upper row/Timeline boundary: upperHeight is itself a remainder
     // (contentHeight minus timeline and bottom), so dragging this one only
     // needs to move m_timelineHeight - upperHeight absorbs the change.
-    float upperTimelineDelta = DrawPaneSplitter("##SplitUpperTimeline", ImVec2(0.0f, timelineY - kSplitterThickness),
-                                                 ImVec2(contentWidth, kSplitterThickness), true);
+    float upperTimelineDelta = DrawPaneSplitter("##SplitUpperTimeline", ImVec2(0.0f, timelineY - c_SplitterThickness),
+                                                 ImVec2(contentWidth, c_SplitterThickness), true);
     if (upperTimelineDelta != 0.0f)
     {
         m_timelineHeight = timelineHeight - upperTimelineDelta;
@@ -320,8 +320,8 @@ void EditorApp::Update()
 
     // Timeline/Bottom boundary: both are independently stored, so this one
     // transfers pixels directly between them (upperHeight is untouched).
-    float timelineBottomDelta = DrawPaneSplitter("##SplitTimelineBottom", ImVec2(0.0f, bottomY - kSplitterThickness),
-                                                  ImVec2(contentWidth, kSplitterThickness), true);
+    float timelineBottomDelta = DrawPaneSplitter("##SplitTimelineBottom", ImVec2(0.0f, bottomY - c_SplitterThickness),
+                                                  ImVec2(contentWidth, c_SplitterThickness), true);
     if (timelineBottomDelta != 0.0f)
     {
         m_timelineHeight = timelineHeight + timelineBottomDelta;
@@ -395,7 +395,7 @@ void EditorApp::DrawMenuBar()
 
 namespace
 {
-constexpr ImGuiWindowFlags kFixedPanelFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+constexpr ImGuiWindowFlags c_FixedPanelFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
                                                ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
                                                ImGuiWindowFlags_NoBringToFrontOnFocus;
 } // namespace
@@ -404,7 +404,7 @@ void EditorApp::DrawSongPropertiesWindow(float x, float y, float w, float h)
 {
     ImGui::SetNextWindowPos(ImVec2(x, y));
     ImGui::SetNextWindowSize(ImVec2(w, h));
-    ImGui::Begin("SongPropertiesWindow", nullptr, kFixedPanelFlags);
+    ImGui::Begin("SongPropertiesWindow", nullptr, c_FixedPanelFlags);
     ImGui::Text("Song");
     ImGui::Separator();
     if (m_hasDocument)
@@ -422,7 +422,7 @@ void EditorApp::DrawClipsWindow(float x, float y, float w, float h)
 {
     ImGui::SetNextWindowPos(ImVec2(x, y));
     ImGui::SetNextWindowSize(ImVec2(w, h));
-    ImGui::Begin("ClipsWindow", nullptr, kFixedPanelFlags);
+    ImGui::Begin("ClipsWindow", nullptr, c_FixedPanelFlags);
     ImGui::Text("Clips");
     ImGui::Separator();
     if (m_hasDocument)
@@ -440,7 +440,7 @@ void EditorApp::DrawBlockPropertiesWindow(float x, float y, float w, float h)
 {
     ImGui::SetNextWindowPos(ImVec2(x, y));
     ImGui::SetNextWindowSize(ImVec2(w, h));
-    ImGui::Begin("BlockPropertiesWindow", nullptr, kFixedPanelFlags);
+    ImGui::Begin("BlockPropertiesWindow", nullptr, c_FixedPanelFlags);
     ImGui::Text("Block Properties");
     ImGui::Separator();
     if (m_hasDocument)
@@ -470,7 +470,7 @@ void EditorApp::DrawBlockTimelineWindow(float x, float y, float w, float h)
 {
     ImGui::SetNextWindowPos(ImVec2(x, y));
     ImGui::SetNextWindowSize(ImVec2(w, h));
-    ImGui::Begin("BlockTimelineWindow", nullptr, kFixedPanelFlags);
+    ImGui::Begin("BlockTimelineWindow", nullptr, c_FixedPanelFlags);
     ImGui::Text("Blocks");
     ImGui::Separator();
     if (m_hasDocument)
@@ -488,7 +488,7 @@ void EditorApp::DrawBottomWindow(float x, float y, float w, float h)
 {
     ImGui::SetNextWindowPos(ImVec2(x, y));
     ImGui::SetNextWindowSize(ImVec2(w, h));
-    ImGui::Begin("BottomWindow", nullptr, kFixedPanelFlags);
+    ImGui::Begin("BottomWindow", nullptr, c_FixedPanelFlags);
 
     ImGui::BeginChild("Transport", ImVec2(w * 0.4f, 0), true);
     ImGui::Text("Preview");

@@ -12,7 +12,7 @@ namespace
 // to be generous enough to absorb ordinary export/rounding slop rather
 // than rejecting legitimately-fitting content over a couple of
 // milliseconds.
-constexpr double kClipLengthToleranceSeconds = 0.1;
+constexpr double c_ClipLengthToleranceSeconds = 0.1;
 } // namespace
 
 double ChartClip::NextOnsetAfter(double originBeat, double afterBeat, int lane) const
@@ -86,8 +86,8 @@ void ChartClip::ExpandLaneNotesToFillClip(double stemDurationSeconds, double bpm
     // "does this whole repeat fit" needs the same measurement-slop
     // allowance, not the tighter floating-point-safety epsilons used
     // elsewhere below (which are about roundoff, not measurement noise).
-    double toleranceBeats = kClipLengthToleranceSeconds / secondsPerBeat;
-    for (int lane = 0; lane < kLaneCount; ++lane)
+    double toleranceBeats = c_ClipLengthToleranceSeconds / secondsPerBeat;
+    for (int lane = 0; lane < c_LaneCount; ++lane)
     {
         if (laneNotes[lane].empty())
         {
@@ -158,7 +158,7 @@ bool ChartClip::ClipFitsOneLoop(double stemDurationSeconds, double bpm) const
 {
     double secondsPerBeat = 60.0 / bpm;
     double clipBeats = stemDurationSeconds / secondsPerBeat;
-    double toleranceBeats = kClipLengthToleranceSeconds / secondsPerBeat;
+    double toleranceBeats = c_ClipLengthToleranceSeconds / secondsPerBeat;
     return clipBeats >= spanBeats - toleranceBeats;
 }
 
@@ -278,14 +278,14 @@ bool ChartClip::ValidateArrangementAlignment(const ChartSong& song,
         return true; // nothing sensible to check - ChartSong::Load already rejects this
     }
     double secondsPerBeat = 60.0 / song.bpm;
-    double tFallSeconds = kNoteFallBeats * secondsPerBeat;
+    double tFallSeconds = c_NoteFallBeats * secondsPerBeat;
     // Same slop ExpandLaneNotesToFillClip/ClipFitsOneLoop already tolerate
     // between a clip's declared beat length and its real, audio-measured one
     // - needed only for drivingSpanBeats below (derived from real stem
     // duration), never for authoredSpanBeats (ChartSong::Load's
     // AlignToBarBoundary output, already an exact whole multiple of
     // beatsPerBar with no audio-measurement slop of its own).
-    double toleranceBeats = kClipLengthToleranceSeconds / secondsPerBeat;
+    double toleranceBeats = c_ClipLengthToleranceSeconds / secondsPerBeat;
 
     // Every judged clip's two lengths, each confirmed a whole number of bars
     // up front so every later check is exact integer beats, never float bar

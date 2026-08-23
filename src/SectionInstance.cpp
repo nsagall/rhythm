@@ -28,7 +28,7 @@ void SectionInstance::ClearPendingAdvance()
 
 double SectionInstance::NextExpectedBeatForLane(int lane) const
 {
-    if (lane < 0 || lane >= kLaneCount)
+    if (lane < 0 || lane >= c_LaneCount)
     {
         return 0.0;
     }
@@ -37,7 +37,7 @@ double SectionInstance::NextExpectedBeatForLane(int lane) const
 
 void SectionInstance::SetNextExpectedBeat(int lane, double beat)
 {
-    if (lane < 0 || lane >= kLaneCount)
+    if (lane < 0 || lane >= c_LaneCount)
     {
         return;
     }
@@ -46,7 +46,7 @@ void SectionInstance::SetNextExpectedBeat(int lane, double beat)
 
 void SectionInstance::AdvanceExpectedNote(int lane, double originBeat, const ChartClip& clip)
 {
-    if (lane < 0 || lane >= kLaneCount)
+    if (lane < 0 || lane >= c_LaneCount)
     {
         return;
     }
@@ -55,7 +55,7 @@ void SectionInstance::AdvanceExpectedNote(int lane, double originBeat, const Cha
 
 bool SectionInstance::IsLaneHeld(int lane) const
 {
-    if (lane < 0 || lane >= kLaneCount)
+    if (lane < 0 || lane >= c_LaneCount)
     {
         return false;
     }
@@ -64,7 +64,7 @@ bool SectionInstance::IsLaneHeld(int lane) const
 
 double SectionInstance::LaneHoldStartBeat(int lane) const
 {
-    if (lane < 0 || lane >= kLaneCount)
+    if (lane < 0 || lane >= c_LaneCount)
     {
         return -1.0;
     }
@@ -73,7 +73,7 @@ double SectionInstance::LaneHoldStartBeat(int lane) const
 
 double SectionInstance::LaneHoldExpectedEndBeat(int lane) const
 {
-    if (lane < 0 || lane >= kLaneCount)
+    if (lane < 0 || lane >= c_LaneCount)
     {
         return -1.0;
     }
@@ -82,7 +82,7 @@ double SectionInstance::LaneHoldExpectedEndBeat(int lane) const
 
 bool SectionInstance::LaneHoldWasPrecise(int lane) const
 {
-    if (lane < 0 || lane >= kLaneCount)
+    if (lane < 0 || lane >= c_LaneCount)
     {
         return true;
     }
@@ -91,7 +91,7 @@ bool SectionInstance::LaneHoldWasPrecise(int lane) const
 
 void SectionInstance::StartLaneHold(int lane, double startBeat, double expectedEndBeat, bool wasPrecise)
 {
-    if (lane < 0 || lane >= kLaneCount)
+    if (lane < 0 || lane >= c_LaneCount)
     {
         return;
     }
@@ -100,7 +100,7 @@ void SectionInstance::StartLaneHold(int lane, double startBeat, double expectedE
 
 void SectionInstance::ClearLaneHold(int lane)
 {
-    if (lane < 0 || lane >= kLaneCount)
+    if (lane < 0 || lane >= c_LaneCount)
     {
         return;
     }
@@ -183,8 +183,8 @@ void SectionInstance::RecordOnsetJudgement(double startBeat, int lane, Judgement
 {
     m_judgedNotes.push_back({startBeat, lane, result, precise});
 
-    constexpr size_t kMaxTracked = 32;
-    if (m_judgedNotes.size() > kMaxTracked)
+    constexpr size_t c_MaxTracked = 32;
+    if (m_judgedNotes.size() > c_MaxTracked)
     {
         m_judgedNotes.erase(m_judgedNotes.begin());
     }

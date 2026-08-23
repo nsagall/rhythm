@@ -2,7 +2,7 @@
 
 namespace
 {
-constexpr ImGuiWindowFlags kSplitterFlags =
+constexpr ImGuiWindowFlags c_SplitterFlags =
     ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
     ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse |
     ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing;
@@ -13,7 +13,7 @@ float DrawPaneSplitter(const char* id, ImVec2 barPos, ImVec2 barSize, bool resiz
     ImGui::SetNextWindowPos(barPos);
     ImGui::SetNextWindowSize(barSize);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-    ImGui::Begin(id, nullptr, kSplitterFlags);
+    ImGui::Begin(id, nullptr, c_SplitterFlags);
 
     ImGui::InvisibleButton("##handle", barSize);
     bool hovered = ImGui::IsItemHovered();

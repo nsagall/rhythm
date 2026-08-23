@@ -32,12 +32,12 @@ namespace
 // Presses+releases every currently-due note across all lanes of clip,
 // exactly on time - shared by both learn sections in this chart, since both
 // use the same clip. Returns once nothing more is due to press this call.
-void PlayDueNotesPerfectly(GameSession& session, const ChartClip& clip, double lastPressedBeat[kLaneCount],
-                            bool heldByUs[kLaneCount], double releaseAtSeconds[kLaneCount])
+void PlayDueNotesPerfectly(GameSession& session, const ChartClip& clip, double lastPressedBeat[c_LaneCount],
+                            bool heldByUs[c_LaneCount], double releaseAtSeconds[c_LaneCount])
 {
     double secondsPerBeat = 60.0 / session.Song().bpm;
 
-    for (int lane = 0; lane < kLaneCount; ++lane)
+    for (int lane = 0; lane < c_LaneCount; ++lane)
     {
         if (heldByUs[lane] && session.Clock().ElapsedSeconds() >= releaseAtSeconds[lane])
         {
@@ -47,7 +47,7 @@ void PlayDueNotesPerfectly(GameSession& session, const ChartClip& clip, double l
         }
     }
 
-    for (int lane = 0; lane < kLaneCount; ++lane)
+    for (int lane = 0; lane < c_LaneCount; ++lane)
     {
         if (clip.laneNotes[lane].empty() || heldByUs[lane] || !session.IsLaneJudgeable(lane))
         {
@@ -103,10 +103,10 @@ int main(int argc, char** argv)
 
     session.Start();
 
-    bool heldByUs[kLaneCount] = {};
-    double releaseAtSeconds[kLaneCount] = {};
-    double lastPressedBeat[kLaneCount];
-    for (int lane = 0; lane < kLaneCount; ++lane)
+    bool heldByUs[c_LaneCount] = {};
+    double releaseAtSeconds[c_LaneCount] = {};
+    double lastPressedBeat[c_LaneCount];
+    for (int lane = 0; lane < c_LaneCount; ++lane)
     {
         lastPressedBeat[lane] = -1.0;
     }

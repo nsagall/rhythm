@@ -8,7 +8,7 @@
 #include "GameSession.h"
 
 // Standalone diagnostic (not part of the normal build): verifies easy
-// mode's 2-miss grace period (SectionInstance::kEasyGraceMisses), which
+// mode's 2-miss grace period (SectionInstance::c_EasyGraceMisses), which
 // IntroOutroDiagMain.cpp's perfect auto-player can't exercise (it never
 // mistimes or skips a press). Drives GameSession headlessly through the
 // first 3 Learn sections of a chart in easy mode, deliberately skipping
@@ -87,12 +87,12 @@ int main(int argc, char** argv)
     // so its clip actually starts playing (StartClipLoop only runs from a
     // correct press), or there'd be no "playing" state for the 3-miss stop
     // to meaningfully transition away from.
-    const int kGoodHitsBeforeMisses[3] = {0, 2, 0};
+    const int c_GoodHitsBeforeMisses[3] = {0, 2, 0};
 
     // How many consecutive onset events to skip pressing for after that,
     // per Learn section instance (0-indexed by order reached, not by chart
     // section index - background/solo sections don't count).
-    const int kMissesPerInstance[3] = {2, 5, 2};
+    const int c_MissesPerInstance[3] = {2, 5, 2};
     bool streakDroppedToZero[3] = {false, false, false};
 
     int learnSectionInstance = -1;
@@ -107,10 +107,10 @@ int main(int argc, char** argv)
     bool instance1StemEverPlayed = false;
     bool instance1StemStopped = false;
 
-    bool heldByUs[kLaneCount] = {};
-    double releaseAtSeconds[kLaneCount] = {};
-    double lastPressedBeat[kLaneCount];
-    for (int lane = 0; lane < kLaneCount; ++lane)
+    bool heldByUs[c_LaneCount] = {};
+    double releaseAtSeconds[c_LaneCount] = {};
+    double lastPressedBeat[c_LaneCount];
+    for (int lane = 0; lane < c_LaneCount; ++lane)
     {
         lastPressedBeat[lane] = -1.0;
     }
@@ -166,7 +166,7 @@ int main(int argc, char** argv)
         // Release any lane whose planned hold has reached its end - harmless
         // in easy mode (OnRelease just clears the hold, no judgement), kept
         // so a held lane doesn't block that lane's next note forever.
-        for (int lane = 0; lane < kLaneCount; ++lane)
+        for (int lane = 0; lane < c_LaneCount; ++lane)
         {
             if (heldByUs[lane] && session.Clock().ElapsedSeconds() >= releaseAtSeconds[lane])
             {
@@ -180,7 +180,7 @@ int main(int argc, char** argv)
         if (judgingLive)
         {
             const ChartClip& clip = session.Song().clips[session.Song().sections[sectionIndex].clipIndex];
-            for (int lane = 0; lane < kLaneCount; ++lane)
+            for (int lane = 0; lane < c_LaneCount; ++lane)
             {
                 if (clip.laneNotes[lane].empty() || heldByUs[lane])
                 {
@@ -200,14 +200,14 @@ int main(int argc, char** argv)
                 lastPressedBeat[lane] = nextBeat; // handled either way - press or deliberate skip
 
                 bool pastGoodHitsQuota = learnSectionInstance >= 0 && learnSectionInstance <= 2 &&
-                                         goodHitsThisSection >= kGoodHitsBeforeMisses[learnSectionInstance];
+                                         goodHitsThisSection >= c_GoodHitsBeforeMisses[learnSectionInstance];
 
-                if (pastGoodHitsQuota && missesScriptedThisSection < kMissesPerInstance[learnSectionInstance])
+                if (pastGoodHitsQuota && missesScriptedThisSection < c_MissesPerInstance[learnSectionInstance])
                 {
                     ++missesScriptedThisSection;
                     printf("[t=%.2fs]   lane %d beat=%.2f: SKIPPING press #%d/%d this instance (scripted miss)\n",
                            session.Clock().ElapsedSeconds(), lane, nextBeat, missesScriptedThisSection,
-                           kMissesPerInstance[learnSectionInstance]);
+                           c_MissesPerInstance[learnSectionInstance]);
                     continue; // don't press - Update()'s press-phase timeout will register the miss
                 }
 

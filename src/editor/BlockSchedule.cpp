@@ -11,7 +11,7 @@ namespace BlockSchedule
 namespace
 {
 
-// One lane's next not-yet-consumed onset, for the k-way (k <= kLaneCount)
+// One lane's next not-yet-consumed onset, for the k-way (k <= c_LaneCount)
 // merge walk below - only lanes with at least one note participate, since
 // a lane with none can never be judged/pressed at all (matches
 // GameSession::IsLaneJudgeable's own "nothing to press" case).
@@ -29,11 +29,11 @@ struct LaneFrontier
 // player (== the instant IsLockedIn() flips true, purely for the voice's
 // own volume-switch timing - it no longer affects the section's own
 // advance timing at all, see Build()'s own Learn case).
-double WalkOnsetsForLockIn(double originBeat, const ChartClip& clip, const double anchors[kLaneCount],
+double WalkOnsetsForLockIn(double originBeat, const ChartClip& clip, const double anchors[c_LaneCount],
                             int hitsRequired, double afterBeat)
 {
     std::vector<LaneFrontier> frontier;
-    for (int lane = 0; lane < kLaneCount; ++lane)
+    for (int lane = 0; lane < c_LaneCount; ++lane)
     {
         if (!clip.laneNotes[lane].empty())
         {
@@ -91,7 +91,7 @@ Schedule Build(const ChartSong& song, const std::unordered_map<const ChartClip*,
     }
 
     double secondsPerBeat = 60.0 / song.bpm;
-    double tFallSeconds = kNoteFallBeats * secondsPerBeat;
+    double tFallSeconds = c_NoteFallBeats * secondsPerBeat;
 
     double t = 0.0;
     const ChartClip* queuedBackgroundClip = nullptr;
@@ -247,7 +247,7 @@ Schedule Build(const ChartSong& song, const std::unordered_map<const ChartClip*,
                 // actually (re)starting a break's clip, phase-seeked at t).
                 startVoiceIfNeeded(clip, t, clip->volume, clip->volume, -1.0, static_cast<int>(i));
                 // Unlike Learn/Background, a break clip self-stops once its
-                // own loop_count/kNoteFallBeats-extended duration elapses
+                // own loop_count/c_NoteFallBeats-extended duration elapses
                 // (GameSession's finishedSection handling calls
                 // StopClipLoop for a finished Break specifically).
                 int voiceIdx = clipStates[clip].voiceIndex;
@@ -274,8 +274,8 @@ Schedule Build(const ChartSong& song, const std::unordered_map<const ChartClip*,
                 // Covers both a clip's first-ever appearance and a later
                 // section reusing one already mid-groove in one formula -
                 // see ChartClip::NextOnsetAfter's own comment for why.
-                double anchors[kLaneCount];
-                for (int lane = 0; lane < kLaneCount; ++lane)
+                double anchors[c_LaneCount];
+                for (int lane = 0; lane < c_LaneCount; ++lane)
                 {
                     anchors[lane] = clip->NextOnsetAfter(originBeat, afterBeat, lane);
                 }

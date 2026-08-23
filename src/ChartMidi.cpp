@@ -12,9 +12,9 @@ namespace
 // Returns the lane index for a MIDI key number, or -1 if it isn't one of the tracked pitches.
 int LaneForPitch(int keyNumber)
 {
-    for (int lane = 0; lane < kLaneCount; ++lane)
+    for (int lane = 0; lane < c_LaneCount; ++lane)
     {
-        if (kLaneMidiPitches[lane] == keyNumber)
+        if (c_LaneMidiPitches[lane] == keyNumber)
         {
             return lane;
         }
@@ -25,7 +25,7 @@ int LaneForPitch(int keyNumber)
 // True once outData has at least one note on some lane.
 bool HasAnyNotes(const MidiLaneData& data)
 {
-    for (int lane = 0; lane < kLaneCount; ++lane)
+    for (int lane = 0; lane < c_LaneCount; ++lane)
     {
         if (!data.lanes[lane].empty())
         {
@@ -128,7 +128,7 @@ bool ChartMidi::LoadLaneNotes(const std::wstring& midiFilePath, MidiLaneData& ou
         return false;
     }
 
-    for (int lane = 0; lane < kLaneCount; ++lane)
+    for (int lane = 0; lane < c_LaneCount; ++lane)
     {
         std::vector<LaneNote>& notes = outData.lanes[lane];
         std::sort(notes.begin(), notes.end(),
@@ -145,7 +145,7 @@ bool ChartMidi::LoadLaneNotes(const std::wstring& midiFilePath, MidiLaneData& ou
             if (thisEndBeat > notes[i + 1].startBeat + 1e-6)
             {
                 outError = L"'" + midiFilePath + L"' has overlapping notes on lane " + std::to_wstring(lane) +
-                            L" (pitch " + std::to_wstring(kLaneMidiPitches[lane]) + L") around beat " +
+                            L" (pitch " + std::to_wstring(c_LaneMidiPitches[lane]) + L") around beat " +
                             std::to_wstring(notes[i + 1].startBeat);
                 return false;
             }

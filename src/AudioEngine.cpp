@@ -338,11 +338,11 @@ void AudioEngine::FadeOutAndStop(const std::vector<Stem*>& stems)
     // stopped voices (a Break/Reset's own stop-everything, in particular)
     // all truncate at once. ~10ms total is short enough that even a
     // fast-decaying note reads as a clean stop, not a lingering fade.
-    constexpr int kFadeSteps = 5;
-    constexpr DWORD kFadeStepMs = 2;
-    for (int step = 1; step <= kFadeSteps; ++step)
+    constexpr int c_FadeSteps = 5;
+    constexpr DWORD c_FadeStepMs = 2;
+    for (int step = 1; step <= c_FadeSteps; ++step)
     {
-        float remaining = 1.0f - static_cast<float>(step) / static_cast<float>(kFadeSteps);
+        float remaining = 1.0f - static_cast<float>(step) / static_cast<float>(c_FadeSteps);
         for (size_t i = 0; i < stems.size(); ++i)
         {
             if (stems[i]->voice)
@@ -350,7 +350,7 @@ void AudioEngine::FadeOutAndStop(const std::vector<Stem*>& stems)
                 stems[i]->voice->SetVolume(startVolumes[i] * remaining);
             }
         }
-        Sleep(kFadeStepMs);
+        Sleep(c_FadeStepMs);
     }
 
     for (Stem* stem : stems)
@@ -517,7 +517,7 @@ SfxHandle AudioEngine::LoadSfx(const std::wstring& wavFilePath)
         return SfxHandle{};
     }
 
-    for (int i = 0; i < kSfxVoicePoolSize; ++i)
+    for (int i = 0; i < c_SfxVoicePoolSize; ++i)
     {
         if (FAILED(m_xaudio2->CreateSourceVoice(&sfx.voices[i], &sfx.format)) || !sfx.voices[i])
         {
@@ -548,7 +548,7 @@ void AudioEngine::PlaySfx(SfxHandle sfx)
     }
 
     IXAudio2SourceVoice* voice = entry.voices[entry.nextVoice];
-    entry.nextVoice = (entry.nextVoice + 1) % kSfxVoicePoolSize;
+    entry.nextVoice = (entry.nextVoice + 1) % c_SfxVoicePoolSize;
     if (!voice)
     {
         return;

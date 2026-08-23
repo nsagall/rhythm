@@ -22,13 +22,13 @@ struct LaneNote
 // shrinking to "last note's end" and swallowing trailing rest space.
 struct MidiLaneData
 {
-    std::vector<LaneNote> lanes[kLaneCount];
+    std::vector<LaneNote> lanes[c_LaneCount];
     double totalBeats = 0.0;
 };
 
 // Thin adapter over the vendored smf::MidiFile library (third_party/midifile):
 // reads a Standard MIDI File and keeps only note-on/note-off pairs for the
-// kLaneCount pitches in kLaneMidiPitches (LaneConfig.h) - every other pitch,
+// c_LaneCount pitches in c_LaneMidiPitches (LaneConfig.h) - every other pitch,
 // channel, meta event, and track is ignored entirely once past the point of
 // finding the overall track length.
 class ChartMidi

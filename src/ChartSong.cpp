@@ -139,9 +139,9 @@ bool ParseTimeSignature(const std::wstring& value, int& outBeatsPerBar, int& out
         return false;
     }
 
-    static const int kValidDenominators[] = {1, 2, 4, 8, 16, 32};
-    bool denominatorOk = std::find(std::begin(kValidDenominators), std::end(kValidDenominators), denominator) !=
-                          std::end(kValidDenominators);
+    static const int c_ValidDenominators[] = {1, 2, 4, 8, 16, 32};
+    bool denominatorOk = std::find(std::begin(c_ValidDenominators), std::end(c_ValidDenominators), denominator) !=
+                          std::end(c_ValidDenominators);
     if (!denominatorOk)
     {
         return false;
@@ -279,7 +279,7 @@ bool ChartSong::Load(const std::wstring& chartFilePath, std::vector<std::wstring
                 }
                 else
                 {
-                    for (int lane = 0; lane < kLaneCount; ++lane)
+                    for (int lane = 0; lane < c_LaneCount; ++lane)
                     {
                         currentClip.laneNotes[lane] = std::move(midiData.lanes[lane]);
                     }

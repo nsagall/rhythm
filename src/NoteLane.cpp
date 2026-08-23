@@ -4,8 +4,8 @@
 
 namespace
 {
-constexpr UINT_PTR kFrameTimerId = 400;
-constexpr UINT kFrameIntervalMs = 16;
+constexpr UINT_PTR c_FrameTimerId = 400;
+constexpr UINT c_FrameIntervalMs = 16;
 } // namespace
 
 // Defaults to the GDI renderer - the only concrete INoteLaneRenderer this
@@ -32,17 +32,17 @@ void NoteLane::SetHitsMeterRect(RECT rect)
 
 void NoteLane::StartAnimating()
 {
-    SetTimer(m_hwnd, kFrameTimerId, kFrameIntervalMs, nullptr);
+    SetTimer(m_hwnd, c_FrameTimerId, c_FrameIntervalMs, nullptr);
 }
 
 void NoteLane::StopAnimating()
 {
-    KillTimer(m_hwnd, kFrameTimerId);
+    KillTimer(m_hwnd, c_FrameTimerId);
 }
 
 bool NoteLane::OnTimer(WPARAM timerId)
 {
-    if (timerId != kFrameTimerId)
+    if (timerId != c_FrameTimerId)
     {
         return false;
     }

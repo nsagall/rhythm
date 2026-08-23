@@ -87,7 +87,7 @@ bool LoadIntoDocument(const std::wstring& chartFilePath, EditorDocument& outDoc,
         // always has one.
         editorClip.hasWav = true;
         editorClip.hasMidi = clip.hasMidi;
-        for (int lane = 0; lane < kLaneCount; ++lane)
+        for (int lane = 0; lane < c_LaneCount; ++lane)
         {
             editorClip.laneNotes[lane] = clip.laneNotes[lane];
         }

@@ -89,7 +89,7 @@ std::vector<HighScoreEntry> Settings::LoadHighScores(const std::wstring& songKey
     std::wstring keyBase = SanitizeForIniKey(songKey);
 
     std::vector<HighScoreEntry> entries;
-    for (int rank = 0; rank < kMaxHighScoreEntries; ++rank)
+    for (int rank = 0; rank < c_MaxHighScoreEntries; ++rank)
     {
         std::wstring scoreKey = keyBase + L"_Score" + std::to_wstring(rank);
         // -1 as the missing-key default (scores are never negative) doubles
@@ -115,7 +115,7 @@ void Settings::SaveHighScores(const std::wstring& songKey, const std::vector<Hig
     std::wstring path = GetSettingsFilePath();
     std::wstring keyBase = SanitizeForIniKey(songKey);
 
-    for (int rank = 0; rank < kMaxHighScoreEntries; ++rank)
+    for (int rank = 0; rank < c_MaxHighScoreEntries; ++rank)
     {
         std::wstring scoreKey = keyBase + L"_Score" + std::to_wstring(rank);
         std::wstring initialsKey = keyBase + L"_Initials" + std::to_wstring(rank);
@@ -138,7 +138,7 @@ void Settings::SaveHighScores(const std::wstring& songKey, const std::vector<Hig
 // See the header's own comment.
 bool Settings::HighScoreQualifies(const std::vector<HighScoreEntry>& entries, int score)
 {
-    if (static_cast<int>(entries.size()) < kMaxHighScoreEntries)
+    if (static_cast<int>(entries.size()) < c_MaxHighScoreEntries)
     {
         return true;
     }
@@ -151,8 +151,8 @@ void Settings::InsertHighScore(std::vector<HighScoreEntry>& entries, const std::
     entries.push_back({initials, score});
     std::sort(entries.begin(), entries.end(),
               [](const HighScoreEntry& a, const HighScoreEntry& b) { return a.score > b.score; });
-    if (entries.size() > static_cast<size_t>(kMaxHighScoreEntries))
+    if (entries.size() > static_cast<size_t>(c_MaxHighScoreEntries))
     {
-        entries.resize(kMaxHighScoreEntries);
+        entries.resize(c_MaxHighScoreEntries);
     }
 }

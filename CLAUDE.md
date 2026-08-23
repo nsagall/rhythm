@@ -8,7 +8,7 @@ Rhythm is a Windows C++20 desktop rhythm game, plus `RhythmEditor`, a standalone
 chart-authoring tool for it. A "chart" (`.chart` text file + `.wav` stem files +
 `.mid` pattern files, all in one folder under `Content/`) defines a song: a pool of
 reusable audio+MIDI clips and an ordered sequence of gameplay sections built from
-them. The player presses `kLaneCount` (4) lanes in time with notes scrolling down
+them. The player presses `c_LaneCount` (4) lanes in time with notes scrolling down
 the screen, judged against the clip's MIDI-authored pattern.
 
 ## Building
@@ -82,8 +82,8 @@ ordered list of section blocks that actually drive gameplay:
 `ChartSong::Load` (`src/ChartSong.h/.cpp`) is the *only* way a `ChartSong` is
 constructed — it parses and fully validates the text format plus the referenced
 `.wav`/`.mid` files. `ChartMidi::LoadLaneNotes` extracts notes for the 4 fixed
-lane pitches (`kLaneMidiPitches` in `src/LaneConfig.h`) from a clip's MIDI file;
-`kLaneCount`/`kLaneMidiPitches`/`kNoteFallBeats` in `LaneConfig.h` are the single
+lane pitches (`c_LaneMidiPitches` in `src/LaneConfig.h`) from a clip's MIDI file;
+`c_LaneCount`/`c_LaneMidiPitches`/`c_NoteFallBeats` in `LaneConfig.h` are the single
 source of truth other lane-shaped code sizes itself off.
 
 Every clip's loop boundaries are anchored to a shared **arrangement origin** —
@@ -174,5 +174,5 @@ To author a new generated song, keep everything above `main()` and replace only
   that's what lets `GameSession`/`ChartClip`'s timing methods be shared verbatim
   between the game and the editor's analytical scheduler.
 - Ableton Live (the DAW used to author charts) numbers octaves one lower than the
-  "middle C = C4" convention — `kLaneMidiPitches` in `LaneConfig.h` is chosen to
+  "middle C = C4" convention — `c_LaneMidiPitches` in `LaneConfig.h` is chosen to
   match what Ableton's piano roll displays, not the general MIDI convention.

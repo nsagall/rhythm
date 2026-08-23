@@ -13,55 +13,55 @@ using ColorUtil::Lighten;
 namespace
 {
 
-constexpr int kVisibilityMarginPx = 12;
-constexpr DWORD kFlashDurationMs = 220;
-constexpr DWORD kConfettiDurationMs = 1400;
-constexpr int kConfettiPieceCount = 60;
+constexpr int c_VisibilityMarginPx = 12;
+constexpr DWORD c_FlashDurationMs = 220;
+constexpr DWORD c_ConfettiDurationMs = 1400;
+constexpr int c_ConfettiPieceCount = 60;
 
 // Notes-exploding burst - shorter and snappier than the confetti burst
 // since it's marking a bunch of individual notes popping at once, not one
 // big celebration.
-constexpr DWORD kExplosionDurationMs = 500;
-constexpr int kExplosionParticlesPerNote = 10;
-constexpr double kExplosionMinSpeedPxPerSec = 90.0;
-constexpr double kExplosionMaxSpeedPxPerSec = 260.0;
-constexpr double kExplosionDragPerSec = 2.5; // exponential slowdown - a burst outward that settles, not a straight-line fly-off
+constexpr DWORD c_ExplosionDurationMs = 500;
+constexpr int c_ExplosionParticlesPerNote = 10;
+constexpr double c_ExplosionMinSpeedPxPerSec = 90.0;
+constexpr double c_ExplosionMaxSpeedPxPerSec = 260.0;
+constexpr double c_ExplosionDragPerSec = 2.5; // exponential slowdown - a burst outward that settles, not a straight-line fly-off
 
 // The hits meter's own little "lock-in" burst - a single celebration point
 // rather than one burst per note, so it gets a bit more than one note's
-// worth of sparks (kExplosionParticlesPerNote) to still read as an event
+// worth of sparks (c_ExplosionParticlesPerNote) to still read as an event
 // worth noticing beside the (possibly much larger) note-explosion burst
 // firing at the very same instant.
-constexpr int kHitsMeterExplosionParticleCount = 16;
+constexpr int c_HitsMeterExplosionParticleCount = 16;
 
 // The hits meter's own confetti burst (Pass mode only - see
 // AppendHitsMeterConfetti) - fewer pieces than the full-width playfield
-// burst (kConfettiPieceCount), scaled down to match the meter's own much
+// burst (c_ConfettiPieceCount), scaled down to match the meter's own much
 // narrower width.
-constexpr int kHitsMeterConfettiPieceCount = 18;
+constexpr int c_HitsMeterConfettiPieceCount = 18;
 
 // Hit ripples grow twice as fast as miss ripples, which are themselves a
 // bit faster than a plain 260 px/sec so they fully fade before leaving the lane.
-constexpr double kMissRippleSpeedPxPerSec = 260.0 / 0.75;
-constexpr double kHitRippleSpeedPxPerSec = kMissRippleSpeedPxPerSec / 0.5;
-constexpr int kRippleThicknessPx = 4;
+constexpr double c_MissRippleSpeedPxPerSec = 260.0 / 0.75;
+constexpr double c_HitRippleSpeedPxPerSec = c_MissRippleSpeedPxPerSec / 0.5;
+constexpr int c_RippleThicknessPx = 4;
 
 // Starting opacity for each ripple color - both fade further from here as
 // they grow, never brighter.
-constexpr int kHitRippleStartAlpha = static_cast<int>(255 * 0.5);   // 50% transparent to start
-constexpr int kMissRippleStartAlpha = static_cast<int>(255 * 0.25); // 75% transparent to start
+constexpr int c_HitRippleStartAlpha = static_cast<int>(255 * 0.5);   // 50% transparent to start
+constexpr int c_MissRippleStartAlpha = static_cast<int>(255 * 0.25); // 75% transparent to start
 
 // A hit ripple's alpha reaches zero at half the radius (so half the time)
 // a miss ripple's does - it fades away twice as fast, independent of how
 // fast either one is still visibly growing/traveling toward off-screen.
-constexpr double kHitRippleFadeRate = 2.0;
-constexpr double kMissRippleFadeRate = 1.0;
+constexpr double c_HitRippleFadeRate = 2.0;
+constexpr double c_MissRippleFadeRate = 1.0;
 
-constexpr int kColumnGutterPx = 4;
-constexpr double kBarWidthFraction = 0.24;
-constexpr int kGlyphRadiusX = 7;
-constexpr int kGlyphRadiusY = 7;
-constexpr int kReceptorRadius = 14;
+constexpr int c_ColumnGutterPx = 4;
+constexpr double c_BarWidthFraction = 0.24;
+constexpr int c_GlyphRadiusX = 7;
+constexpr int c_GlyphRadiusY = 7;
+constexpr int c_ReceptorRadius = 14;
 
 // The smallest on-screen space (in pixels) ever left between two notes in
 // the same lane, even when one's release beat and the next's onset beat are
@@ -69,49 +69,49 @@ constexpr int kReceptorRadius = 14;
 // shortens the earlier note's trailing edge (never the later note's leading
 // edge/glyph, which always sits exactly at its real onset time) to make
 // room for it.
-constexpr int kMinNoteGapPx = 5;
-// However short kMinNoteGapPx above forces a note's bar to get, never
+constexpr int c_MinNoteGapPx = 5;
+// However short c_MinNoteGapPx above forces a note's bar to get, never
 // shrink it past this - keeps a very short/back-to-back note's bar from
 // visually inverting or vanishing entirely.
-constexpr int kMinNoteBarHeightPx = 6;
+constexpr int c_MinNoteBarHeightPx = 6;
 
 // A lane's central rail (see DrawRails) pulses from a straight line into a
 // sine-wave squiggle right on the beat and back - these bound how far and
 // how fast that wiggle goes.
-constexpr double kRailWiggleAmplitudePx = 7.0;
-constexpr double kRailWiggleCycles = 18.0; // full sine periods spanning the rail's own height
-constexpr double kRailWiggleSpeed = 1.0 / 130.0; // phase radians per tick (GetTickCount() ms)
-constexpr int kRailWiggleStepPx = 3;             // polyline segment resolution - fine enough to resolve kRailWiggleCycles without aliasing into a jagged zigzag
-constexpr int kRailThicknessPx = 4;
+constexpr double c_RailWiggleAmplitudePx = 7.0;
+constexpr double c_RailWiggleCycles = 18.0; // full sine periods spanning the rail's own height
+constexpr double c_RailWiggleSpeed = 1.0 / 130.0; // phase radians per tick (GetTickCount() ms)
+constexpr int c_RailWiggleStepPx = 3;             // polyline segment resolution - fine enough to resolve c_RailWiggleCycles without aliasing into a jagged zigzag
+constexpr int c_RailThicknessPx = 4;
 
 // Bank-wiped HUD flourish (see OnHudValueChanged/DrawScorePopups). A popup
 // sinks/shakes and fades over its own lifetime; the panel glow is a
 // separate, shorter pulse re-triggered by the same event.
-constexpr DWORD kScorePopupDurationMs = 900;
-constexpr DWORD kScoreFlashDurationMs = 400;
-constexpr double kScorePopupSinkPx = 14.0;  // lost popup: total downward drift over its lifetime
-constexpr double kScorePopupShakePx = 5.0;  // lost popup: horizontal shake amplitude, decaying with t
+constexpr DWORD c_ScorePopupDurationMs = 900;
+constexpr DWORD c_ScoreFlashDurationMs = 400;
+constexpr double c_ScorePopupSinkPx = 14.0;  // lost popup: total downward drift over its lifetime
+constexpr double c_ScorePopupShakePx = 5.0;  // lost popup: horizontal shake amplitude, decaying with t
 
-using GameColors::kBgBottom;
-using GameColors::kBgTop;
-using GameColors::kBorderColor;
-using GameColors::kConfettiPalette;
-using GameColors::kConfettiPaletteSize;
-using GameColors::kHighlightWhite;
-using GameColors::kNoteColorHit;
-using GameColors::kNoteColorHitImprecise;
-using GameColors::kNoteColorMiss;
-using GameColors::kPanelBgAlpha;
-using GameColors::kPanelBgColor;
-using GameColors::kScorePopupBankedColor;
-using GameColors::kShadowColor;
-using GameColors::kStreakColor;
-using GameColors::kTextColor;
+using GameColors::c_BgBottom;
+using GameColors::c_BgTop;
+using GameColors::c_BorderColor;
+using GameColors::c_ConfettiPalette;
+using GameColors::c_ConfettiPaletteSize;
+using GameColors::c_HighlightWhite;
+using GameColors::c_NoteColorHit;
+using GameColors::c_NoteColorHitImprecise;
+using GameColors::c_NoteColorMiss;
+using GameColors::c_PanelBgAlpha;
+using GameColors::c_PanelBgColor;
+using GameColors::c_ScorePopupBankedColor;
+using GameColors::c_ShadowColor;
+using GameColors::c_StreakColor;
+using GameColors::c_TextColor;
 
 // How long a HUD value's grow-pulse lasts (see OnHudValueChanged/
 // FontForGrowPulse) - the text starts at 2x size right when the value
 // changes and eases back down to its normal size over this long.
-constexpr DWORD kHudGrowDurationMs = 1000;
+constexpr DWORD c_HudGrowDurationMs = 1000;
 
 // Cheap, stable pseudo-random float in [0,1) derived from an integer seed - used to scatter
 // background sparkles/confetti/explosion particles at fixed-looking-random positions without
@@ -216,28 +216,28 @@ NoteLaneGdiRenderer::~NoteLaneGdiRenderer()
 double NoteLaneGdiRenderer::PixelsPerBeat(RECT laneRect) const
 {
     double laneHeight = laneRect.bottom - laneRect.top;
-    return laneHeight / (kBeatsAhead + kBeatsBehind);
+    return laneHeight / (c_BeatsAhead + c_BeatsBehind);
 }
 
 int NoteLaneGdiRenderer::LineY(RECT laneRect) const
 {
-    return laneRect.top + static_cast<int>(kBeatsAhead * PixelsPerBeat(laneRect));
+    return laneRect.top + static_cast<int>(c_BeatsAhead * PixelsPerBeat(laneRect));
 }
 
 // Notes spawn at the top (the future) and scroll straight down toward the
-// judge line near the bottom: kBeatsAhead of the timeline occupies the
-// space above the line, kBeatsBehind the space below it. Shared across
+// judge line near the bottom: c_BeatsAhead of the timeline occupies the
+// space above the line, c_BeatsBehind the space below it. Shared across
 // every column - only the horizontal position varies by lane.
 int NoteLaneGdiRenderer::LaneCenterX(RECT laneRect, int lane) const
 {
     double totalWidth = laneRect.right - laneRect.left;
-    double columnWidth = (totalWidth - kColumnGutterPx * (kLaneCount - 1)) / kLaneCount;
-    return laneRect.left + static_cast<int>(lane * (columnWidth + kColumnGutterPx) + columnWidth / 2.0);
+    double columnWidth = (totalWidth - c_ColumnGutterPx * (c_LaneCount - 1)) / c_LaneCount;
+    return laneRect.left + static_cast<int>(lane * (columnWidth + c_ColumnGutterPx) + columnWidth / 2.0);
 }
 
 int NoteLaneGdiRenderer::YForBeatsFromNow(RECT laneRect, double beatsFromNow) const
 {
-    return laneRect.top + static_cast<int>((kBeatsAhead - beatsFromNow) * PixelsPerBeat(laneRect));
+    return laneRect.top + static_cast<int>((c_BeatsAhead - beatsFromNow) * PixelsPerBeat(laneRect));
 }
 
 COLORREF NoteLaneGdiRenderer::ColorForNote(NoteVisualState state, COLORREF clipColor, bool precise) const
@@ -245,11 +245,11 @@ COLORREF NoteLaneGdiRenderer::ColorForNote(NoteVisualState state, COLORREF clipC
     switch (state)
     {
         case NoteVisualState::Held:
-            return kNoteColorHit;
+            return c_NoteColorHit;
         case NoteVisualState::Hit:
-            return precise ? kNoteColorHit : kNoteColorHitImprecise;
+            return precise ? c_NoteColorHit : c_NoteColorHitImprecise;
         case NoteVisualState::Miss:
-            return kNoteColorMiss;
+            return c_NoteColorMiss;
         case NoteVisualState::Normal:
         default:
             return clipColor;
@@ -448,29 +448,29 @@ void NoteLaneGdiRenderer::DrawNoteGlyph(HDC hdc, int x, int y, COLORREF color, b
 {
     if (passing)
     {
-        DrawAlphaCircle(hdc, x, y, kGlyphRadiusX + 14, kNoteColorHit, 90);
+        DrawAlphaCircle(hdc, x, y, c_GlyphRadiusX + 14, c_NoteColorHit, 90);
     }
 
     if (glow)
     {
-        DrawAlphaCircle(hdc, x, y, kGlyphRadiusX + 10, color, 60);
+        DrawAlphaCircle(hdc, x, y, c_GlyphRadiusX + 10, color, 60);
     }
 
     // Soft drop shadow for a little lift off the background.
-    DrawAlphaCircle(hdc, x + 2, y + 3, kGlyphRadiusX, kShadowColor, 70);
+    DrawAlphaCircle(hdc, x + 2, y + 3, c_GlyphRadiusX, c_ShadowColor, 70);
 
     HPEN nullPen = (HPEN)GetStockObject(NULL_PEN);
     HPEN oldPen = (HPEN)SelectObject(hdc, nullPen);
     HBRUSH oldBrush = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
 
     SelectObject(hdc, CachedSolidBrush(Darken(color, 100)));
-    Ellipse(hdc, x - kGlyphRadiusX, y - kGlyphRadiusY, x + kGlyphRadiusX, y + kGlyphRadiusY);
+    Ellipse(hdc, x - c_GlyphRadiusX, y - c_GlyphRadiusY, x + c_GlyphRadiusX, y + c_GlyphRadiusY);
 
     SelectObject(hdc, CachedSolidBrush(color));
-    Ellipse(hdc, x - kGlyphRadiusX + 2, y - kGlyphRadiusY + 2, x + kGlyphRadiusX - 1, y + kGlyphRadiusY - 1);
+    Ellipse(hdc, x - c_GlyphRadiusX + 2, y - c_GlyphRadiusY + 2, x + c_GlyphRadiusX - 1, y + c_GlyphRadiusY - 1);
 
     SelectObject(hdc, CachedSolidBrush(Lighten(color, 150)));
-    Ellipse(hdc, x - kGlyphRadiusX + 2, y - kGlyphRadiusY + 1, x - 1, y - 2);
+    Ellipse(hdc, x - c_GlyphRadiusX + 2, y - c_GlyphRadiusY + 1, x - 1, y - 2);
 
     SelectObject(hdc, oldBrush);
     SelectObject(hdc, oldPen);
@@ -498,7 +498,7 @@ void NoteLaneGdiRenderer::DrawNoteBar(HDC hdc, int x, int yTop, int yBottom, int
     {
         RECT glowRect{x - halfWidth - 5, yTop - 5, x + halfWidth + 5, yBottom + 5};
         int glowDiameter = std::min((glowRect.right - glowRect.left), (glowRect.bottom - glowRect.top));
-        DrawAlphaRoundRect(hdc, glowRect, glowDiameter, kNoteColorHit, 130);
+        DrawAlphaRoundRect(hdc, glowRect, glowDiameter, c_NoteColorHit, 130);
     }
 
     HPEN nullPen = (HPEN)GetStockObject(NULL_PEN);
@@ -527,20 +527,20 @@ void NoteLaneGdiRenderer::DrawReceptor(HDC hdc, int x, int y, COLORREF laneColor
     if (flashing)
     {
         double fade = 1.0 - flashProgress;
-        DrawAlphaCircle(hdc, x, y, kReceptorRadius + static_cast<int>(14 * flashProgress), flashColor,
+        DrawAlphaCircle(hdc, x, y, c_ReceptorRadius + static_cast<int>(14 * flashProgress), flashColor,
                          static_cast<BYTE>(160 * fade));
-        DrawAlphaRing(hdc, x, y, kReceptorRadius, 4, Lighten(flashColor, 40), static_cast<BYTE>(255 * fade));
+        DrawAlphaRing(hdc, x, y, c_ReceptorRadius, 4, Lighten(flashColor, 40), static_cast<BYTE>(255 * fade));
         return;
     }
 
     if (held)
     {
-        DrawAlphaCircle(hdc, x, y, kReceptorRadius + 6, laneColor, 90);
-        DrawAlphaRing(hdc, x, y, kReceptorRadius, 4, Lighten(laneColor, 60), 235);
+        DrawAlphaCircle(hdc, x, y, c_ReceptorRadius + 6, laneColor, 90);
+        DrawAlphaRing(hdc, x, y, c_ReceptorRadius, 4, Lighten(laneColor, 60), 235);
         return;
     }
 
-    DrawAlphaRing(hdc, x, y, kReceptorRadius, 3, laneColor, 130);
+    DrawAlphaRing(hdc, x, y, c_ReceptorRadius, 3, laneColor, 130);
     DrawAlphaCircle(hdc, x, y, 3, Lighten(laneColor, 60), 150);
 }
 
@@ -560,7 +560,7 @@ void NoteLaneGdiRenderer::DrawSparkles(HDC hdc, RECT laneRect, double beatPulse)
         int sx = laneRect.left + static_cast<int>(fx * (laneRect.right - laneRect.left));
         int sy = laneRect.top + static_cast<int>(fy * (laneRect.bottom - laneRect.top));
         int radius = (i % 3 == 0) ? 2 : 1;
-        DrawAlphaCircle(hdc, sx, sy, radius, kHighlightWhite, static_cast<BYTE>(ClampChannel(alpha)));
+        DrawAlphaCircle(hdc, sx, sy, radius, c_HighlightWhite, static_cast<BYTE>(ClampChannel(alpha)));
     }
 }
 
@@ -573,8 +573,8 @@ void NoteLaneGdiRenderer::DrawMeasureLines(HDC hdc, RECT laneRect, const NoteLan
     {
         return;
     }
-    double rangeStart = scene.nowBeat - kBeatsBehind;
-    double rangeEnd = scene.nowBeat + kBeatsAhead;
+    double rangeStart = scene.nowBeat - c_BeatsBehind;
+    double rangeEnd = scene.nowBeat + c_BeatsAhead;
     long long firstMeasure = static_cast<long long>(std::floor(rangeStart / scene.beatsPerBar));
     long long lastMeasure = static_cast<long long>(std::ceil(rangeEnd / scene.beatsPerBar));
     for (long long measure = firstMeasure; measure <= lastMeasure; ++measure)
@@ -587,7 +587,7 @@ void NoteLaneGdiRenderer::DrawMeasureLines(HDC hdc, RECT laneRect, const NoteLan
         int y = YForBeatsFromNow(laneRect, measureBeat - scene.nowBeat);
         int cx = (laneRect.left + laneRect.right) / 2;
         int halfWidth = (laneRect.right - laneRect.left) / 2 - 10;
-        DrawAlphaRect(hdc, cx, y, halfWidth, 1, kHighlightWhite, 28);
+        DrawAlphaRect(hdc, cx, y, halfWidth, 1, c_HighlightWhite, 28);
     }
 }
 
@@ -601,11 +601,11 @@ void NoteLaneGdiRenderer::DrawMeasureLines(HDC hdc, RECT laneRect, const NoteLan
 void NoteLaneGdiRenderer::DrawRails(HDC hdc, RECT laneRect, COLORREF primaryColor, double beatPulse)
 {
     int lineY = LineY(laneRect);
-    double amplitude = kRailWiggleAmplitudePx * beatPulse;
-    double phase = GetTickCount() * kRailWiggleSpeed;
+    double amplitude = c_RailWiggleAmplitudePx * beatPulse;
+    double phase = GetTickCount() * c_RailWiggleSpeed;
     int ampPx = static_cast<int>(std::ceil(amplitude));
 
-    for (int lane = 0; lane < kLaneCount; ++lane)
+    for (int lane = 0; lane < c_LaneCount; ++lane)
     {
         int x = LaneCenterX(laneRect, lane);
         int railTop = laneRect.top + 10;
@@ -615,7 +615,7 @@ void NoteLaneGdiRenderer::DrawRails(HDC hdc, RECT laneRect, COLORREF primaryColo
             continue;
         }
 
-        int halfThickness = kRailThicknessPx / 2;
+        int halfThickness = c_RailThicknessPx / 2;
         RECT bounds{x - halfThickness - ampPx - 1, railTop, x + halfThickness + ampPx + 1, railBottom};
         AlphaShape shape(hdc, bounds, EnsureScratchBuffer(hdc, bounds.right - bounds.left, bounds.bottom - bounds.top));
         if (!shape.Dc())
@@ -624,14 +624,14 @@ void NoteLaneGdiRenderer::DrawRails(HDC hdc, RECT laneRect, COLORREF primaryColo
         }
 
         int railHeight = railBottom - railTop;
-        double frequency = kRailWiggleCycles * 6.283185307 / std::max(1, railHeight);
+        double frequency = c_RailWiggleCycles * 6.283185307 / std::max(1, railHeight);
         int localX0 = x - bounds.left;
 
-        HPEN pen = CachedSolidPen(kRailThicknessPx, primaryColor);
+        HPEN pen = CachedSolidPen(c_RailThicknessPx, primaryColor);
         HPEN oldPen = (HPEN)SelectObject(shape.Dc(), pen);
 
         bool first = true;
-        for (int y = railTop; y < railBottom; y += kRailWiggleStepPx)
+        for (int y = railTop; y < railBottom; y += c_RailWiggleStepPx)
         {
             double localX = localX0 + amplitude * std::sin((y - railTop) * frequency + phase);
             int localY = y - bounds.top;
@@ -659,34 +659,34 @@ void NoteLaneGdiRenderer::DrawRails(HDC hdc, RECT laneRect, COLORREF primaryColo
 void NoteLaneGdiRenderer::DrawReceptors(HDC hdc, RECT laneRect, const NoteLaneScene& scene, COLORREF primaryColor)
 {
     int lineY = LineY(laneRect);
-    for (int lane = 0; lane < kLaneCount; ++lane)
+    for (int lane = 0; lane < c_LaneCount; ++lane)
     {
         int x = LaneCenterX(laneRect, lane);
         bool held = scene.receptors[lane].held;
         bool flashing = GetTickCount() < m_flashUntilMs[lane];
         double flashProgress = 0.0;
-        COLORREF flashColor = kNoteColorHit;
+        COLORREF flashColor = c_NoteColorHit;
         if (flashing)
         {
             DWORD remaining = m_flashUntilMs[lane] - GetTickCount();
-            flashProgress = 1.0 - (static_cast<double>(remaining) / kFlashDurationMs);
-            flashColor = (m_flashResult[lane] == JudgementResult::Hit) ? kNoteColorHit : kNoteColorMiss;
+            flashProgress = 1.0 - (static_cast<double>(remaining) / c_FlashDurationMs);
+            flashColor = (m_flashResult[lane] == JudgementResult::Hit) ? c_NoteColorHit : c_NoteColorMiss;
         }
         DrawReceptor(hdc, x, lineY, primaryColor, held, flashing, flashColor, flashProgress);
     }
 }
 
 // Draws every note in scene.notes: upcoming notes in their own clip color; a
-// held or precisely-hit note in kNoteColorHit; an imprecisely-hit note (a
+// held or precisely-hit note in c_NoteColorHit; an imprecisely-hit note (a
 // "partial miss" - correct, but sloppy - see ColorForNote) in
-// kNoteColorHitImprecise; a missed note in kNoteColorMiss - all three then
+// c_NoteColorHitImprecise; a missed note in c_NoteColorMiss - all three then
 // hold for the rest of the note's time on screen, matching the real outcome
 // rather than fading back to Normal. Judged hit/miss/held notes get the same
 // glow halo as the passing outline (note.clip->passing) so the pass/fail
 // moment pops instead of being a flat color swap.
 //
 // Before drawing, each lane's notes are walked in time order enforcing
-// kMinNoteGapPx of on-screen breathing room between consecutive ones: when
+// c_MinNoteGapPx of on-screen breathing room between consecutive ones: when
 // one note's release and the next note's onset land close enough together
 // to look touching (or, rarely, overlapping) on screen, the earlier note's
 // trailing edge (its release end, drawn as the top of its bar - see
@@ -696,8 +696,8 @@ void NoteLaneGdiRenderer::DrawReceptors(HDC hdc, RECT laneRect, const NoteLaneSc
 void NoteLaneGdiRenderer::DrawNotes(HDC hdc, RECT laneRect, const NoteLaneScene& scene)
 {
     double columnWidth =
-        ((laneRect.right - laneRect.left) - kColumnGutterPx * (kLaneCount - 1)) / static_cast<double>(kLaneCount);
-    int barHalfWidth = static_cast<int>(columnWidth * kBarWidthFraction / 2.0);
+        ((laneRect.right - laneRect.left) - c_ColumnGutterPx * (c_LaneCount - 1)) / static_cast<double>(c_LaneCount);
+    int barHalfWidth = static_cast<int>(columnWidth * c_BarWidthFraction / 2.0);
 
     struct DrawableNote
     {
@@ -706,7 +706,7 @@ void NoteLaneGdiRenderer::DrawNotes(HDC hdc, RECT laneRect, const NoteLaneScene&
         int yBottom; // the start - the leading, lower edge (never adjusted)
     };
 
-    std::vector<DrawableNote> laneNotes[kLaneCount];
+    std::vector<DrawableNote> laneNotes[c_LaneCount];
     for (const SceneNote& note : scene.notes)
     {
         double beatsFromStart = note.startBeat - scene.nowBeat;
@@ -725,18 +725,18 @@ void NoteLaneGdiRenderer::DrawNotes(HDC hdc, RECT laneRect, const NoteLaneScene&
         {
             DrawableNote& earlier = notes[i - 1];
             const DrawableNote& later = notes[i];
-            int desiredTop = later.yBottom + kMinNoteGapPx;
+            int desiredTop = later.yBottom + c_MinNoteGapPx;
             if (earlier.yTop < desiredTop)
             {
-                earlier.yTop = std::min(desiredTop, earlier.yBottom - kMinNoteBarHeightPx);
+                earlier.yTop = std::min(desiredTop, earlier.yBottom - c_MinNoteBarHeightPx);
             }
         }
 
         for (const DrawableNote& drawable : notes)
         {
             const SceneNote& note = *drawable.note;
-            if (drawable.yBottom < laneRect.top - kVisibilityMarginPx ||
-                drawable.yTop > laneRect.bottom + kVisibilityMarginPx)
+            if (drawable.yBottom < laneRect.top - c_VisibilityMarginPx ||
+                drawable.yTop > laneRect.bottom + c_VisibilityMarginPx)
             {
                 continue;
             }
@@ -758,9 +758,9 @@ void NoteLaneGdiRenderer::DrawNotes(HDC hdc, RECT laneRect, const NoteLaneScene&
 // stretch of life.
 void NoteLaneGdiRenderer::DrawConfetti(HDC hdc, double elapsedSeconds, double t)
 {
-    constexpr double kGravityPxPerSec2 = 420.0;
-    constexpr int kHalfHeightPx = 5;
-    constexpr int kMaxHalfWidthPx = 4;
+    constexpr double c_GravityPxPerSec2 = 420.0;
+    constexpr int c_HalfHeightPx = 5;
+    constexpr int c_MaxHalfWidthPx = 4;
 
     BYTE fadeAlpha = static_cast<BYTE>(ClampChannel(static_cast<int>(255 * (1.0 - t * t))));
 
@@ -768,9 +768,9 @@ void NoteLaneGdiRenderer::DrawConfetti(HDC hdc, double elapsedSeconds, double t)
     {
         int x = static_cast<int>(piece.x + piece.velX * elapsedSeconds);
         int y = static_cast<int>(piece.y + piece.velY * elapsedSeconds +
-                                  0.5 * kGravityPxPerSec2 * elapsedSeconds * elapsedSeconds);
-        int halfWidth = static_cast<int>(kMaxHalfWidthPx * std::abs(std::cos(piece.spinPhase + elapsedSeconds * 6.0)));
-        DrawAlphaRect(hdc, x, y, std::max(halfWidth, 1), kHalfHeightPx, piece.color, fadeAlpha);
+                                  0.5 * c_GravityPxPerSec2 * elapsedSeconds * elapsedSeconds);
+        int halfWidth = static_cast<int>(c_MaxHalfWidthPx * std::abs(std::cos(piece.spinPhase + elapsedSeconds * 6.0)));
+        DrawAlphaRect(hdc, x, y, std::max(halfWidth, 1), c_HalfHeightPx, piece.color, fadeAlpha);
     }
 }
 
@@ -780,7 +780,7 @@ void NoteLaneGdiRenderer::DrawConfetti(HDC hdc, double elapsedSeconds, double t)
 // linearly over its short, fixed lifetime.
 void NoteLaneGdiRenderer::DrawExplosion(HDC hdc, double elapsedSeconds, double t)
 {
-    constexpr int kParticleRadiusPx = 3;
+    constexpr int c_ParticleRadiusPx = 3;
 
     BYTE fadeAlpha = static_cast<BYTE>(ClampChannel(static_cast<int>(255 * (1.0 - t))));
 
@@ -788,13 +788,13 @@ void NoteLaneGdiRenderer::DrawExplosion(HDC hdc, double elapsedSeconds, double t
     // x0 + (v0/k)*(1 - exp(-k*t)), asymptotically settling instead of
     // ever reversing or overshooting like a naive per-frame velocity
     // decay would.
-    double factor = (1.0 - std::exp(-kExplosionDragPerSec * elapsedSeconds)) / kExplosionDragPerSec;
+    double factor = (1.0 - std::exp(-c_ExplosionDragPerSec * elapsedSeconds)) / c_ExplosionDragPerSec;
 
     for (const ExplosionParticle& particle : m_explosion)
     {
         int x = static_cast<int>(particle.x + particle.velX * factor);
         int y = static_cast<int>(particle.y + particle.velY * factor);
-        DrawAlphaCircle(hdc, x, y, kParticleRadiusPx, particle.color, fadeAlpha);
+        DrawAlphaCircle(hdc, x, y, c_ParticleRadiusPx, particle.color, fadeAlpha);
     }
 }
 
@@ -829,7 +829,7 @@ void NoteLaneGdiRenderer::DrawRipples(HDC hdc, RECT laneRect)
 
         double fadeT = std::min(1.0, (radius / maxRadius) * ripple.fadeRate);
         BYTE alpha = static_cast<BYTE>(ClampChannel(static_cast<int>(ripple.startAlpha * (1.0 - fadeT))));
-        DrawAlphaRing(hdc, cx, cy, static_cast<int>(radius), kRippleThicknessPx, ripple.color, alpha);
+        DrawAlphaRing(hdc, cx, cy, static_cast<int>(radius), c_RippleThicknessPx, ripple.color, alpha);
         ++i;
     }
 }
@@ -844,7 +844,7 @@ HFONT NoteLaneGdiRenderer::FontForGrowPulse(HFONT baseFont, int basePointSize, D
         return baseFont;
     }
 
-    double remainingT = static_cast<double>(growUntilMs - now) / kHudGrowDurationMs; // 1 at trigger -> 0 at rest
+    double remainingT = static_cast<double>(growUntilMs - now) / c_HudGrowDurationMs; // 1 at trigger -> 0 at rest
     int pointSize = static_cast<int>(std::round(basePointSize * (1.0 + remainingT)));
 
     if (growFontSlot)
@@ -874,7 +874,7 @@ void NoteLaneGdiRenderer::DrawHud(HDC hdc, RECT laneRect, const std::wstring& st
                                    const std::wstring& bankText, const std::wstring& multiplierText)
 {
     RECT panelRect{laneRect.left + 8, laneRect.top + 8, laneRect.right - 8, laneRect.top + 44};
-    DrawAlphaRoundRect(hdc, panelRect, 14, kPanelBgColor, kPanelBgAlpha);
+    DrawAlphaRoundRect(hdc, panelRect, 14, c_PanelBgColor, c_PanelBgAlpha);
 
     if (!m_hudFont)
     {
@@ -900,18 +900,18 @@ void NoteLaneGdiRenderer::DrawHud(HDC hdc, RECT laneRect, const std::wstring& st
         textRect.right = scoreRect.left - 8;
     }
 
-    constexpr UINT kTextFlags = DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX;
-    constexpr UINT kScoreFlags = DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX;
+    constexpr UINT c_TextFlags = DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX;
+    constexpr UINT c_ScoreFlags = DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX;
 
     // Cheap drop shadow: draw the text once in near-black offset a pixel, then again on top.
     HFONT oldFont = (HFONT)SelectObject(hdc, m_hudFont);
     RECT shadowRect = textRect;
     shadowRect.left += 1;
     shadowRect.top += 1;
-    SetTextColor(hdc, kShadowColor);
-    DrawTextW(hdc, statusText.c_str(), -1, &shadowRect, kTextFlags);
-    SetTextColor(hdc, kTextColor);
-    DrawTextW(hdc, statusText.c_str(), -1, &textRect, kTextFlags);
+    SetTextColor(hdc, c_ShadowColor);
+    DrawTextW(hdc, statusText.c_str(), -1, &shadowRect, c_TextFlags);
+    SetTextColor(hdc, c_TextColor);
+    DrawTextW(hdc, statusText.c_str(), -1, &textRect, c_TextFlags);
 
     if (!scoreText.empty())
     {
@@ -919,10 +919,10 @@ void NoteLaneGdiRenderer::DrawHud(HDC hdc, RECT laneRect, const std::wstring& st
         RECT scoreShadowRect = scoreRect;
         scoreShadowRect.left += 1;
         scoreShadowRect.top += 1;
-        SetTextColor(hdc, kShadowColor);
-        DrawTextW(hdc, scoreText.c_str(), -1, &scoreShadowRect, kScoreFlags);
-        SetTextColor(hdc, kTextColor);
-        DrawTextW(hdc, scoreText.c_str(), -1, &scoreRect, kScoreFlags);
+        SetTextColor(hdc, c_ShadowColor);
+        DrawTextW(hdc, scoreText.c_str(), -1, &scoreShadowRect, c_ScoreFlags);
+        SetTextColor(hdc, c_TextColor);
+        DrawTextW(hdc, scoreText.c_str(), -1, &scoreRect, c_ScoreFlags);
     }
 
     SelectObject(hdc, oldFont);
@@ -938,7 +938,7 @@ void NoteLaneGdiRenderer::DrawHud(HDC hdc, RECT laneRect, const std::wstring& st
     {
         HFONT multiplierFont =
             FontForGrowPulse(m_smallHudFont, 13, m_multiplierGrowUntilMs, m_multiplierGrowFont, now);
-        DrawAlphaText(hdc, multiplierRect, multiplierText, multiplierFont, kTextColor, kScoreFlags, 235);
+        DrawAlphaText(hdc, multiplierRect, multiplierText, multiplierFont, c_TextColor, c_ScoreFlags, 235);
     }
 
     if (!bankText.empty())
@@ -948,7 +948,7 @@ void NoteLaneGdiRenderer::DrawHud(HDC hdc, RECT laneRect, const std::wstring& st
         double pulse = 0.55 + 0.45 * std::sin(now / 220.0);
         BYTE alpha = static_cast<BYTE>(ClampChannel(static_cast<int>(255 * pulse)));
         HFONT bankFont = FontForGrowPulse(m_smallHudFont, 13, m_bankGrowUntilMs, m_bankGrowFont, now);
-        DrawAlphaText(hdc, bankRect, bankText, bankFont, kScorePopupBankedColor, kScoreFlags, alpha);
+        DrawAlphaText(hdc, bankRect, bankText, bankFont, c_ScorePopupBankedColor, c_ScoreFlags, alpha);
     }
 
     // A brief red glow around the whole panel when a streak trip just wiped
@@ -956,11 +956,11 @@ void NoteLaneGdiRenderer::DrawHud(HDC hdc, RECT laneRect, const std::wstring& st
     // pulsing border rather than covering either.
     if (now < m_scoreFlashUntilMs)
     {
-        double remainingT = static_cast<double>(m_scoreFlashUntilMs - now) / kScoreFlashDurationMs;
+        double remainingT = static_cast<double>(m_scoreFlashUntilMs - now) / c_ScoreFlashDurationMs;
         BYTE glowAlpha = static_cast<BYTE>(ClampChannel(static_cast<int>(200 * remainingT)));
         RECT glowRect = panelRect;
         InflateRect(&glowRect, 2, 2);
-        DrawAlphaRoundRectOutline(hdc, glowRect, 15, 3, kNoteColorMiss, glowAlpha);
+        DrawAlphaRoundRectOutline(hdc, glowRect, 15, 3, c_NoteColorMiss, glowAlpha);
     }
 
     DrawScorePopups(hdc, panelRect);
@@ -976,21 +976,21 @@ void NoteLaneGdiRenderer::DrawScorePopups(HDC hdc, RECT panelRect)
     {
         const ScorePopup& popup = m_scorePopups[i];
         DWORD elapsedMs = now - popup.startMs;
-        if (elapsedMs >= kScorePopupDurationMs)
+        if (elapsedMs >= c_ScorePopupDurationMs)
         {
             m_scorePopups.erase(m_scorePopups.begin() + i);
             continue;
         }
 
-        double t = elapsedMs / static_cast<double>(kScorePopupDurationMs); // 0 at spawn -> 1 at death
+        double t = elapsedMs / static_cast<double>(c_ScorePopupDurationMs); // 0 at spawn -> 1 at death
         BYTE alpha = static_cast<BYTE>(ClampChannel(static_cast<int>(255 * (1.0 - t))));
         std::wstring text = L"-" + std::to_wstring(popup.amount);
-        COLORREF color = kNoteColorMiss;
+        COLORREF color = c_NoteColorMiss;
 
         // Sinks and shakes as it fades - a decaying wobble, like the points
         // are crumbling away rather than cleanly departing.
-        int yOffset = static_cast<int>(kScorePopupSinkPx * t);
-        int xOffset = static_cast<int>(kScorePopupShakePx * std::sin(t * 30.0) * (1.0 - t));
+        int yOffset = static_cast<int>(c_ScorePopupSinkPx * t);
+        int xOffset = static_cast<int>(c_ScorePopupShakePx * std::sin(t * 30.0) * (1.0 - t));
 
         RECT rect{panelRect.left + 10, panelRect.bottom + 2 + static_cast<int>(i) * 20, panelRect.right - 10,
                    panelRect.bottom + 22 + static_cast<int>(i) * 20};
@@ -1026,20 +1026,20 @@ void NoteLaneGdiRenderer::DrawHitsMeter(HDC hdc, RECT hitsMeterRect, const NoteL
         return;
     }
 
-    constexpr int kCornerRadius = 8;
-    constexpr int kInsetPx = 3;
+    constexpr int c_CornerRadius = 8;
+    constexpr int c_InsetPx = 3;
 
-    DrawAlphaRoundRect(hdc, hitsMeterRect, kCornerRadius, kPanelBgColor, kPanelBgAlpha);
+    DrawAlphaRoundRect(hdc, hitsMeterRect, c_CornerRadius, c_PanelBgColor, c_PanelBgAlpha);
 
-    HPEN oldPen = (HPEN)SelectObject(hdc, CachedSolidPen(2, kBorderColor));
+    HPEN oldPen = (HPEN)SelectObject(hdc, CachedSolidPen(2, c_BorderColor));
     HBRUSH oldBrush = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
-    RoundRect(hdc, hitsMeterRect.left, hitsMeterRect.top, hitsMeterRect.right, hitsMeterRect.bottom, kCornerRadius,
-              kCornerRadius);
+    RoundRect(hdc, hitsMeterRect.left, hitsMeterRect.top, hitsMeterRect.right, hitsMeterRect.bottom, c_CornerRadius,
+              c_CornerRadius);
     SelectObject(hdc, oldBrush);
     SelectObject(hdc, oldPen);
 
-    RECT innerRect{hitsMeterRect.left + kInsetPx, hitsMeterRect.top + kInsetPx, hitsMeterRect.right - kInsetPx,
-                    hitsMeterRect.bottom - kInsetPx};
+    RECT innerRect{hitsMeterRect.left + c_InsetPx, hitsMeterRect.top + c_InsetPx, hitsMeterRect.right - c_InsetPx,
+                    hitsMeterRect.bottom - c_InsetPx};
     int innerHeight = innerRect.bottom - innerRect.top;
     int fillHeight = static_cast<int>(innerHeight * scene.hitsMeterProgress);
     if (innerRect.right <= innerRect.left || fillHeight <= 0)
@@ -1047,7 +1047,7 @@ void NoteLaneGdiRenderer::DrawHitsMeter(HDC hdc, RECT hitsMeterRect, const NoteL
         return;
     }
 
-    COLORREF fillColor = scene.primaryClip ? scene.primaryClip->color : kStreakColor;
+    COLORREF fillColor = scene.primaryClip ? scene.primaryClip->color : c_StreakColor;
     if (scene.hitsMeterPulsing)
     {
         // Same "breathe brighter right on the beat" treatment as the
@@ -1055,7 +1055,7 @@ void NoteLaneGdiRenderer::DrawHitsMeter(HDC hdc, RECT hitsMeterRect, const NoteL
         fillColor = Lighten(fillColor, static_cast<int>(beatPulse * 70));
     }
     RECT fillRect{innerRect.left, innerRect.bottom - fillHeight, innerRect.right, innerRect.bottom};
-    DrawAlphaRoundRect(hdc, fillRect, kCornerRadius - 2, fillColor, 235);
+    DrawAlphaRoundRect(hdc, fillRect, c_CornerRadius - 2, fillColor, 235);
 
     if (scene.hitsMeterPulsing)
     {
@@ -1067,7 +1067,7 @@ void NoteLaneGdiRenderer::DrawHitsMeter(HDC hdc, RECT hitsMeterRect, const NoteL
         RECT glowRect = hitsMeterRect;
         InflateRect(&glowRect, 2, 2);
         BYTE glowAlpha = static_cast<BYTE>(ClampChannel(static_cast<int>(215 * beatPulse)));
-        DrawAlphaRoundRectOutline(hdc, glowRect, kCornerRadius + 2, 3, kStreakColor, glowAlpha);
+        DrawAlphaRoundRectOutline(hdc, glowRect, c_CornerRadius + 2, 3, c_StreakColor, glowAlpha);
     }
 }
 
@@ -1084,7 +1084,7 @@ void NoteLaneGdiRenderer::ToggleDebugOverlay()
 void NoteLaneGdiRenderer::DrawDebugOverlay(HDC hdc, RECT laneRect, const NoteLaneScene& scene)
 {
     RECT panelRect{laneRect.left + 8, laneRect.top + 50, laneRect.right - 8, laneRect.top + 104};
-    DrawAlphaRoundRect(hdc, panelRect, 10, kPanelBgColor, kPanelBgAlpha);
+    DrawAlphaRoundRect(hdc, panelRect, 10, c_PanelBgColor, c_PanelBgAlpha);
 
     if (!m_hudFont)
     {
@@ -1093,9 +1093,9 @@ void NoteLaneGdiRenderer::DrawDebugOverlay(HDC hdc, RECT laneRect, const NoteLan
     }
     HFONT oldFont = (HFONT)SelectObject(hdc, m_hudFont);
     SetBkMode(hdc, TRANSPARENT);
-    SetTextColor(hdc, kTextColor);
+    SetTextColor(hdc, c_TextColor);
 
-    constexpr UINT kTextFlags = DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX;
+    constexpr UINT c_TextFlags = DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX;
     std::wstring lines[3] = {L"prev: " + scene.debugPreviousClipName, L"cur:  " + scene.debugCurrentClipName,
                               L"next: " + scene.debugNextClipName};
     int lineHeight = (panelRect.bottom - panelRect.top) / 3;
@@ -1103,7 +1103,7 @@ void NoteLaneGdiRenderer::DrawDebugOverlay(HDC hdc, RECT laneRect, const NoteLan
     {
         RECT lineRect{panelRect.left + 10, panelRect.top + i * lineHeight, panelRect.right - 10,
                        panelRect.top + (i + 1) * lineHeight};
-        DrawTextW(hdc, lines[i].c_str(), -1, &lineRect, kTextFlags);
+        DrawTextW(hdc, lines[i].c_str(), -1, &lineRect, c_TextFlags);
     }
 
     SelectObject(hdc, oldFont);
@@ -1116,16 +1116,16 @@ void NoteLaneGdiRenderer::DrawDebugOverlay(HDC hdc, RECT laneRect, const NoteLan
 void NoteLaneGdiRenderer::SpawnConfetti(RECT laneRect)
 {
     m_confetti.clear();
-    m_confetti.reserve(kConfettiPieceCount);
+    m_confetti.reserve(c_ConfettiPieceCount);
     double width = laneRect.right - laneRect.left;
-    for (int i = 0; i < kConfettiPieceCount; ++i)
+    for (int i = 0; i < c_ConfettiPieceCount; ++i)
     {
         double spawnX = laneRect.left + PseudoRandom(i * 7 + 1) * width;
         double spawnY = laneRect.top - PseudoRandom(i * 7 + 2) * 60.0;
         double velX = (PseudoRandom(i * 7 + 3) - 0.5) * 120.0;
         double velY = 60.0 + PseudoRandom(i * 7 + 4) * 80.0;
         double spinPhase = PseudoRandom(i * 7 + 5) * 6.283185307;
-        COLORREF color = kConfettiPalette[i % kConfettiPaletteSize];
+        COLORREF color = c_ConfettiPalette[i % c_ConfettiPaletteSize];
         m_confetti.push_back({spawnX, spawnY, velX, velY, spinPhase, color});
     }
     m_confettiStartMs = GetTickCount();
@@ -1137,7 +1137,7 @@ void NoteLaneGdiRenderer::SpawnConfetti(RECT laneRect)
 // only), so both bursts animate and clear together on SpawnConfetti's own
 // timer (m_confettiStartMs) with no extra state of their own. i's own seed
 // range starts well clear of SpawnConfetti's (i*7+1..5 up to
-// kConfettiPieceCount) so the two bursts don't scatter identically.
+// c_ConfettiPieceCount) so the two bursts don't scatter identically.
 void NoteLaneGdiRenderer::AppendHitsMeterConfetti(RECT hitsMeterRect)
 {
     if (hitsMeterRect.right <= hitsMeterRect.left)
@@ -1145,15 +1145,15 @@ void NoteLaneGdiRenderer::AppendHitsMeterConfetti(RECT hitsMeterRect)
         return;
     }
     double width = hitsMeterRect.right - hitsMeterRect.left;
-    int seedBase = kConfettiPieceCount * 7 + 100;
-    for (int i = 0; i < kHitsMeterConfettiPieceCount; ++i)
+    int seedBase = c_ConfettiPieceCount * 7 + 100;
+    for (int i = 0; i < c_HitsMeterConfettiPieceCount; ++i)
     {
         double spawnX = hitsMeterRect.left + PseudoRandom(seedBase + i * 7 + 1) * width;
         double spawnY = hitsMeterRect.top - PseudoRandom(seedBase + i * 7 + 2) * 40.0;
         double velX = (PseudoRandom(seedBase + i * 7 + 3) - 0.5) * 100.0;
         double velY = 50.0 + PseudoRandom(seedBase + i * 7 + 4) * 70.0;
         double spinPhase = PseudoRandom(seedBase + i * 7 + 5) * 6.283185307;
-        COLORREF color = kConfettiPalette[i % kConfettiPaletteSize];
+        COLORREF color = c_ConfettiPalette[i % c_ConfettiPaletteSize];
         m_confetti.push_back({spawnX, spawnY, velX, velY, spinPhase, color});
     }
 }
@@ -1170,16 +1170,16 @@ void NoteLaneGdiRenderer::SpawnExplosion(RECT laneRect, const NoteLaneScene& sce
     {
         int laneX = LaneCenterX(laneRect, note.lane);
         int noteY = YForBeatsFromNow(laneRect, note.startBeat - scene.nowBeat);
-        if (noteY < laneRect.top - kVisibilityMarginPx || noteY > laneRect.bottom + kVisibilityMarginPx)
+        if (noteY < laneRect.top - c_VisibilityMarginPx || noteY > laneRect.bottom + c_VisibilityMarginPx)
         {
             continue;
         }
         COLORREF explosionColor = note.clip->color;
-        for (int p = 0; p < kExplosionParticlesPerNote; ++p)
+        for (int p = 0; p < c_ExplosionParticlesPerNote; ++p)
         {
             double angle = PseudoRandom(particleSeed++) * 6.283185307;
-            double speed = kExplosionMinSpeedPxPerSec +
-                           PseudoRandom(particleSeed++) * (kExplosionMaxSpeedPxPerSec - kExplosionMinSpeedPxPerSec);
+            double speed = c_ExplosionMinSpeedPxPerSec +
+                           PseudoRandom(particleSeed++) * (c_ExplosionMaxSpeedPxPerSec - c_ExplosionMinSpeedPxPerSec);
             m_explosion.push_back({static_cast<double>(laneX), static_cast<double>(noteY), std::cos(angle) * speed,
                                     std::sin(angle) * speed, explosionColor});
         }
@@ -1193,7 +1193,7 @@ void NoteLaneGdiRenderer::SpawnExplosion(RECT laneRect, const NoteLaneScene& sce
 // both bursts animate and clear together on SpawnExplosion's own timer
 // (m_explosionStartMs) with no extra state of their own. particleSeed
 // starts well clear of SpawnExplosion's own seed range (bounded by
-// kExplosionParticlesPerNote times however many exploding notes there are)
+// c_ExplosionParticlesPerNote times however many exploding notes there are)
 // so the two bursts don't happen to scatter in an identical pattern.
 void NoteLaneGdiRenderer::AppendHitsMeterExplosion(RECT hitsMeterRect, COLORREF color)
 {
@@ -1204,11 +1204,11 @@ void NoteLaneGdiRenderer::AppendHitsMeterExplosion(RECT hitsMeterRect, COLORREF 
     int cx = (hitsMeterRect.left + hitsMeterRect.right) / 2;
     int cy = (hitsMeterRect.top + hitsMeterRect.bottom) / 2;
     int particleSeed = 9000;
-    for (int p = 0; p < kHitsMeterExplosionParticleCount; ++p)
+    for (int p = 0; p < c_HitsMeterExplosionParticleCount; ++p)
     {
         double angle = PseudoRandom(particleSeed++) * 6.283185307;
-        double speed = kExplosionMinSpeedPxPerSec +
-                       PseudoRandom(particleSeed++) * (kExplosionMaxSpeedPxPerSec - kExplosionMinSpeedPxPerSec);
+        double speed = c_ExplosionMinSpeedPxPerSec +
+                       PseudoRandom(particleSeed++) * (c_ExplosionMaxSpeedPxPerSec - c_ExplosionMinSpeedPxPerSec);
         m_explosion.push_back(
             {static_cast<double>(cx), static_cast<double>(cy), std::cos(angle) * speed, std::sin(angle) * speed, color});
     }
@@ -1220,23 +1220,23 @@ void NoteLaneGdiRenderer::AppendHitsMeterExplosion(RECT hitsMeterRect, COLORREF 
 // passing), red for a miss while not yet/no longer passing only.
 void NoteLaneGdiRenderer::OnJudgement(JudgementResult result, int lane, bool passing, bool precise)
 {
-    if (lane < 0 || lane >= kLaneCount)
+    if (lane < 0 || lane >= c_LaneCount)
     {
         return;
     }
     m_flashResult[lane] = result;
-    m_flashUntilMs[lane] = GetTickCount() + kFlashDurationMs;
+    m_flashUntilMs[lane] = GetTickCount() + c_FlashDurationMs;
 
     if (result == JudgementResult::Hit)
     {
-        COLORREF rippleColor = precise ? kNoteColorHit : kNoteColorHitImprecise;
+        COLORREF rippleColor = precise ? c_NoteColorHit : c_NoteColorHitImprecise;
         m_ripples.push_back(
-            {lane, GetTickCount(), rippleColor, kHitRippleSpeedPxPerSec, kHitRippleStartAlpha, kHitRippleFadeRate});
+            {lane, GetTickCount(), rippleColor, c_HitRippleSpeedPxPerSec, c_HitRippleStartAlpha, c_HitRippleFadeRate});
     }
     else if (result == JudgementResult::Miss && !passing)
     {
-        m_ripples.push_back({lane, GetTickCount(), kNoteColorMiss, kMissRippleSpeedPxPerSec, kMissRippleStartAlpha,
-                              kMissRippleFadeRate});
+        m_ripples.push_back({lane, GetTickCount(), c_NoteColorMiss, c_MissRippleSpeedPxPerSec, c_MissRippleStartAlpha,
+                              c_MissRippleFadeRate});
     }
 }
 
@@ -1254,19 +1254,19 @@ void NoteLaneGdiRenderer::OnHudValueChanged(GameSession::HudField field, int new
     switch (field)
     {
         case GameSession::HudField::Total:
-            m_totalGrowUntilMs = now + kHudGrowDurationMs;
+            m_totalGrowUntilMs = now + c_HudGrowDurationMs;
             break;
         case GameSession::HudField::Bank:
             if (newValue == 0 && m_lastBankValue > 0)
             {
                 m_scorePopups.push_back({now, m_lastBankValue});
-                m_scoreFlashUntilMs = now + kScoreFlashDurationMs;
+                m_scoreFlashUntilMs = now + c_ScoreFlashDurationMs;
             }
             m_lastBankValue = newValue;
-            m_bankGrowUntilMs = now + kHudGrowDurationMs;
+            m_bankGrowUntilMs = now + c_HudGrowDurationMs;
             break;
         case GameSession::HudField::Multiplier:
-            m_multiplierGrowUntilMs = now + kHudGrowDurationMs;
+            m_multiplierGrowUntilMs = now + c_HudGrowDurationMs;
             break;
     }
 }
@@ -1283,13 +1283,13 @@ void NoteLaneGdiRenderer::Draw(HDC hdc, RECT laneRect, RECT hitsMeterRect, const
     // Background: a vertical gradient that breathes brighter right on the
     // beat, so part of the scene is always moving with the music even
     // where nothing is actively being judged.
-    COLORREF bgTop = Lighten(kBgTop, static_cast<int>(beatPulse * 22));
-    COLORREF bgBottom = Lighten(kBgBottom, static_cast<int>(beatPulse * 14));
+    COLORREF bgTop = Lighten(c_BgTop, static_cast<int>(beatPulse * 22));
+    COLORREF bgBottom = Lighten(c_BgBottom, static_cast<int>(beatPulse * 14));
     FillVerticalGradient(hdc, laneRect, bgTop, bgBottom);
 
     DrawSparkles(hdc, laneRect, beatPulse);
 
-    HPEN oldBorderPen = (HPEN)SelectObject(hdc, CachedSolidPen(2, kBorderColor));
+    HPEN oldBorderPen = (HPEN)SelectObject(hdc, CachedSolidPen(2, c_BorderColor));
     HBRUSH oldBorderBrush = (HBRUSH)SelectObject(hdc, GetStockObject(NULL_BRUSH));
     RoundRect(hdc, laneRect.left, laneRect.top, laneRect.right, laneRect.bottom, 18, 18);
     SelectObject(hdc, oldBorderBrush);
@@ -1297,7 +1297,7 @@ void NoteLaneGdiRenderer::Draw(HDC hdc, RECT laneRect, RECT hitsMeterRect, const
 
     DrawMeasureLines(hdc, laneRect, scene);
 
-    COLORREF primaryColor = scene.primaryClip ? scene.primaryClip->color : ClipColor::kNeutral;
+    COLORREF primaryColor = scene.primaryClip ? scene.primaryClip->color : ClipColor::c_Neutral;
     DrawRails(hdc, laneRect, primaryColor, beatPulse);
 
     DrawReceptors(hdc, laneRect, scene, primaryColor);
@@ -1325,7 +1325,7 @@ void NoteLaneGdiRenderer::Draw(HDC hdc, RECT laneRect, RECT hitsMeterRect, const
         // can happen many times over one section's run.
         if (scene.hitsMeterIsDontFail)
         {
-            AppendHitsMeterExplosion(hitsMeterRect, kNoteColorHit);
+            AppendHitsMeterExplosion(hitsMeterRect, c_NoteColorHit);
         }
         else
         {
@@ -1346,13 +1346,13 @@ void NoteLaneGdiRenderer::Draw(HDC hdc, RECT laneRect, RECT hitsMeterRect, const
     if (!m_confetti.empty())
     {
         DWORD elapsed = GetTickCount() - m_confettiStartMs;
-        if (elapsed >= kConfettiDurationMs)
+        if (elapsed >= c_ConfettiDurationMs)
         {
             m_confetti.clear();
         }
         else
         {
-            double t = elapsed / static_cast<double>(kConfettiDurationMs);
+            double t = elapsed / static_cast<double>(c_ConfettiDurationMs);
             DrawConfetti(hdc, elapsed / 1000.0, t);
         }
     }
@@ -1360,13 +1360,13 @@ void NoteLaneGdiRenderer::Draw(HDC hdc, RECT laneRect, RECT hitsMeterRect, const
     if (!m_explosion.empty())
     {
         DWORD elapsed = GetTickCount() - m_explosionStartMs;
-        if (elapsed >= kExplosionDurationMs)
+        if (elapsed >= c_ExplosionDurationMs)
         {
             m_explosion.clear();
         }
         else
         {
-            double t = elapsed / static_cast<double>(kExplosionDurationMs);
+            double t = elapsed / static_cast<double>(c_ExplosionDurationMs);
             DrawExplosion(hdc, elapsed / 1000.0, t);
         }
     }

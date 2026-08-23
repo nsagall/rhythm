@@ -26,7 +26,7 @@ enum class GamePhase
 // judging thresholds):
 //   - Learn ([learn]): judges key presses/releases against the clip's
 //     MIDI-derived pattern (via SongClock), exactly as a lone "learn one
-//     clip at a time" flow always has. Each of the kLaneCount lanes
+//     clip at a time" flow always has. Each of the c_LaneCount lanes
 //     tracks its own note sequence completely independently - its own
 //     next-expected-note pointer, its own press/release judging, its own
 //     retry-on-mistimed-press behavior - the lanes share nothing but the
@@ -57,7 +57,7 @@ enum class GamePhase
 //   - Break ([break]): stops every clip currently playing, starts this
 //     section's clip looping, and blocks advancing until loop_count full
 //     loops complete - no judging happens. Advancing is also floored at
-//     kNoteFallBeats of real time from when the section began, same as a
+//     c_NoteFallBeats of real time from when the section began, same as a
 //     locked-in learn section, so the next section's notes always get
 //     their full on-screen travel time to preview before going live.
 //   - Reset ([reset]): stops every clip currently playing (a silence gate,
@@ -499,7 +499,7 @@ private:
     // exactly this call.
     void BeginSection(int sectionIndex, double scheduledBeat);
 
-    // Records a hit: pays kPrecisePoints or kImprecisePoints (per wasPrecise)
+    // Records a hit: pays c_PrecisePoints or c_ImprecisePoints (per wasPrecise)
     // into m_bank, registers with m_streakTracker (see StreakTracker's own
     // comment - this is what the section's own hitsRequired lock-in
     // progress no longer solely drives), and starts the current section's
@@ -578,8 +578,8 @@ private:
     // Returns the start-tolerance window (seconds) to judge a press
     // against clip with, given clip's current playback state. In
     // normal mode this is just the chart-declared value; in easy mode it's
-    // widened by kEasyModeToleranceMultiplier unconditionally, and by a
-    // further kEasyModeStoppedToleranceMultiplier on top of that while the
+    // widened by c_EasyModeToleranceMultiplier unconditionally, and by a
+    // further c_EasyModeStoppedToleranceMultiplier on top of that while the
     // clip isn't currently playing - either because it hasn't started yet
     // or because RegisterMiss stopped it after too many misses - to help
     // the player get back on track.
@@ -638,24 +638,24 @@ private:
     // algorithm):
     //   1. Per-lane density thinning: within each lane independently,
     //      greedily drop notes so no two *kept* onsets in that lane start
-    //      closer than kEasyModePerLaneMinGapMs apart (converted to beats
+    //      closer than c_EasyModePerLaneMinGapMs apart (converted to beats
     //      via bpm) - circular, respecting the loop boundary at spanBeats.
     //      A lane that's already sparse enough is left completely
     //      untouched; a note's startBeat is never moved, only whether it
     //      survives.
     //   2. Cross-lane thinning: the stage-1 survivors, merged across all 4
     //      lanes into one time-ordered stream, are thinned again by the
-    //      same rule using a tighter kEasyModeGlobalMinGapMs, so the player
+    //      same rule using a tighter c_EasyModeGlobalMinGapMs, so the player
     //      is never asked to react to two different lanes closer together
     //      than that (catches a fast lane-alternating pattern, e.g. a
     //      cycling arpeggio, that looks sparse lane-by-lane but isn't as a
     //      combined stream).
-    //   3. Chord collapse: any notes still within kEasyModeChordEpsilonBeats
+    //   3. Chord collapse: any notes still within c_EasyModeChordEpsilonBeats
     //      of each other after (1)-(2) collapse to the lowest lane index
     //      (lanes are pitch-ordered ascending, so this keeps a chord's
     //      root/bass note) - no simultaneous notes survive.
     // Every surviving note then keeps its own authored durationBeats,
-    // clamped to a floor (kEasyModeNoteDurationFloorMs) and a ceiling of
+    // clamped to a floor (c_EasyModeNoteDurationFloorMs) and a ceiling of
     // "don't run into the next surviving note in the same lane" (computed
     // circularly, wrapping to that lane's first note one spanBeats later) -
     // a genuinely sustained note still reads and plays as a hold instead of
@@ -748,7 +748,7 @@ private:
     double m_arrangementOriginSeconds = 0.0;
 
     // See TryBufferEarlyPress/ConsumeBufferedPresses/BufferedPress.
-    BufferedPress m_bufferedPress[kLaneCount];
+    BufferedPress m_bufferedPress[c_LaneCount];
 
     QueuedBackground m_queuedBackground;
     JudgementResult m_lastJudgement = JudgementResult::None;
@@ -777,7 +777,7 @@ private:
     // only walks the notes newly crossed since the previous one. Seeded to
     // the lock-in instant by RegisterHit the moment a section starts
     // passing (Pass mode only - see IsLaneJudgeable/Update()'s own comment).
-    double m_autoScoreCursorBeat[kLaneCount] = {};
+    double m_autoScoreCursorBeat[c_LaneCount] = {};
 
     // See ConsumeJudgementEvents - populated by RegisterHit/RegisterMiss,
     // drained (and cleared) there.

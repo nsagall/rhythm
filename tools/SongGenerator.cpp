@@ -3,7 +3,7 @@
 // recordings: square/triangle/bell/bass tones for melodic clips, noise+sine
 // drum hits for percussion, all mixed and written as plain 16-bit mono PCM
 // WAV, plus (for judged clips) a matching note chart using the engine's
-// four fixed lane pitches (kLaneMidiPitches in src/LaneConfig.h - keep this
+// four fixed lane pitches (c_LaneMidiPitches in src/LaneConfig.h - keep this
 // in sync if that ever changes). Deterministic: the noise generator is a
 // seeded LCG, so re-running produces byte-identical output.
 //
@@ -49,9 +49,9 @@
 namespace
 {
 
-constexpr int kSampleRate = 44100;
-constexpr int kTicksPerQuarter = 480;
-constexpr int kLaneMidiPitches[4] = {72, 74, 76, 77};
+constexpr int c_SampleRate = 44100;
+constexpr int c_TicksPerQuarter = 480;
+constexpr int c_LaneMidiPitches[4] = {72, 74, 76, 77};
 
 // ---------- WAV writer ----------
 
@@ -62,7 +62,7 @@ void WriteWavMono16(const std::string& path, const std::vector<int16_t>& samples
     uint32_t riffSize = 36 + dataBytes;
     uint16_t formatTag = 1; // PCM
     uint16_t channels = 1;
-    uint32_t sampleRate = kSampleRate;
+    uint32_t sampleRate = c_SampleRate;
     uint16_t bitsPerSample = 16;
     uint16_t blockAlign = channels * bitsPerSample / 8;
     uint32_t byteRate = sampleRate * blockAlign;
@@ -180,7 +180,7 @@ void WriteMidiFile(const std::string& path, const std::vector<MidiNote>& notes, 
     WriteBE32(f, 6);
     WriteBE16(f, 0); // format 0: single track
     WriteBE16(f, 1); // ntrks
-    WriteBE16(f, static_cast<uint16_t>(kTicksPerQuarter));
+    WriteBE16(f, static_cast<uint16_t>(c_TicksPerQuarter));
     f.write("MTrk", 4);
     WriteBE32(f, static_cast<uint32_t>(track.size()));
     f.write(reinterpret_cast<const char*>(track.data()), static_cast<std::streamsize>(track.size()));
@@ -296,16 +296,16 @@ std::vector<double> ApplyLoopingReverb(const std::vector<double>& dry, double we
     {
         return dry;
     }
-    static const int kCombTuningsSamples[4] = {1557, 1617, 1491, 1422};
-    static const int kAllpassTuningsSamples[2] = {556, 441};
+    static const int c_CombTuningsSamples[4] = {1557, 1617, 1491, 1422};
+    static const int c_AllpassTuningsSamples[2] = {556, 441};
 
     std::vector<CombFilter> combs;
-    for (int t : kCombTuningsSamples)
+    for (int t : c_CombTuningsSamples)
     {
         combs.emplace_back(t, 0.26 + roomSize * 0.32, 0.25);
     }
     std::vector<AllpassFilter> allpasses;
-    for (int t : kAllpassTuningsSamples)
+    for (int t : c_AllpassTuningsSamples)
     {
         allpasses.emplace_back(t, 0.5);
     }
@@ -397,11 +397,11 @@ struct Mixer
 // duration is (a real drum's sound outlasts a quick press/release gesture).
 std::vector<double> RenderKick(uint32_t& noiseState)
 {
-    int n = static_cast<int>(0.20 * kSampleRate);
+    int n = static_cast<int>(0.20 * c_SampleRate);
     std::vector<double> v(static_cast<size_t>(n));
     for (int i = 0; i < n; ++i)
     {
-        double t = i / static_cast<double>(kSampleRate);
+        double t = i / static_cast<double>(c_SampleRate);
         double freq = 150.0 * std::exp(-t * 28.0) + 48.0; // pitch sweep, high -> low
         double phase = std::fmod(t * freq, 1.0);
         double tone = std::sin(2.0 * 3.14159265358979 * phase);
@@ -416,12 +416,12 @@ std::vector<double> RenderKick(uint32_t& noiseState)
 
 std::vector<double> RenderSnare(uint32_t& noiseState)
 {
-    int n = static_cast<int>(0.16 * kSampleRate);
+    int n = static_cast<int>(0.16 * c_SampleRate);
     std::vector<double> v(static_cast<size_t>(n));
     double lpState = 0.0;
     for (int i = 0; i < n; ++i)
     {
-        double t = i / static_cast<double>(kSampleRate);
+        double t = i / static_cast<double>(c_SampleRate);
         double noise = NoiseSample(noiseState);
         lpState = OnePoleLowPass(noise, lpState, 0.5);
         double highPassed = noise - lpState; // crude high-pass: original minus a low-passed copy
@@ -434,12 +434,12 @@ std::vector<double> RenderSnare(uint32_t& noiseState)
 
 std::vector<double> RenderHihat(uint32_t& noiseState)
 {
-    int n = static_cast<int>(0.06 * kSampleRate);
+    int n = static_cast<int>(0.06 * c_SampleRate);
     std::vector<double> v(static_cast<size_t>(n));
     double lp1 = 0.0, lp2 = 0.0, lp3 = 0.0;
     for (int i = 0; i < n; ++i)
     {
-        double t = i / static_cast<double>(kSampleRate);
+        double t = i / static_cast<double>(c_SampleRate);
         double noise = NoiseSample(noiseState);
         lp1 = OnePoleLowPass(noise, lp1, 0.35);
         lp2 = OnePoleLowPass(lp1, lp2, 0.35);
@@ -455,11 +455,11 @@ std::vector<double> RenderHihat(uint32_t& noiseState)
 
 std::vector<double> RenderTom(uint32_t& noiseState)
 {
-    int n = static_cast<int>(0.18 * kSampleRate);
+    int n = static_cast<int>(0.18 * c_SampleRate);
     std::vector<double> v(static_cast<size_t>(n));
     for (int i = 0; i < n; ++i)
     {
-        double t = i / static_cast<double>(kSampleRate);
+        double t = i / static_cast<double>(c_SampleRate);
         double freq = 300.0 * std::exp(-t * 14.0) + 130.0;
         double phase = std::fmod(t * freq, 1.0);
         double tone = std::sin(2.0 * 3.14159265358979 * phase);
@@ -491,7 +491,7 @@ enum class Timbre
 std::vector<double> RenderMelodicNote(double freqHz, double durationSeconds, Timbre timbre, double velocity = 1.0)
 {
     double releaseSeconds = (timbre == Timbre::Bell) ? 0.45 : 0.10;
-    int n = static_cast<int>((durationSeconds + releaseSeconds) * kSampleRate);
+    int n = static_cast<int>((durationSeconds + releaseSeconds) * c_SampleRate);
     n = std::max(n, 8);
     std::vector<double> v(static_cast<size_t>(n));
     double attackSeconds = (timbre == Timbre::Bell) ? 0.015 : 0.006;
@@ -502,7 +502,7 @@ std::vector<double> RenderMelodicNote(double freqHz, double durationSeconds, Tim
     double sustainLevel = (timbre == Timbre::Bell) ? 1.0 : 0.55;
     for (int i = 0; i < n; ++i)
     {
-        double t = i / static_cast<double>(kSampleRate);
+        double t = i / static_cast<double>(c_SampleRate);
         double env;
         if (t < attackSeconds)
         {
@@ -639,13 +639,13 @@ void GenerateDrumClip(const std::string& dir, const std::string& name, const std
                        const std::vector<DrumHit>& chartHits, double totalBeats, double secondsPerBeat,
                        uint32_t noiseSeed, double targetPeak = 0.55, double reverbSend = 0.0, double roomSize = 0.3)
 {
-    int totalSamples = static_cast<int>(std::lround(totalBeats * secondsPerBeat * kSampleRate));
+    int totalSamples = static_cast<int>(std::lround(totalBeats * secondsPerBeat * c_SampleRate));
     Mixer mixer(totalSamples);
     uint32_t noiseState = noiseSeed;
 
     for (const DrumHit& h : audioHits)
     {
-        int startSample = static_cast<int>(std::lround(h.beat * secondsPerBeat * kSampleRate));
+        int startSample = static_cast<int>(std::lround(h.beat * secondsPerBeat * c_SampleRate));
         std::vector<double> voice;
         switch (h.lane)
         {
@@ -676,11 +676,11 @@ void GenerateDrumClip(const std::string& dir, const std::string& name, const std
         std::vector<MidiNote> notes;
         for (const DrumHit& h : chartHits)
         {
-            int startTick = static_cast<int>(std::lround(h.beat * kTicksPerQuarter));
-            int endTick = startTick + static_cast<int>(std::lround(0.15 * kTicksPerQuarter));
-            notes.push_back({startTick, endTick, kLaneMidiPitches[h.lane]});
+            int startTick = static_cast<int>(std::lround(h.beat * c_TicksPerQuarter));
+            int endTick = startTick + static_cast<int>(std::lround(0.15 * c_TicksPerQuarter));
+            notes.push_back({startTick, endTick, c_LaneMidiPitches[h.lane]});
         }
-        int totalTicks = static_cast<int>(std::lround(totalBeats * kTicksPerQuarter));
+        int totalTicks = static_cast<int>(std::lround(totalBeats * c_TicksPerQuarter));
         WriteMidiFile(dir + "/" + name + ".mid", notes, totalTicks);
         printf("  %s: %d audio hits / %d chart hits, %.2fs, %d ticks\n", name.c_str(), (int)audioHits.size(),
                (int)chartHits.size(), totalBeats * secondsPerBeat, totalTicks);
@@ -704,11 +704,11 @@ void GenerateMelodicClip(const std::string& dir, const std::string& name, const 
                           const std::vector<MelodicEvent>& chartEvents, double totalBeats, double secondsPerBeat,
                           Timbre timbre, double targetPeak = 0.42, double reverbSend = 0.12, double roomSize = 0.35)
 {
-    int totalSamples = static_cast<int>(std::lround(totalBeats * secondsPerBeat * kSampleRate));
+    int totalSamples = static_cast<int>(std::lround(totalBeats * secondsPerBeat * c_SampleRate));
     Mixer mixer(totalSamples);
     for (const MelodicEvent& e : audioEvents)
     {
-        int startSample = static_cast<int>(std::lround(e.beat * secondsPerBeat * kSampleRate));
+        int startSample = static_cast<int>(std::lround(e.beat * secondsPerBeat * c_SampleRate));
         std::vector<double> voice = RenderMelodicNote(e.freqHz, e.durationBeats * secondsPerBeat, timbre, e.velocity);
         mixer.Add(startSample, voice);
     }
@@ -718,24 +718,24 @@ void GenerateMelodicClip(const std::string& dir, const std::string& name, const 
     std::vector<MidiNote> notes;
     for (const MelodicEvent& e : chartEvents)
     {
-        int startTick = static_cast<int>(std::lround(e.beat * kTicksPerQuarter));
-        int endTick = static_cast<int>(std::lround((e.beat + e.durationBeats) * kTicksPerQuarter));
-        notes.push_back({startTick, endTick, kLaneMidiPitches[e.lane]});
+        int startTick = static_cast<int>(std::lround(e.beat * c_TicksPerQuarter));
+        int endTick = static_cast<int>(std::lround((e.beat + e.durationBeats) * c_TicksPerQuarter));
+        notes.push_back({startTick, endTick, c_LaneMidiPitches[e.lane]});
     }
-    int totalTicks = static_cast<int>(std::lround(totalBeats * kTicksPerQuarter));
+    int totalTicks = static_cast<int>(std::lround(totalBeats * c_TicksPerQuarter));
     WriteMidiFile(dir + "/" + name + ".mid", notes, totalTicks);
     printf("  %s: %d audio notes / %d chart notes, %.2fs, %d ticks\n", name.c_str(), (int)audioEvents.size(),
            (int)chartEvents.size(), totalBeats * secondsPerBeat, totalTicks);
 }
 
 // ---------- Note-name frequency helpers (A4 = 440Hz equal temperament) ----------
-constexpr double kG1 = 48.999, kB1 = 61.735;
-constexpr double kC2 = 65.406, kD2 = 73.416, kE2 = 82.407, kFs2 = 92.499, kG2 = 97.999, kA2 = 110.000,
-                  kB2 = 123.471, kC3 = 130.813, kD3 = 146.832, kE3 = 164.814, kF3 = 174.614, kG3 = 195.998,
-                  kA3 = 220.000, kB3 = 246.942;
-constexpr double kC4 = 261.626, kD4 = 293.665, kE4 = 329.628, kF4 = 349.228, kG4 = 391.995, kA4 = 440.000,
-                  kB4 = 493.883;
-constexpr double kC5 = 523.251, kD5 = 587.330, kE5 = 659.255, kF5 = 698.456, kG5 = 783.991, kA5 = 880.000;
+constexpr double c_G1 = 48.999, c_B1 = 61.735;
+constexpr double c_C2 = 65.406, c_D2 = 73.416, c_E2 = 82.407, c_Fs2 = 92.499, c_G2 = 97.999, c_A2 = 110.000,
+                  c_B2 = 123.471, c_C3 = 130.813, c_D3 = 146.832, c_E3 = 164.814, c_F3 = 174.614, c_G3 = 195.998,
+                  c_A3 = 220.000, c_B3 = 246.942;
+constexpr double c_C4 = 261.626, c_D4 = 293.665, c_E4 = 329.628, c_F4 = 349.228, c_G4 = 391.995, c_A4 = 440.000,
+                  c_B4 = 493.883;
+constexpr double c_C5 = 523.251, c_D5 = 587.330, c_E5 = 659.255, c_F5 = 698.456, c_G5 = 783.991, c_A5 = 880.000;
 
 } // namespace
 
@@ -794,14 +794,14 @@ void GenerateByteBlaster()
     // into.
     printf("Generating bass...\n");
     std::vector<MelodicEvent> bassAudio{
-        {0.00, 0.40, 0, kC2}, {0.75, 0.40, 0, kC2}, {1.50, 0.40, 1, kG1}, {2.00, 0.40, 0, kC2},
-        {2.75, 0.40, 2, kE2}, {3.50, 0.40, 0, kC2}, {4.00, 0.40, 2, kG1}, {4.75, 0.40, 2, kG1},
-        {5.50, 0.40, 3, kD2}, {6.00, 0.40, 2, kG1}, {6.75, 0.40, 1, kB1}, {7.50, 0.40, 2, kG1},
+        {0.00, 0.40, 0, c_C2}, {0.75, 0.40, 0, c_C2}, {1.50, 0.40, 1, c_G1}, {2.00, 0.40, 0, c_C2},
+        {2.75, 0.40, 2, c_E2}, {3.50, 0.40, 0, c_C2}, {4.00, 0.40, 2, c_G1}, {4.75, 0.40, 2, c_G1},
+        {5.50, 0.40, 3, c_D2}, {6.00, 0.40, 2, c_G1}, {6.75, 0.40, 1, c_B1}, {7.50, 0.40, 2, c_G1},
     };
     GenerateMelodicClip(dir, "bass", Humanize(bassAudio, 9010u, 0.008, 0.08),
                          {
-                             {0.00, 0.6, 0, kC2}, {1.00, 0.6, 1, kG1}, {2.00, 0.6, 0, kC2}, {3.00, 0.6, 2, kE2},
-                             {4.00, 0.6, 0, kG1}, {5.00, 0.6, 1, kD2}, {6.00, 0.6, 0, kG1}, {7.00, 0.6, 3, kB1},
+                             {0.00, 0.6, 0, c_C2}, {1.00, 0.6, 1, c_G1}, {2.00, 0.6, 0, c_C2}, {3.00, 0.6, 2, c_E2},
+                             {4.00, 0.6, 0, c_G1}, {5.00, 0.6, 1, c_D2}, {6.00, 0.6, 0, c_G1}, {7.00, 0.6, 3, c_B1},
                          },
                          8.0, secondsPerBeat, Timbre::Bass, 0.42, 0.0, 0.3);
 
@@ -812,8 +812,8 @@ void GenerateByteBlaster()
     printf("Generating arp...\n");
     {
         std::vector<MelodicEvent> arpAudio;
-        double cChord[4] = {kC4, kE4, kG4, kC5};
-        double gChord[4] = {kG4, kB4, kD5, kC5 * (783.991 / 523.251)}; // G4,B4,D5,G5
+        double cChord[4] = {c_C4, c_E4, c_G4, c_C5};
+        double gChord[4] = {c_G4, c_B4, c_D5, c_C5 * (783.991 / 523.251)}; // G4,B4,D5,G5
         for (int bar = 0; bar < 2; ++bar)
         {
             const double* chord = (bar == 0) ? cChord : gChord;
@@ -840,29 +840,29 @@ void GenerateByteBlaster()
     // handful of on-the-beat pickups), evenly spaced and easy to follow.
     printf("Generating lead...\n");
     std::vector<MelodicEvent> leadAudio{
-        {0.00, 0.5, 0, kE4}, {0.50, 0.5, 1, kG4}, {1.00, 0.5, 2, kA4}, {1.50, 0.5, 1, kG4},
-        {2.00, 1.0, 3, kC5}, {3.00, 0.75, 2, kB4}, {3.75, 0.25, 2, kA4}, {4.00, 0.5, 1, kG4},
-        {4.50, 0.5, 0, kE4}, {5.00, 0.5, 0, kD4}, {5.50, 0.5, 0, kE4}, {6.00, 1.0, 1, kG4},
-        {7.00, 0.5, 1, kF4}, {7.50, 0.5, 0, kE4},
+        {0.00, 0.5, 0, c_E4}, {0.50, 0.5, 1, c_G4}, {1.00, 0.5, 2, c_A4}, {1.50, 0.5, 1, c_G4},
+        {2.00, 1.0, 3, c_C5}, {3.00, 0.75, 2, c_B4}, {3.75, 0.25, 2, c_A4}, {4.00, 0.5, 1, c_G4},
+        {4.50, 0.5, 0, c_E4}, {5.00, 0.5, 0, c_D4}, {5.50, 0.5, 0, c_E4}, {6.00, 1.0, 1, c_G4},
+        {7.00, 0.5, 1, c_F4}, {7.50, 0.5, 0, c_E4},
     };
     GenerateMelodicClip(dir, "lead", Humanize(leadAudio, 9012u, 0.008, 0.1),
                          {
-                             {0.00, 0.8, 0, kE4}, {1.00, 0.8, 1, kG4}, {2.00, 1.5, 3, kC5}, {3.50, 0.4, 2, kB4},
-                             {4.00, 0.8, 1, kG4}, {5.00, 0.8, 0, kE4}, {6.00, 1.5, 1, kG4}, {7.50, 0.4, 0, kE4},
+                             {0.00, 0.8, 0, c_E4}, {1.00, 0.8, 1, c_G4}, {2.00, 1.5, 3, c_C5}, {3.50, 0.4, 2, c_B4},
+                             {4.00, 0.8, 1, c_G4}, {5.00, 0.8, 0, c_E4}, {6.00, 1.5, 1, c_G4}, {7.50, 0.4, 0, c_E4},
                          },
                          8.0, secondsPerBeat, Timbre::Square, 0.42, 0.12, 0.3);
 
     printf("Generating lead_2...\n");
     std::vector<MelodicEvent> lead2Audio{
-        {0.00, 0.5, 2, kA4}, {0.50, 0.5, 3, kC5}, {1.00, 0.5, 3, kE5}, {1.50, 0.5, 3, kC5},
-        {2.00, 1.0, 2, kA4}, {3.00, 0.5, 1, kG4}, {3.50, 0.5, 2, kA4}, {4.00, 0.5, 0, kF4},
-        {4.50, 0.5, 2, kA4}, {5.00, 0.5, 3, kC5}, {5.50, 0.5, 2, kA4}, {6.00, 1.0, 0, kF4},
-        {7.00, 0.5, 1, kG4}, {7.50, 0.5, 2, kA4},
+        {0.00, 0.5, 2, c_A4}, {0.50, 0.5, 3, c_C5}, {1.00, 0.5, 3, c_E5}, {1.50, 0.5, 3, c_C5},
+        {2.00, 1.0, 2, c_A4}, {3.00, 0.5, 1, c_G4}, {3.50, 0.5, 2, c_A4}, {4.00, 0.5, 0, c_F4},
+        {4.50, 0.5, 2, c_A4}, {5.00, 0.5, 3, c_C5}, {5.50, 0.5, 2, c_A4}, {6.00, 1.0, 0, c_F4},
+        {7.00, 0.5, 1, c_G4}, {7.50, 0.5, 2, c_A4},
     };
     GenerateMelodicClip(dir, "lead_2", Humanize(lead2Audio, 9013u, 0.008, 0.1),
                          {
-                             {0.00, 0.8, 2, kA4}, {1.00, 0.8, 3, kC5}, {2.00, 1.5, 2, kA4}, {3.50, 0.4, 1, kG4},
-                             {4.00, 0.8, 0, kF4}, {5.00, 0.8, 2, kA4}, {6.00, 1.5, 0, kF4}, {7.50, 0.4, 1, kG4},
+                             {0.00, 0.8, 2, c_A4}, {1.00, 0.8, 3, c_C5}, {2.00, 1.5, 2, c_A4}, {3.50, 0.4, 1, c_G4},
+                             {4.00, 0.8, 0, c_F4}, {5.00, 0.8, 2, c_A4}, {6.00, 1.5, 0, c_F4}, {7.50, 0.4, 1, c_G4},
                          },
                          8.0, secondsPerBeat, Timbre::Square, 0.42, 0.12, 0.3);
 
@@ -870,10 +870,10 @@ void GenerateByteBlaster()
     // matches the audio unchanged, no simplification needed.
     printf("Generating bell_bridge (DontFail)...\n");
     std::vector<MelodicEvent> bellEvents{
-        {0.00, 0.8, 2, kA4}, {1.00, 0.8, 3, kC5}, {2.00, 1.8, 3, kE5},
-        {4.00, 0.8, 1, kF4}, {5.00, 0.8, 2, kA4}, {6.00, 1.8, 3, kC5},
-        {8.00, 0.8, 0, kC4}, {9.00, 0.8, 1, kE4}, {10.00, 1.8, 1, kG4},
-        {12.00, 0.8, 1, kG4}, {13.00, 0.8, 2, kB4}, {14.00, 1.8, 3, kD5},
+        {0.00, 0.8, 2, c_A4}, {1.00, 0.8, 3, c_C5}, {2.00, 1.8, 3, c_E5},
+        {4.00, 0.8, 1, c_F4}, {5.00, 0.8, 2, c_A4}, {6.00, 1.8, 3, c_C5},
+        {8.00, 0.8, 0, c_C4}, {9.00, 0.8, 1, c_E4}, {10.00, 1.8, 1, c_G4},
+        {12.00, 0.8, 1, c_G4}, {13.00, 0.8, 2, c_B4}, {14.00, 1.8, 3, c_D5},
     };
     GenerateMelodicClip(dir, "bell_bridge", Humanize(bellEvents, 9014u, 0.01, 0.08), bellEvents, 16.0, secondsPerBeat,
                          Timbre::Bell, 0.32, 0.22, 0.5);
@@ -962,10 +962,10 @@ void GenerateVoltageRun()
     // syncopation to feel like a real driving bassline underneath.
     printf("Generating bass...\n");
     std::vector<MelodicEvent> bassChart{
-        {0.00, 0.4, 0, kC3}, {1.00, 0.4, 0, kC3}, {2.00, 0.4, 1, kD3}, {3.00, 0.4, 0, kC3},
-        {4.00, 0.4, 0, kC3}, {5.00, 0.4, 0, kC3}, {6.00, 0.4, 1, kD3}, {7.00, 0.4, 2, kE3},
-        {8.00, 0.4, 0, kC3}, {9.00, 0.4, 0, kC3}, {10.00, 0.4, 1, kD3}, {11.00, 0.4, 0, kC3},
-        {12.00, 0.4, 0, kC3}, {13.00, 0.4, 2, kE3}, {14.00, 0.4, 1, kD3}, {15.00, 0.4, 3, kFs2},
+        {0.00, 0.4, 0, c_C3}, {1.00, 0.4, 0, c_C3}, {2.00, 0.4, 1, c_D3}, {3.00, 0.4, 0, c_C3},
+        {4.00, 0.4, 0, c_C3}, {5.00, 0.4, 0, c_C3}, {6.00, 0.4, 1, c_D3}, {7.00, 0.4, 2, c_E3},
+        {8.00, 0.4, 0, c_C3}, {9.00, 0.4, 0, c_C3}, {10.00, 0.4, 1, c_D3}, {11.00, 0.4, 0, c_C3},
+        {12.00, 0.4, 0, c_C3}, {13.00, 0.4, 2, c_E3}, {14.00, 0.4, 1, c_D3}, {15.00, 0.4, 3, c_Fs2},
     };
     std::vector<MelodicEvent> bassAudio;
     for (const MelodicEvent& e : bassChart)
@@ -981,13 +981,13 @@ void GenerateVoltageRun()
     printf("Generating arp...\n");
     {
         std::vector<MelodicEvent> arpChart{
-            {0.00, 0.4, 0, kC4}, {1.00, 0.4, 1, kD4}, {2.00, 0.4, 2, kE4}, {3.00, 0.4, 3, kF4},
-            {4.00, 0.4, 0, kC4}, {5.00, 0.4, 1, kD4}, {6.00, 0.4, 2, kE4}, {7.00, 0.4, 3, kF4},
-            {8.00, 0.4, 0, kC4}, {9.00, 0.4, 1, kD4}, {10.00, 0.4, 2, kE4}, {11.00, 0.4, 3, kF4},
-            {12.00, 0.4, 0, kC4}, {13.00, 0.4, 1, kD4}, {14.00, 0.4, 2, kE4}, {15.00, 0.4, 3, kF4},
+            {0.00, 0.4, 0, c_C4}, {1.00, 0.4, 1, c_D4}, {2.00, 0.4, 2, c_E4}, {3.00, 0.4, 3, c_F4},
+            {4.00, 0.4, 0, c_C4}, {5.00, 0.4, 1, c_D4}, {6.00, 0.4, 2, c_E4}, {7.00, 0.4, 3, c_F4},
+            {8.00, 0.4, 0, c_C4}, {9.00, 0.4, 1, c_D4}, {10.00, 0.4, 2, c_E4}, {11.00, 0.4, 3, c_F4},
+            {12.00, 0.4, 0, c_C4}, {13.00, 0.4, 1, c_D4}, {14.00, 0.4, 2, c_E4}, {15.00, 0.4, 3, c_F4},
         };
         std::vector<MelodicEvent> arpAudio;
-        double chord[4] = {kC4, kD4, kE4, kF4};
+        double chord[4] = {c_C4, c_D4, c_E4, c_F4};
         for (int beat = 0; beat < 16; ++beat)
         {
             for (int step = 0; step < 2; ++step)
@@ -1004,13 +1004,13 @@ void GenerateVoltageRun()
     // pickup motion around each held chart note instead of dead silence.
     printf("Generating lead...\n");
     std::vector<MelodicEvent> leadChart{
-        {0.00, 0.7, 0, kC4}, {1.50, 0.7, 2, kE4}, {3.00, 0.7, 1, kD4}, {4.00, 0.7, 3, kF4},
-        {6.00, 0.7, 0, kC4}, {8.00, 0.7, 2, kE4}, {10.00, 0.7, 1, kD4}, {13.00, 0.7, 0, kC4},
+        {0.00, 0.7, 0, c_C4}, {1.50, 0.7, 2, c_E4}, {3.00, 0.7, 1, c_D4}, {4.00, 0.7, 3, c_F4},
+        {6.00, 0.7, 0, c_C4}, {8.00, 0.7, 2, c_E4}, {10.00, 0.7, 1, c_D4}, {13.00, 0.7, 0, c_C4},
     };
     std::vector<MelodicEvent> leadAudio = leadChart;
-    leadAudio.push_back({5.50, 0.4, 1, kD4});
-    leadAudio.push_back({9.50, 0.4, 3, kF4});
-    leadAudio.push_back({12.00, 0.4, 2, kE4});
+    leadAudio.push_back({5.50, 0.4, 1, c_D4});
+    leadAudio.push_back({9.50, 0.4, 3, c_F4});
+    leadAudio.push_back({12.00, 0.4, 2, c_E4});
     GenerateMelodicClip(dir, "lead", Humanize(leadAudio, 8112u, 0.008, 0.1), leadChart, 16.0, secondsPerBeat,
                          Timbre::Square, 0.42, 0.12, 0.3);
 
@@ -1018,14 +1018,14 @@ void GenerateVoltageRun()
     // treatment as lead.
     printf("Generating lead_2...\n");
     std::vector<MelodicEvent> lead2Chart{
-        {0.00, 0.6, 2, kE4}, {1.00, 0.6, 1, kD4}, {2.50, 0.6, 3, kF4}, {4.00, 0.6, 2, kE4},
-        {5.50, 0.6, 1, kD4}, {7.00, 0.6, 0, kC4}, {9.00, 0.6, 3, kF4}, {11.00, 0.6, 2, kE4},
-        {12.00, 0.6, 1, kD4}, {13.50, 0.6, 0, kC4},
+        {0.00, 0.6, 2, c_E4}, {1.00, 0.6, 1, c_D4}, {2.50, 0.6, 3, c_F4}, {4.00, 0.6, 2, c_E4},
+        {5.50, 0.6, 1, c_D4}, {7.00, 0.6, 0, c_C4}, {9.00, 0.6, 3, c_F4}, {11.00, 0.6, 2, c_E4},
+        {12.00, 0.6, 1, c_D4}, {13.50, 0.6, 0, c_C4},
     };
     std::vector<MelodicEvent> lead2Audio = lead2Chart;
-    lead2Audio.push_back({3.50, 0.35, 2, kE4});
-    lead2Audio.push_back({8.00, 0.35, 1, kD4});
-    lead2Audio.push_back({10.00, 0.35, 3, kF4});
+    lead2Audio.push_back({3.50, 0.35, 2, c_E4});
+    lead2Audio.push_back({8.00, 0.35, 1, c_D4});
+    lead2Audio.push_back({10.00, 0.35, 3, c_F4});
     GenerateMelodicClip(dir, "lead_2", Humanize(lead2Audio, 8113u, 0.008, 0.1), lead2Chart, 16.0, secondsPerBeat,
                          Timbre::Square, 0.42, 0.12, 0.3);
 }
@@ -1090,11 +1090,11 @@ void GenerateQuietHours()
     // Am - F - C - G progression - nothing syncopated or busy.
     printf("Generating bass...\n");
     std::vector<MelodicEvent> bassEvents{
-        {0.00, 1.8, 0, kA2}, {4.00, 1.8, 3, kF3}, {8.00, 1.8, 0, kC3}, {12.00, 1.8, 2, kG2},
+        {0.00, 1.8, 0, c_A2}, {4.00, 1.8, 3, c_F3}, {8.00, 1.8, 0, c_C3}, {12.00, 1.8, 2, c_G2},
     };
     std::vector<MelodicEvent> bassAudio{
-        {0.00, 1.8, 0, kA2}, {2.00, 1.8, 0, kA2}, {4.00, 1.8, 3, kF3}, {6.00, 1.8, 3, kF3},
-        {8.00, 1.8, 0, kC3}, {10.00, 1.8, 0, kC3}, {12.00, 1.8, 2, kG2}, {14.00, 1.8, 2, kG2},
+        {0.00, 1.8, 0, c_A2}, {2.00, 1.8, 0, c_A2}, {4.00, 1.8, 3, c_F3}, {6.00, 1.8, 3, c_F3},
+        {8.00, 1.8, 0, c_C3}, {10.00, 1.8, 0, c_C3}, {12.00, 1.8, 2, c_G2}, {14.00, 1.8, 2, c_G2},
     };
     GenerateMelodicClip(dir, "bass", Humanize(bassAudio, 7110u, 0.01, 0.08), bassEvents, 16.0, secondsPerBeat,
                          Timbre::Bass, 0.38, 0.05, 0.3);
@@ -1104,7 +1104,7 @@ void GenerateQuietHours()
     // send, quiet in the mix on purpose.
     printf("Generating pad...\n");
     std::vector<MelodicEvent> padEvents{
-        {0.00, 3.8, 0, kA3}, {4.00, 3.8, 3, kF3}, {8.00, 3.8, 0, kC4}, {12.00, 3.8, 2, kG3},
+        {0.00, 3.8, 0, c_A3}, {4.00, 3.8, 3, c_F3}, {8.00, 3.8, 0, c_C4}, {12.00, 3.8, 2, c_G3},
     };
     GenerateMelodicClip(dir, "pad", Humanize(padEvents, 7111u, 0.015, 0.06), padEvents, 16.0, secondsPerBeat,
                          Timbre::Bell, 0.24, 0.32, 0.6);
@@ -1114,13 +1114,13 @@ void GenerateQuietHours()
     // ever feels rushed. Chart keeps only the phrase's strongest landings.
     printf("Generating lead...\n");
     std::vector<MelodicEvent> leadAudio{
-        {0.50, 0.9, 0, kA3}, {1.50, 0.9, 1, kB3}, {2.50, 1.4, 2, kC4}, {4.50, 0.9, 3, kD4},
-        {5.50, 0.9, 2, kC4}, {6.50, 1.4, 1, kB3}, {8.50, 0.9, 0, kA3}, {9.50, 0.9, 2, kC4},
-        {10.50, 1.4, 3, kD4}, {12.50, 0.9, 2, kC4}, {13.50, 0.9, 1, kB3}, {14.50, 1.4, 0, kA3},
+        {0.50, 0.9, 0, c_A3}, {1.50, 0.9, 1, c_B3}, {2.50, 1.4, 2, c_C4}, {4.50, 0.9, 3, c_D4},
+        {5.50, 0.9, 2, c_C4}, {6.50, 1.4, 1, c_B3}, {8.50, 0.9, 0, c_A3}, {9.50, 0.9, 2, c_C4},
+        {10.50, 1.4, 3, c_D4}, {12.50, 0.9, 2, c_C4}, {13.50, 0.9, 1, c_B3}, {14.50, 1.4, 0, c_A3},
     };
     std::vector<MelodicEvent> leadChart{
-        {0.50, 1.4, 0, kA3}, {2.50, 1.4, 2, kC4}, {4.50, 1.4, 3, kD4}, {6.50, 1.4, 1, kB3},
-        {8.50, 1.4, 0, kA3}, {10.50, 1.4, 3, kD4}, {12.50, 1.4, 2, kC4}, {14.50, 1.4, 0, kA3},
+        {0.50, 1.4, 0, c_A3}, {2.50, 1.4, 2, c_C4}, {4.50, 1.4, 3, c_D4}, {6.50, 1.4, 1, c_B3},
+        {8.50, 1.4, 0, c_A3}, {10.50, 1.4, 3, c_D4}, {12.50, 1.4, 2, c_C4}, {14.50, 1.4, 0, c_A3},
     };
     GenerateMelodicClip(dir, "lead", Humanize(leadAudio, 7112u, 0.012, 0.1), leadChart, 16.0, secondsPerBeat,
                          Timbre::Triangle, 0.36, 0.24, 0.45);
@@ -1129,13 +1129,13 @@ void GenerateQuietHours()
     // lead's register without ever colliding with it.
     printf("Generating lead_2...\n");
     std::vector<MelodicEvent> lead2Audio{
-        {0.50, 0.9, 2, kC4}, {1.50, 0.9, 3, kD4}, {2.50, 1.4, 2, kC4}, {4.50, 0.9, 1, kB3},
-        {5.50, 0.9, 2, kC4}, {6.50, 1.4, 0, kA3}, {8.50, 0.9, 2, kC4}, {9.50, 0.9, 3, kD4},
-        {10.50, 1.4, 2, kE4}, {12.50, 0.9, 1, kB3}, {13.50, 0.9, 2, kC4}, {14.50, 1.4, 1, kB3},
+        {0.50, 0.9, 2, c_C4}, {1.50, 0.9, 3, c_D4}, {2.50, 1.4, 2, c_C4}, {4.50, 0.9, 1, c_B3},
+        {5.50, 0.9, 2, c_C4}, {6.50, 1.4, 0, c_A3}, {8.50, 0.9, 2, c_C4}, {9.50, 0.9, 3, c_D4},
+        {10.50, 1.4, 2, c_E4}, {12.50, 0.9, 1, c_B3}, {13.50, 0.9, 2, c_C4}, {14.50, 1.4, 1, c_B3},
     };
     std::vector<MelodicEvent> lead2Chart{
-        {0.50, 1.4, 2, kC4}, {2.50, 1.4, 2, kC4}, {4.50, 1.4, 1, kB3}, {6.50, 1.4, 0, kA3},
-        {8.50, 1.4, 2, kC4}, {10.50, 1.4, 3, kE4}, {12.50, 1.4, 1, kB3}, {14.50, 1.4, 1, kB3},
+        {0.50, 1.4, 2, c_C4}, {2.50, 1.4, 2, c_C4}, {4.50, 1.4, 1, c_B3}, {6.50, 1.4, 0, c_A3},
+        {8.50, 1.4, 2, c_C4}, {10.50, 1.4, 3, c_E4}, {12.50, 1.4, 1, c_B3}, {14.50, 1.4, 1, c_B3},
     };
     GenerateMelodicClip(dir, "lead_2", Humanize(lead2Audio, 7113u, 0.012, 0.1), lead2Chart, 16.0, secondsPerBeat,
                          Timbre::Triangle, 0.36, 0.24, 0.45);
@@ -1145,10 +1145,10 @@ void GenerateQuietHours()
     // Byte Blaster's bell_bridge is used.
     printf("Generating bridge (DontFail)...\n");
     std::vector<MelodicEvent> bridgeEvents{
-        {0.00, 1.6, 0, kA3}, {2.00, 1.6, 2, kC4}, {4.00, 3.6, 1, kE4},
-        {8.00, 1.6, 3, kF3}, {10.00, 1.6, 0, kA3}, {12.00, 3.6, 2, kC4},
-        {16.00, 1.6, 0, kC4}, {18.00, 1.6, 1, kE4}, {20.00, 3.6, 2, kG4},
-        {24.00, 1.6, 2, kG3}, {26.00, 1.6, 1, kB3}, {28.00, 3.6, 3, kD4},
+        {0.00, 1.6, 0, c_A3}, {2.00, 1.6, 2, c_C4}, {4.00, 3.6, 1, c_E4},
+        {8.00, 1.6, 3, c_F3}, {10.00, 1.6, 0, c_A3}, {12.00, 3.6, 2, c_C4},
+        {16.00, 1.6, 0, c_C4}, {18.00, 1.6, 1, c_E4}, {20.00, 3.6, 2, c_G4},
+        {24.00, 1.6, 2, c_G3}, {26.00, 1.6, 1, c_B3}, {28.00, 3.6, 3, c_D4},
     };
     GenerateMelodicClip(dir, "bridge", Humanize(bridgeEvents, 7114u, 0.015, 0.08), bridgeEvents, 32.0, secondsPerBeat,
                          Timbre::Bell, 0.3, 0.34, 0.6);

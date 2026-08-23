@@ -148,7 +148,7 @@ public:
     // Plays sfx once from the start, at unity gain, without looping - a
     // no-op for an invalid handle. Safe to call again before a previous
     // play of the same sfx has finished: each SfxHandle round-robins a
-    // small pool of voices (see kSfxVoicePoolSize) so a rapid re-fire gets
+    // small pool of voices (see c_SfxVoicePoolSize) so a rapid re-fire gets
     // its own voice instead of cutting the previous one off.
     void PlaySfx(SfxHandle sfx);
 
@@ -200,7 +200,7 @@ private:
     // PlaySfx - enough to survive a rapid re-fire (e.g. two multiplier
     // tier-ups a beat apart) without one play cutting its predecessor off,
     // without needing a real voice-availability check.
-    static constexpr int kSfxVoicePoolSize = 3;
+    static constexpr int c_SfxVoicePoolSize = 3;
 
     // One loaded one-shot sound's playback state - same pcmData/format
     // shape as Stem, but a small fixed pool of voices instead of Stem's
@@ -210,7 +210,7 @@ private:
     {
         std::vector<BYTE> pcmData;
         WAVEFORMATEX format{};
-        IXAudio2SourceVoice* voices[kSfxVoicePoolSize] = {};
+        IXAudio2SourceVoice* voices[c_SfxVoicePoolSize] = {};
         int nextVoice = 0;
     };
 

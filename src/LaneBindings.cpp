@@ -65,7 +65,7 @@ InputBinding DeserializeBinding(const std::wstring& serialized)
 // Loads every lane's saved custom binding from settings.
 void LaneBindings::Load(Settings& settings)
 {
-    for (int lane = 0; lane < kLaneCount; ++lane)
+    for (int lane = 0; lane < c_LaneCount; ++lane)
     {
         m_custom[lane] = DeserializeBinding(settings.LoadLaneBinding(lane));
     }
@@ -74,14 +74,14 @@ void LaneBindings::Load(Settings& settings)
 // Whichever lane has vkCode as its default, or as its custom Keyboard binding.
 int LaneBindings::LaneForKey(int vkCode) const
 {
-    for (int lane = 0; lane < kLaneCount; ++lane)
+    for (int lane = 0; lane < c_LaneCount; ++lane)
     {
-        if (kLaneDefaultKeys[lane] == vkCode)
+        if (c_LaneDefaultKeys[lane] == vkCode)
         {
             return lane;
         }
     }
-    for (int lane = 0; lane < kLaneCount; ++lane)
+    for (int lane = 0; lane < c_LaneCount; ++lane)
     {
         if (m_custom[lane].kind == InputKind::Keyboard && m_custom[lane].code == vkCode)
         {
@@ -94,7 +94,7 @@ int LaneBindings::LaneForKey(int vkCode) const
 // Whichever lane has note as its custom MidiNote binding.
 int LaneBindings::LaneForMidiNote(int note) const
 {
-    for (int lane = 0; lane < kLaneCount; ++lane)
+    for (int lane = 0; lane < c_LaneCount; ++lane)
     {
         if (m_custom[lane].kind == InputKind::MidiNote && m_custom[lane].code == note)
         {
@@ -107,7 +107,7 @@ int LaneBindings::LaneForMidiNote(int note) const
 // Whichever lane has button as its custom Gamepad binding.
 int LaneBindings::LaneForGamepadButton(int button) const
 {
-    for (int lane = 0; lane < kLaneCount; ++lane)
+    for (int lane = 0; lane < c_LaneCount; ++lane)
     {
         if (m_custom[lane].kind == InputKind::Gamepad && m_custom[lane].code == button)
         {
@@ -119,9 +119,9 @@ int LaneBindings::LaneForGamepadButton(int button) const
 
 bool LaneBindings::IsDefaultKey(int vkCode) const
 {
-    for (int lane = 0; lane < kLaneCount; ++lane)
+    for (int lane = 0; lane < c_LaneCount; ++lane)
     {
-        if (kLaneDefaultKeys[lane] == vkCode)
+        if (c_LaneDefaultKeys[lane] == vkCode)
         {
             return true;
         }
@@ -139,7 +139,7 @@ InputBinding LaneBindings::GetCustom(int lane) const
 // then sets and persists it on lane.
 void LaneBindings::SetCustom(int lane, InputBinding binding, Settings& settings)
 {
-    for (int other = 0; other < kLaneCount; ++other)
+    for (int other = 0; other < c_LaneCount; ++other)
     {
         if (other != lane && m_custom[other].kind == binding.kind && m_custom[other].code == binding.code)
         {

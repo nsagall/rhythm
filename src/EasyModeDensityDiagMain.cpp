@@ -34,7 +34,7 @@ struct FlatNote
 std::vector<FlatNote> Flatten(const ChartClip& clip)
 {
     std::vector<FlatNote> notes;
-    for (int lane = 0; lane < kLaneCount; ++lane)
+    for (int lane = 0; lane < c_LaneCount; ++lane)
     {
         for (const LaneNote& note : clip.laneNotes[lane])
         {

@@ -17,7 +17,7 @@ class Settings
 public:
     // How many entries a song's high score list holds at most - LoadHighScores
     // never returns more than this, and InsertHighScore trims back down to it.
-    static constexpr int kMaxHighScoreEntries = 10;
+    static constexpr int c_MaxHighScoreEntries = 10;
 
     // Reads the saved last-chart path from disk (empty if none saved yet).
     std::wstring LoadLastChartPath();
@@ -42,14 +42,14 @@ public:
     void SaveLaneBinding(int lane, const std::wstring& serialized);
 
     // Reads songKey's saved high scores, highest score first, at most
-    // kMaxHighScoreEntries - empty if none saved yet. songKey identifies a
+    // c_MaxHighScoreEntries - empty if none saved yet. songKey identifies a
     // song (MainWindow derives it from the song's content folder name);
     // sanitized internally before becoming part of an INI key, so any
     // folder-name characters are safe to pass in as-is.
     std::vector<HighScoreEntry> LoadHighScores(const std::wstring& songKey);
 
     // Saves songKey's high scores. entries must already be sorted
-    // highest-first and trimmed to at most kMaxHighScoreEntries (see
+    // highest-first and trimmed to at most c_MaxHighScoreEntries (see
     // InsertHighScore) - this call doesn't re-sort or re-trim, and any ranks
     // beyond entries.size() left over from a previously-longer list are
     // erased.
@@ -61,7 +61,7 @@ public:
     static bool HighScoreQualifies(const std::vector<HighScoreEntry>& entries, int score);
 
     // Inserts {initials, score} into entries in descending-score order and
-    // trims back down to kMaxHighScoreEntries - entries is left ready to
+    // trims back down to c_MaxHighScoreEntries - entries is left ready to
     // hand straight to SaveHighScores.
     static void InsertHighScore(std::vector<HighScoreEntry>& entries, const std::wstring& initials, int score);
 };

@@ -26,7 +26,7 @@ ID3D11DeviceContext* g_pd3dDeviceContext = nullptr;
 IDXGISwapChain* g_pSwapChain = nullptr;
 ID3D11RenderTargetView* g_mainRenderTargetView = nullptr;
 
-constexpr wchar_t kWindowClassName[] = L"ColorEditorWindowClass";
+constexpr wchar_t c_WindowClassName[] = L"ColorEditorWindowClass";
 
 void CreateRenderTarget()
 {
@@ -213,7 +213,7 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int nCmdShow)
     wc.style = CS_CLASSDC;
     wc.lpfnWndProc = WndProc;
     wc.hInstance = hInstance;
-    wc.lpszClassName = kWindowClassName;
+    wc.lpszClassName = c_WindowClassName;
     RegisterClassExW(&wc);
 
     HWND hwnd = CreateWindowExW(0, wc.lpszClassName, L"Color Editor", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT,

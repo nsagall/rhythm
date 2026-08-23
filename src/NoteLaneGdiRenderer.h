@@ -114,7 +114,7 @@ private:
     // Returns clipColor for a Normal note, or the fixed held/hit/miss color
     // for anything else - clipColor comes from ClipInstance::color (see
     // ClipColor.h), never from a palette of this renderer's own. precise is
-    // only consulted for state == Hit - see kNoteColorHitImprecise.
+    // only consulted for state == Hit - see c_NoteColorHitImprecise.
     COLORREF ColorForNote(NoteVisualState state, COLORREF clipColor, bool precise) const;
 
     HBRUSH CachedSolidBrush(COLORREF color);
@@ -162,7 +162,7 @@ private:
     // (re)creates growFontSlot at a point size interpolated from
     // basePointSize*2 (right when OnHudValueChanged triggered it) down to
     // basePointSize (as growUntilMs is reached) and returns that instead -
-    // see kHudGrowDurationMs. growFontSlot is a specific field's own cached
+    // see c_HudGrowDurationMs. growFontSlot is a specific field's own cached
     // temporary font (m_totalGrowFont/m_bankGrowFont/m_multiplierGrowFont),
     // recreated on essentially every animating frame since the interpolated
     // size is different each time - cheap, and only happens during each
@@ -221,8 +221,8 @@ private:
     // See ToggleDebugOverlay/DrawDebugOverlay.
     bool m_debugOverlayEnabled = false;
 
-    JudgementResult m_flashResult[kLaneCount] = {};
-    DWORD m_flashUntilMs[kLaneCount] = {};
+    JudgementResult m_flashResult[c_LaneCount] = {};
+    DWORD m_flashUntilMs[c_LaneCount] = {};
     std::vector<JudgementRipple> m_ripples;
 
     // See OnHudValueChanged/DrawScorePopups. m_scoreFlashUntilMs drives the

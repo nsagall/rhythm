@@ -14,16 +14,16 @@ namespace
 // at once as possible; a block only needs to be wide enough to read its
 // label and to be a comfortable click/drag target, not to be visually
 // proportioned like a duration bar.
-constexpr float kPixelsPerSecond = 22.0f;
-constexpr float kMinLearnBreakWidthPx = 34.0f;
-constexpr float kDefaultLearnBreakWidthPx = 56.0f; // used when no schedule/entry is available yet
-constexpr float kMarkerWidthPx = 14.0f;            // Background/Reset - narrow, reads as "doesn't take real time"
-constexpr float kBlockHeight = 64.0f;
-constexpr float kBlockGap = 2.0f;
-constexpr float kPlayheadStripHeight = 14.0f; // room above the blocks for the playhead's triangle marker
-constexpr float kLabelFontScale = 1.2f;       // "a little larger" than the default UI text
+constexpr float c_PixelsPerSecond = 22.0f;
+constexpr float c_MinLearnBreakWidthPx = 34.0f;
+constexpr float c_DefaultLearnBreakWidthPx = 56.0f; // used when no schedule/entry is available yet
+constexpr float c_MarkerWidthPx = 14.0f;            // Background/Reset - narrow, reads as "doesn't take real time"
+constexpr float c_BlockHeight = 64.0f;
+constexpr float c_BlockGap = 2.0f;
+constexpr float c_PlayheadStripHeight = 14.0f; // room above the blocks for the playhead's triangle marker
+constexpr float c_LabelFontScale = 1.2f;       // "a little larger" than the default UI text
 
-const char* kKindNames[] = {"Learn", "Break", "Reset", "Background"};
+const char* c_KindNames[] = {"Learn", "Break", "Reset", "Background"};
 
 // The default ImGui font (no bundled bold weight) has no true bold variant
 // to switch to, so bold is faked the standard bitmap-font way: draw the
@@ -32,7 +32,7 @@ const char* kKindNames[] = {"Learn", "Break", "Reset", "Background"};
 void DrawBoldText(ImDrawList* drawList, ImVec2 pos, ImU32 color, const char* text)
 {
     ImFont* font = ImGui::GetFont();
-    float fontSize = ImGui::GetFontSize() * kLabelFontScale;
+    float fontSize = ImGui::GetFontSize() * c_LabelFontScale;
     drawList->AddText(font, fontSize, pos, color, text);
     drawList->AddText(font, fontSize, ImVec2(pos.x + 1.0f, pos.y), color, text);
 }
@@ -85,7 +85,7 @@ void BlockTimeline::Draw(EditorDocument& doc, BlockPlayer& player)
     ImGui::BeginChild("BlockTimelineScroll", ImVec2(0, 0), true, ImGuiWindowFlags_HorizontalScrollbar);
 
     ImVec2 origin = ImGui::GetCursorScreenPos();
-    origin.y += kPlayheadStripHeight;
+    origin.y += c_PlayheadStripHeight;
 
     DrawBlockRow(doc, layout, origin.x, origin.y);
 
@@ -97,7 +97,7 @@ void BlockTimeline::Draw(EditorDocument& doc, BlockPlayer& player)
     DrawSeekRuler(player, layout, origin.x, origin.y);
 
     float totalWidth = layout.empty() ? 0.0f : (layout.back().leftX + layout.back().width);
-    ImGui::SetCursorScreenPos(ImVec2(origin.x, origin.y + kBlockHeight));
+    ImGui::SetCursorScreenPos(ImVec2(origin.x, origin.y + c_BlockHeight));
     ImGui::Dummy(ImVec2(std::max(totalWidth, 1.0f), 1.0f));
 
     // Delete/Copy/Paste act on the current (possibly multi-block) selection
@@ -137,7 +137,7 @@ void BlockTimeline::DrawToolbar(EditorDocument& doc)
 
         for (int k = 0; k < 4; ++k)
         {
-            if (ImGui::Selectable(kKindNames[k]))
+            if (ImGui::Selectable(c_KindNames[k]))
             {
                 EditorBlock block;
                 block.id = doc.nextBlockId++;
@@ -372,21 +372,21 @@ std::vector<BlockTimeline::BlockLayout> BlockTimeline::ComputeLayout(const Edito
         float width;
         if (block.kind == SectionKind::Background || block.kind == SectionKind::Reset)
         {
-            width = kMarkerWidthPx;
+            width = c_MarkerWidthPx;
         }
         else if (entry != nullptr)
         {
-            width = std::max(kMinLearnBreakWidthPx, static_cast<float>(entry->loopSeconds) * kPixelsPerSecond);
+            width = std::max(c_MinLearnBreakWidthPx, static_cast<float>(entry->loopSeconds) * c_PixelsPerSecond);
         }
         else
         {
-            width = kDefaultLearnBreakWidthPx;
+            width = c_DefaultLearnBreakWidthPx;
         }
 
         layout[i].leftX = cursorX;
         layout[i].width = width;
         layout[i].entry = entry;
-        cursorX += width + kBlockGap;
+        cursorX += width + c_BlockGap;
     }
     return layout;
 }
@@ -401,7 +401,7 @@ void BlockTimeline::DrawBlockRow(EditorDocument& doc, const std::vector<BlockLay
         EditorBlock& block = doc.blocks[i];
         ImGui::PushID(block.id);
         ImGui::SetCursorScreenPos(ImVec2(originX + layout[i].leftX, originY));
-        ImGui::InvisibleButton("block", ImVec2(layout[i].width, kBlockHeight));
+        ImGui::InvisibleButton("block", ImVec2(layout[i].width, c_BlockHeight));
 
         if (ImGui::IsItemClicked())
         {
@@ -445,7 +445,7 @@ void BlockTimeline::DrawBlockRow(EditorDocument& doc, const std::vector<BlockLay
             int sourceIndex = static_cast<int>(i);
             ImGui::SetDragDropPayload("BLOCK_REORDER", &sourceIndex, sizeof(int));
             const EditorClip* dragClip = FindClipById(doc, block.clipId);
-            std::string dragLabel = dragClip != nullptr ? ToUtf8(dragClip->name) : kKindNames[static_cast<int>(block.kind)];
+            std::string dragLabel = dragClip != nullptr ? ToUtf8(dragClip->name) : c_KindNames[static_cast<int>(block.kind)];
             ImGui::Text("%s", dragLabel.c_str());
             ImGui::EndDragDropSource();
         }
@@ -503,7 +503,7 @@ void BlockTimeline::DrawBlockRow(EditorDocument& doc, const std::vector<BlockLay
             drawList->AddRect(rectMin, rectMax, IM_COL32(255, 255, 255, 255), 4.0f, 0, thickness);
         }
 
-        std::string label = clip != nullptr ? ToUtf8(clip->name) : kKindNames[static_cast<int>(block.kind)];
+        std::string label = clip != nullptr ? ToUtf8(clip->name) : c_KindNames[static_cast<int>(block.kind)];
         drawList->PushClipRect(rectMin, rectMax, true);
         DrawBoldText(drawList, ImVec2(rectMin.x + 4.0f, rectMin.y + 4.0f), IM_COL32(10, 10, 10, 255), label.c_str());
         drawList->PopClipRect();
@@ -519,10 +519,10 @@ void BlockTimeline::DrawBlockRow(EditorDocument& doc, const std::vector<BlockLay
     // Trailing drop zone: a clip dragged past the last block (or onto an
     // empty timeline) appends a new block at the end, same as dropping
     // directly on a block inserts before it.
-    float trailingLeft = layout.empty() ? 0.0f : (layout.back().leftX + layout.back().width + kBlockGap);
+    float trailingLeft = layout.empty() ? 0.0f : (layout.back().leftX + layout.back().width + c_BlockGap);
     float trailingWidth = std::max(ImGui::GetContentRegionAvail().x, 60.0f);
     ImGui::SetCursorScreenPos(ImVec2(originX + trailingLeft, originY));
-    ImGui::InvisibleButton("clipDropTrailing", ImVec2(trailingWidth, kBlockHeight));
+    ImGui::InvisibleButton("clipDropTrailing", ImVec2(trailingWidth, c_BlockHeight));
     if (ImGui::BeginDragDropTarget())
     {
         if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("CLIP_DRAG"))
@@ -554,10 +554,10 @@ void BlockTimeline::DrawPlayhead(const BlockSchedule::Schedule& schedule, double
     float x = originX + block.leftX + frac * block.width;
 
     ImDrawList* drawList = ImGui::GetWindowDrawList();
-    constexpr ImU32 kPlayheadColor = IM_COL32(255, 240, 60, 255);
-    drawList->AddLine(ImVec2(x, originY), ImVec2(x, originY + kBlockHeight), kPlayheadColor, 3.0f);
-    drawList->AddTriangleFilled(ImVec2(x - 6.0f, originY - kPlayheadStripHeight), ImVec2(x + 6.0f, originY - kPlayheadStripHeight),
-                                 ImVec2(x, originY), kPlayheadColor);
+    constexpr ImU32 c_PlayheadColor = IM_COL32(255, 240, 60, 255);
+    drawList->AddLine(ImVec2(x, originY), ImVec2(x, originY + c_BlockHeight), c_PlayheadColor, 3.0f);
+    drawList->AddTriangleFilled(ImVec2(x - 6.0f, originY - c_PlayheadStripHeight), ImVec2(x + 6.0f, originY - c_PlayheadStripHeight),
+                                 ImVec2(x, originY), c_PlayheadColor);
 }
 
 void BlockTimeline::DrawSeekRuler(BlockPlayer& player, const std::vector<BlockLayout>& layout, float originX,
@@ -571,8 +571,8 @@ void BlockTimeline::DrawSeekRuler(BlockPlayer& player, const std::vector<BlockLa
 
     float totalWidth = layout.back().leftX + layout.back().width;
 
-    ImGui::SetCursorScreenPos(ImVec2(originX, originY - kPlayheadStripHeight));
-    ImGui::InvisibleButton("seekRuler", ImVec2(std::max(totalWidth, 1.0f), kPlayheadStripHeight));
+    ImGui::SetCursorScreenPos(ImVec2(originX, originY - c_PlayheadStripHeight));
+    ImGui::InvisibleButton("seekRuler", ImVec2(std::max(totalWidth, 1.0f), c_PlayheadStripHeight));
 
     if (ImGui::IsItemActive() && ImGui::IsMouseDown(ImGuiMouseButton_Left))
     {

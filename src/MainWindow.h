@@ -103,7 +103,7 @@ private:
     // matters for capture); otherwise, only while Playing, a note-on/
     // note-off resolved via LaneBindings::LaneForMidiNote registers a press/
     // release exactly like a keyboard lane would. A note-on below
-    // kMinMidiPressVelocity (MainWindow.cpp) is dropped entirely first -
+    // c_MinMidiPressVelocity (MainWindow.cpp) is dropped entirely first -
     // neither a press nor a release - to filter out a sensitive
     // controller's accidental light taps.
     void OnMidiData(WPARAM wParam, LPARAM lParam);
@@ -306,7 +306,7 @@ private:
     bool m_easyMode = false;
     RECT m_easyModeToggleRect{};
 
-    // Which lane (0..kLaneCount-1) is currently awaiting an input for the
+    // Which lane (0..c_LaneCount-1) is currently awaiting an input for the
     // "Assign Inputs" flow, or -1 when not capturing at all - see
     // BeginCapture/AdvanceCapture/CancelCapture. Only ever non-(-1) on the
     // SongSelect screen.
@@ -333,7 +333,7 @@ private:
     Settings m_settings;
 
     // Custom per-lane input bindings (keyboard or live MIDI note), on top of
-    // kLaneDefaultKeys - see LaneBindings.h. Loaded from m_settings in
+    // c_LaneDefaultKeys - see LaneBindings.h. Loaded from m_settings in
     // OnCreate, mutated (and persisted) by HandleCaptureKeyDown/OnMidiData
     // via LaneBindings::SetCustom.
     LaneBindings m_laneBindings;

@@ -11,7 +11,7 @@ class Settings;
 // - there is no named VK_SEMICOLON constant in the Windows headers. Always
 // live, on top of whatever LaneBindings::GetCustom adds - see LaneBindings'
 // own comment for why a lane never loses these.
-constexpr int kLaneDefaultKeys[kLaneCount] = {'J', 'K', 'L', VK_OEM_1};
+constexpr int c_LaneDefaultKeys[c_LaneCount] = {'J', 'K', 'L', VK_OEM_1};
 
 // What one input source is: a keyboard virtual-key code, a live MIDI note
 // number (0-127) from any connected MIDI input device, or a single
@@ -33,7 +33,7 @@ struct InputBinding
 };
 
 // Per-lane input bindings: each lane always responds to its own
-// kLaneDefaultKeys entry (unconditionally, not stored here - see
+// c_LaneDefaultKeys entry (unconditionally, not stored here - see
 // LaneForKey), plus at most one optional custom binding assigned via the
 // "Assign Inputs" flow (MainWindow's capture state machine) - a keyboard
 // key, a live MIDI note, or a gamepad button, whichever one. Persisted to
@@ -48,7 +48,7 @@ public:
     void Load(Settings& settings);
 
     // Returns the lane vkCode should press/release right now: whichever
-    // lane has vkCode as its kLaneDefaultKeys entry, OR whichever lane has
+    // lane has vkCode as its c_LaneDefaultKeys entry, OR whichever lane has
     // it as a custom Keyboard binding - or -1 if neither.
     int LaneForKey(int vkCode) const;
 
@@ -86,5 +86,5 @@ private:
     // Persists m_custom[lane] to settings under that lane's own key.
     void SaveLane(int lane, Settings& settings) const;
 
-    InputBinding m_custom[kLaneCount];
+    InputBinding m_custom[c_LaneCount];
 };

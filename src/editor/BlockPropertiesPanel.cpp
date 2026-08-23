@@ -6,7 +6,7 @@
 
 namespace
 {
-const char* kKindNames[] = {"Learn", "Break", "Reset", "Background"};
+const char* c_KindNames[] = {"Learn", "Break", "Reset", "Background"};
 } // namespace
 
 int BlockPropertiesPanel::Draw(EditorDocument& doc, int selectedBlockId, BlockPlayer& player)
@@ -30,7 +30,7 @@ int BlockPropertiesPanel::Draw(EditorDocument& doc, int selectedBlockId, BlockPl
     }
 
     int kindIndex = static_cast<int>(block->kind);
-    if (ImGui::Combo("Kind", &kindIndex, kKindNames, 4))
+    if (ImGui::Combo("Kind", &kindIndex, c_KindNames, 4))
     {
         block->kind = static_cast<SectionKind>(kindIndex);
         if (block->kind == SectionKind::Reset)

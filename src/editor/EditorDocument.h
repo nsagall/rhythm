@@ -71,7 +71,7 @@ struct EditorClip
     // gets saved; the real, bar-aligned lane notes only ever come from
     // ChartSong::Load re-parsing the actual .mid file at validate/save
     // time, so this can be stale/absent without blocking anything.
-    std::vector<LaneNote> laneNotes[kLaneCount];
+    std::vector<LaneNote> laneNotes[c_LaneCount];
     double spanBeats = 4.0;
 
     int hitsRequired = 16;

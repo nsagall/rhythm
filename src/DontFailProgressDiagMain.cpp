@@ -35,13 +35,13 @@ namespace
 // DurationForLaneNote, used identically across many diagnostics).
 struct PerfectPlayer
 {
-    bool heldByUs[kLaneCount] = {};
-    double releaseAtSeconds[kLaneCount] = {};
-    double lastPressedBeat[kLaneCount] = {-1.0, -1.0, -1.0, -1.0};
+    bool heldByUs[c_LaneCount] = {};
+    double releaseAtSeconds[c_LaneCount] = {};
+    double lastPressedBeat[c_LaneCount] = {-1.0, -1.0, -1.0, -1.0};
 
-    void Step(GameSession& session, bool lanesToPlay[kLaneCount])
+    void Step(GameSession& session, bool lanesToPlay[c_LaneCount])
     {
-        for (int lane = 0; lane < kLaneCount; ++lane)
+        for (int lane = 0; lane < c_LaneCount; ++lane)
         {
             if (heldByUs[lane] && session.Clock().ElapsedSeconds() >= releaseAtSeconds[lane])
             {
@@ -62,7 +62,7 @@ struct PerfectPlayer
             return;
         }
         double secondsPerBeat = 60.0 / session.Song().bpm;
-        for (int lane = 0; lane < kLaneCount; ++lane)
+        for (int lane = 0; lane < c_LaneCount; ++lane)
         {
             if (!lanesToPlay[lane] || clip->laneNotes[lane].empty() || heldByUs[lane])
             {
@@ -140,8 +140,8 @@ int main(int argc, char** argv)
 
     NoteLaneModel model;
     PerfectPlayer player;
-    bool allLanes[kLaneCount] = {true, true, true, true};
-    bool noLanes[kLaneCount] = {false, false, false, false};
+    bool allLanes[c_LaneCount] = {true, true, true, true};
+    bool noLanes[c_LaneCount] = {false, false, false, false};
 
     bool reachedDontFail = false;
     bool everGlowedWhilePassingDontFail = false;

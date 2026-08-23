@@ -27,7 +27,7 @@ void RunOne(const std::wstring& path)
     }
 
     wprintf(L"  totalBeats = %.3f\n", data.totalBeats);
-    for (int lane = 0; lane < kLaneCount; ++lane)
+    for (int lane = 0; lane < c_LaneCount; ++lane)
     {
         wprintf(L"  lane %d (%zu notes):\n", lane, data.lanes[lane].size());
         for (const LaneNote& note : data.lanes[lane])

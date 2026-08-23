@@ -12,7 +12,7 @@
 
 namespace
 {
-const std::wstring kTestSongKey = L"__ScoringDiagTest__";
+const std::wstring c_TestSongKey = L"__ScoringDiagTest__";
 bool g_anyFailure = false;
 
 void Check(bool condition, const char* description)
@@ -31,24 +31,24 @@ int main()
 
     // Start from a clean slate, in case a previous run crashed before its
     // own cleanup at the bottom ran.
-    settings.SaveHighScores(kTestSongKey, {});
+    settings.SaveHighScores(c_TestSongKey, {});
 
-    Check(settings.LoadHighScores(kTestSongKey).empty(), "fresh key loads as empty");
+    Check(settings.LoadHighScores(c_TestSongKey).empty(), "fresh key loads as empty");
     Check(Settings::HighScoreQualifies({}, 1), "any score qualifies for an empty list");
 
-    // Fill to exactly kMaxHighScoreEntries, deliberately out of order, and
+    // Fill to exactly c_MaxHighScoreEntries, deliberately out of order, and
     // confirm InsertHighScore leaves it sorted descending by score.
     std::vector<HighScoreEntry> entries;
-    for (int i = 0; i < Settings::kMaxHighScoreEntries; ++i)
+    for (int i = 0; i < Settings::c_MaxHighScoreEntries; ++i)
     {
         // Scores 100, 200, ..., 1000, inserted in a scrambled order (evens
         // then odds) so a correct sort can't happen to fall out of
         // insertion order by accident.
-        int rank = (i % 2 == 0) ? i / 2 : Settings::kMaxHighScoreEntries - 1 - i / 2;
+        int rank = (i % 2 == 0) ? i / 2 : Settings::c_MaxHighScoreEntries - 1 - i / 2;
         int score = (rank + 1) * 100;
         Settings::InsertHighScore(entries, L"AAA", score);
     }
-    Check(entries.size() == static_cast<size_t>(Settings::kMaxHighScoreEntries), "list trimmed to kMaxHighScoreEntries");
+    Check(entries.size() == static_cast<size_t>(Settings::c_MaxHighScoreEntries), "list trimmed to c_MaxHighScoreEntries");
     bool sortedDescending = true;
     for (size_t i = 1; i < entries.size(); ++i)
     {
@@ -68,8 +68,8 @@ int main()
 
     // Inserting a genuinely new best pushes the old lowest entry out.
     Settings::InsertHighScore(entries, L"ZZZ", 5000);
-    Check(entries.size() == static_cast<size_t>(Settings::kMaxHighScoreEntries),
-          "inserting into a full list still trims back to kMaxHighScoreEntries");
+    Check(entries.size() == static_cast<size_t>(Settings::c_MaxHighScoreEntries),
+          "inserting into a full list still trims back to c_MaxHighScoreEntries");
     Check(entries.front().initials == L"ZZZ" && entries.front().score == 5000,
           "the new best score is now rank 0");
     bool oldLowestStillPresent = false;
@@ -83,8 +83,8 @@ int main()
     Check(!oldLowestStillPresent, "the old lowest entry (100) was pushed out of the top 10");
 
     // Round-trips through the actual INI-backed storage.
-    settings.SaveHighScores(kTestSongKey, entries);
-    std::vector<HighScoreEntry> reloaded = settings.LoadHighScores(kTestSongKey);
+    settings.SaveHighScores(c_TestSongKey, entries);
+    std::vector<HighScoreEntry> reloaded = settings.LoadHighScores(c_TestSongKey);
     Check(reloaded.size() == entries.size(), "reloaded list has the same size as what was saved");
     bool roundTripMatches = reloaded.size() == entries.size();
     for (size_t i = 0; roundTripMatches && i < entries.size(); ++i)
@@ -99,13 +99,13 @@ int main()
     // A shorter re-save must erase the now-stale trailing ranks, not leave
     // them behind from the longer list above.
     std::vector<HighScoreEntry> shortList = {{L"ABC", 999}};
-    settings.SaveHighScores(kTestSongKey, shortList);
-    std::vector<HighScoreEntry> reloadedShort = settings.LoadHighScores(kTestSongKey);
+    settings.SaveHighScores(c_TestSongKey, shortList);
+    std::vector<HighScoreEntry> reloadedShort = settings.LoadHighScores(c_TestSongKey);
     Check(reloadedShort.size() == 1, "saving a shorter list erases the previous list's stale trailing ranks");
 
     // Cleanup: leave no test data behind in the real settings file.
-    settings.SaveHighScores(kTestSongKey, {});
-    Check(settings.LoadHighScores(kTestSongKey).empty(), "cleanup: test key is empty again");
+    settings.SaveHighScores(c_TestSongKey, {});
+    Check(settings.LoadHighScores(c_TestSongKey).empty(), "cleanup: test key is empty again");
 
     printf("\n%s\n", g_anyFailure ? "*** ONE OR MORE CHECKS FAILED ***" : "All checks passed.");
     return g_anyFailure ? 1 : 0;

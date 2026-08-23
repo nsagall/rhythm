@@ -9,11 +9,11 @@ namespace
 
 // Easy mode's start-tolerance widening - see EffectiveStartToleranceSeconds.
 // The chart's own declared tolerance is widened by this much unconditionally...
-constexpr double kEasyModeToleranceMultiplier = 1.5;
+constexpr double c_EasyModeToleranceMultiplier = 1.5;
 // ...and, on top of that, by this much more while the clip isn't currently
 // playing (never started, or stopped after too many misses), to help the
 // player get back on track.
-constexpr double kEasyModeStoppedToleranceMultiplier = 2.0;
+constexpr double c_EasyModeStoppedToleranceMultiplier = 2.0;
 
 // Easy mode's density-thinning targets, expressed as fixed millisecond
 // targets and converted to beats via the clip's own song bpm (see
@@ -22,22 +22,22 @@ constexpr double kEasyModeStoppedToleranceMultiplier = 2.0;
 // instead of silently swinging with tempo - a fixed beat count is a much
 // shorter real gap at a fast tempo than a slow one. Starting points only,
 // expected to move after playtesting - see ApplyEasyModeTransform.
-constexpr double kEasyModePerLaneMinGapMs = 260.0;     // ~2.3 hits/sec cap within one lane
-constexpr double kEasyModeGlobalMinGapMs = 170.0;      // tighter cross-lane cap, catches fast lane-alternating patterns
-constexpr double kEasyModeNoteDurationFloorMs = 130.0; // a kept note is never shorter than this
+constexpr double c_EasyModePerLaneMinGapMs = 260.0;     // ~2.3 hits/sec cap within one lane
+constexpr double c_EasyModeGlobalMinGapMs = 170.0;      // tighter cross-lane cap, catches fast lane-alternating patterns
+constexpr double c_EasyModeNoteDurationFloorMs = 130.0; // a kept note is never shorter than this
 
 // Float-safety-only margin (not a musical rest) so a kept note's duration
 // can approach but never touch/overlap the next kept note in its own lane -
 // a lane can hold at most one note at a time (ChartMidi's own overlap
 // rejection at parse time relies on the same invariant), so an actual
 // overlap here would be a correctness bug, not a taste issue.
-constexpr double kEasyModeSafetyEpsilonBeats = 1e-4;
+constexpr double c_EasyModeSafetyEpsilonBeats = 1e-4;
 
 // Below this, two kept notes (regardless of lane) are treated as
 // simultaneous for chord-collapse purposes - a floating-point-safety
-// epsilon, not a musical threshold (kEasyModeGlobalMinGapMs above is
+// epsilon, not a musical threshold (c_EasyModeGlobalMinGapMs above is
 // always far bigger in practice; this is a defense-in-depth backstop).
-constexpr double kEasyModeChordEpsilonBeats = 1e-6;
+constexpr double c_EasyModeChordEpsilonBeats = 1e-6;
 
 // How far the judging clock (a free-running QueryPerformanceCounter timer)
 // is allowed to drift from the actual audio hardware's playback position
@@ -47,24 +47,24 @@ constexpr double kEasyModeChordEpsilonBeats = 1e-6;
 // XAudio2 processing pass (~a few ms), so a perfectly healthy clock doesn't
 // get re-anchored (and its otherwise-smooth motion subtly stair-stepped)
 // every single frame over nothing.
-constexpr double kClockResyncThresholdSeconds = 0.008;
+constexpr double c_ClockResyncThresholdSeconds = 0.008;
 
 // Points a single hit pays into the bank - flat, no combo scaling; the
 // streak multiplier (GameSession::MultiplierForStreak) is what rewards
 // sustained accuracy now, applied once at payout rather than per hit.
-constexpr int kPrecisePoints = 10;
-constexpr int kImprecisePoints = 5;
+constexpr int c_PrecisePoints = 10;
+constexpr int c_ImprecisePoints = 5;
 
 // A press landing beyond this fraction of the effective start tolerance
 // (still within the full window, so still a correct press) is judged
 // imprecise rather than precise - see GameSession::OnPress's own comment.
-constexpr double kImprecisionToleranceFraction = 0.5;
+constexpr double c_ImprecisionToleranceFraction = 0.5;
 
 // Streak-length breakpoints for GameSession::MultiplierForStreak - streak
-// >= kMultiplierTierStreaks[i] earns a multiplier of (i + 2) (index 0 is the
+// >= c_MultiplierTierStreaks[i] earns a multiplier of (i + 2) (index 0 is the
 // first tier above the base x1), so { 10, 20, 30 } means 0-9 -> x1,
 // 10-19 -> x2, 20-29 -> x3, 30+ -> x4.
-constexpr int kMultiplierTierStreaks[] = {10, 20, 30};
+constexpr int c_MultiplierTierStreaks[] = {10, 20, 30};
 
 // One candidate note being considered by ApplyEasyModeTransform's cross-lane
 // thinning pass - startBeat/durationBeats are carried straight from the
@@ -78,7 +78,7 @@ struct EasyModeNote
     int lane = 0;
 };
 
-// Converts a millisecond target to beats at bpm - see kEasyModePerLaneMinGapMs's
+// Converts a millisecond target to beats at bpm - see c_EasyModePerLaneMinGapMs's
 // own comment for why easy mode's thresholds are expressed this way instead
 // of as fixed beat counts.
 double EasyModeMsToBeats(double ms, double bpm)
@@ -140,7 +140,7 @@ std::vector<int> CircularGreedyThinIndices(const std::vector<double>& startBeats
 int GameSession::MultiplierForStreak(int streak)
 {
     int multiplier = 1;
-    for (int tierStreak : kMultiplierTierStreaks)
+    for (int tierStreak : c_MultiplierTierStreaks)
     {
         if (streak >= tierStreak)
         {
@@ -386,7 +386,7 @@ bool GameSession::IsLaneJudgeable(int lane) const
     {
         return false;
     }
-    if (lane < 0 || lane >= kLaneCount || m_currentInstance.SectionIndex() < 0)
+    if (lane < 0 || lane >= c_LaneCount || m_currentInstance.SectionIndex() < 0)
     {
         return false;
     }
@@ -474,10 +474,10 @@ void GameSession::ApplyInTolerancePress(int lane, const ChartSection& section, c
 
     // How close this press landed to the note's own onset, as a fraction of
     // the tolerance window it was judged against - past
-    // kImprecisionToleranceFraction of it, still a correct press (it's
+    // c_ImprecisionToleranceFraction of it, still a correct press (it's
     // within the full window), but not a precise one. See
     // SectionInstance::LaneHoldWasPrecise/GameSession::RegisterHit.
-    bool wasPrecise = std::abs(pressSeconds - startSeconds) <= toleranceSeconds * kImprecisionToleranceFraction;
+    bool wasPrecise = std::abs(pressSeconds - startSeconds) <= toleranceSeconds * c_ImprecisionToleranceFraction;
 
     StartClipLoop(section.clipIndex, clip.initVolume);
     m_currentInstance.StartLaneHold(lane, startBeat, startBeat + durationBeats, wasPrecise);
@@ -507,7 +507,7 @@ void GameSession::ApplyInTolerancePress(int lane, const ChartSection& section, c
 // hadn't happened yet.
 bool GameSession::TryBufferEarlyPress(int lane)
 {
-    if (m_paused || lane < 0 || lane >= kLaneCount)
+    if (m_paused || lane < 0 || lane >= c_LaneCount)
     {
         return false;
     }
@@ -547,7 +547,7 @@ void GameSession::ConsumeBufferedPresses(const ChartSection& section, const Char
     double secondsPerBeat = 60.0 / m_song.bpm;
     double toleranceSeconds = EffectiveStartToleranceSeconds(clip);
 
-    for (int lane = 0; lane < kLaneCount; ++lane)
+    for (int lane = 0; lane < c_LaneCount; ++lane)
     {
         BufferedPress buffered = m_bufferedPress[lane];
         m_bufferedPress[lane] = BufferedPress{}; // never carries over past this section beginning
@@ -607,7 +607,7 @@ void GameSession::ConsumeBufferedPresses(const ChartSection& section, const Char
 // Registers a key-up for lane; judges it against the note that lane was holding, if any.
 void GameSession::OnRelease(int lane)
 {
-    if (lane < 0 || lane >= kLaneCount || !m_currentInstance.IsLaneHeld(lane) || m_currentInstance.SectionIndex() < 0)
+    if (lane < 0 || lane >= c_LaneCount || !m_currentInstance.IsLaneHeld(lane) || m_currentInstance.SectionIndex() < 0)
     {
         // Not holding anything right now - but if a press was just buffered
         // for this lane (see TryBufferEarlyPress) and hasn't been consumed
@@ -616,7 +616,7 @@ void GameSession::OnRelease(int lane)
         // the section had already begun, instead of leaving
         // ConsumeBufferedPresses to start a hold with no release to ever
         // resolve it.
-        if (lane >= 0 && lane < kLaneCount && m_bufferedPress[lane].active && !m_bufferedPress[lane].released)
+        if (lane >= 0 && lane < c_LaneCount && m_bufferedPress[lane].active && !m_bufferedPress[lane].released)
         {
             m_bufferedPress[lane].released = true;
             m_bufferedPress[lane].releaseSeconds = m_clock.ElapsedSeconds();
@@ -696,7 +696,7 @@ void GameSession::Update()
         if (it != m_clipInstances.end() && it->second.isPlaying && m_audioEngine.IsPlaying(m_stemHandles[clipIndex]))
         {
             double audioElapsed = it->second.loopStartSeconds + m_audioEngine.GetPositionSeconds(m_stemHandles[clipIndex]);
-            if (std::abs(audioElapsed - m_clock.ElapsedSeconds()) > kClockResyncThresholdSeconds)
+            if (std::abs(audioElapsed - m_clock.ElapsedSeconds()) > c_ClockResyncThresholdSeconds)
             {
                 m_clock.Resync(audioElapsed);
             }
@@ -722,7 +722,7 @@ void GameSession::Update()
         {
             const ChartClip& heldClip = m_song.clips[heldSection.clipIndex];
             double toleranceSeconds = heldClip.releaseToleranceMs / 1000.0;
-            for (int lane = 0; lane < kLaneCount; ++lane)
+            for (int lane = 0; lane < c_LaneCount; ++lane)
             {
                 if (!m_currentInstance.IsLaneHeld(lane))
                 {
@@ -870,7 +870,7 @@ void GameSession::Update()
                 // playing perfectly for the remainder of the section."
                 double originBeat = CurrentClipOriginBeat();
                 double nowBeat = now / secondsPerBeat;
-                for (int lane = 0; lane < kLaneCount; ++lane)
+                for (int lane = 0; lane < c_LaneCount; ++lane)
                 {
                     if (clip.laneNotes[lane].empty())
                     {
@@ -888,7 +888,7 @@ void GameSession::Update()
             else
             {
                 double toleranceSeconds = EffectiveStartToleranceSeconds(clip);
-                for (int lane = 0; lane < kLaneCount; ++lane)
+                for (int lane = 0; lane < c_LaneCount; ++lane)
                 {
                     if (clip.laneNotes[lane].empty())
                     {
@@ -1134,7 +1134,7 @@ double GameSession::PreviewTransitionSeconds() const
 double GameSession::PreviewFirstOnsetBeatForLane(int lane) const
 {
     int idx = PreviewSectionIndex();
-    if (idx < 0 || lane < 0 || lane >= kLaneCount)
+    if (idx < 0 || lane < 0 || lane >= c_LaneCount)
     {
         return -1.0;
     }
@@ -1340,7 +1340,7 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
                 m_arrangementOriginValid = false;
             }
 
-            // Same kNoteFallBeats guarantee a learn section's own advance
+            // Same c_NoteFallBeats guarantee a learn section's own advance
             // gives (see the Learn case below): without it, a short break
             // can hand off to the next learn section with its first note's
             // scheduled beat only an instant away, so the note lane's
@@ -1349,7 +1349,7 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
             // ChartClip::ComputeBreakAdvance for the extended-loop-count
             // math (shared with the editor's analytical block scheduler).
             double secondsPerBeat = 60.0 / m_song.bpm;
-            double tFallSeconds = kNoteFallBeats * secondsPerBeat;
+            double tFallSeconds = c_NoteFallBeats * secondsPerBeat;
 
             double stemDuration = m_audioEngine.GetStemDurationSeconds(m_stemHandles[section.clipIndex]);
             double nowSeconds = m_clock.ElapsedSeconds();
@@ -1442,7 +1442,7 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
             // cycle boundaries from originBeat, so querying "next onset
             // after (scheduledBeat - epsilon)" already returns its own
             // pattern's true first note whenever this is a fresh join.
-            for (int lane = 0; lane < kLaneCount; ++lane)
+            for (int lane = 0; lane < c_LaneCount; ++lane)
             {
                 m_currentInstance.SetNextExpectedBeat(
                     lane, clip.NextOnsetAfter(originBeat, scheduledBeat - 1e-6, lane));
@@ -1455,7 +1455,7 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
             // the glow/confetti/volume-switch treatment, and - in Pass mode
             // only - turning off the "3 misses stops the loop" penalty;
             // none of it affects this timing, which is already decided).
-            double tFallSeconds = kNoteFallBeats * secondsPerBeat;
+            double tFallSeconds = c_NoteFallBeats * secondsPerBeat;
             double stemDuration = m_audioEngine.GetStemDurationSeconds(m_stemHandles[section.clipIndex]);
 
             StartClipLoop(section.clipIndex, clip.initVolume);
@@ -1476,7 +1476,7 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
     }
 }
 
-// Records a hit: pays kPrecisePoints/kImprecisePoints into m_bank and
+// Records a hit: pays c_PrecisePoints/c_ImprecisePoints into m_bank and
 // registers with m_streakTracker (see its own comment - this drives
 // CurrentMultiplier() and no longer resets on an isolated miss), then
 // (re)starts the current section's clip loop if it isn't already playing -
@@ -1501,7 +1501,7 @@ void GameSession::RegisterHit(int lane, bool wasPrecise)
     const ChartClip& clip = m_song.clips[section.clipIndex];
 
     int multiplierBefore = MultiplierForStreak(m_streakTracker.Streak());
-    m_bank += wasPrecise ? kPrecisePoints : kImprecisePoints;
+    m_bank += wasPrecise ? c_PrecisePoints : c_ImprecisePoints;
     PushHudChanged(HudField::Bank, m_bank);
 
     bool newlyPassing = m_currentInstance.RegisterHit(clip.hitsRequired, m_streakTracker);
@@ -1523,13 +1523,13 @@ void GameSession::RegisterHit(int lane, bool wasPrecise)
         // The section just (re-)started passing - make sure its already-
         // scheduled candidate advance still leaves the next section's
         // preview (PreviewClip(), gated on IsPassing() - see
-        // PreviewSectionIndex()) a full kNoteFallBeats to actually show
+        // PreviewSectionIndex()) a full c_NoteFallBeats to actually show
         // before hand-off, extending it right now if not, rather than
         // waiting for Update() to notice later once "now" has already
         // caught up to a too-close advance instant. Fixing it up eagerly,
         // right here, keeps PendingAdvanceAtSeconds() always correct from
         // the instant it's read by anything - critically, NoteLaneModel's
-        // own early-handoff math (BuildScene's kPreviewNextClipBeforeHandoff
+        // own early-handoff math (BuildScene's c_PreviewNextClipBeforeHandoff
         // branch), which starts trusting PreviewClip()'s onsets the moment
         // IsPassing() flips true, same as PreviewClip() itself. A reactive
         // fix-up in Update() instead (extend only once "now" reaches the
@@ -1542,7 +1542,7 @@ void GameSession::RegisterHit(int lane, bool wasPrecise)
         // advance is otherwise never revisited once scheduled.
         double now = m_clock.ElapsedSeconds();
         double secondsPerBeat = 60.0 / m_song.bpm;
-        double tFallSeconds = kNoteFallBeats * secondsPerBeat;
+        double tFallSeconds = c_NoteFallBeats * secondsPerBeat;
         double stemDuration = m_audioEngine.GetStemDurationSeconds(m_stemHandles[section.clipIndex]);
         double extendedAdvance = ChartClip::ExtendAdvanceForFallLeadTime(m_currentInstance.PendingAdvanceAtSeconds(),
                                                                             now, stemDuration, tFallSeconds);
@@ -1731,12 +1731,12 @@ double GameSession::EffectiveStartToleranceSeconds(const ChartClip& clip) const
     double toleranceMs = clip.startToleranceMs;
     if (m_easyMode)
     {
-        toleranceMs *= kEasyModeToleranceMultiplier;
+        toleranceMs *= c_EasyModeToleranceMultiplier;
         auto it = m_clipInstances.find(&clip);
         bool clipPlaying = it != m_clipInstances.end() && it->second.isPlaying;
         if (!clipPlaying)
         {
-            toleranceMs *= kEasyModeStoppedToleranceMultiplier;
+            toleranceMs *= c_EasyModeStoppedToleranceMultiplier;
         }
     }
     return toleranceMs / 1000.0;
@@ -1761,16 +1761,16 @@ void GameSession::ApplyEasyModeTransform(ChartClip& clip, double bpm)
     }
 
     double span = clip.spanBeats;
-    double perLaneMinGapBeats = EasyModeMsToBeats(kEasyModePerLaneMinGapMs, bpm);
-    double globalMinGapBeats = EasyModeMsToBeats(kEasyModeGlobalMinGapMs, bpm);
-    double durationFloorBeats = EasyModeMsToBeats(kEasyModeNoteDurationFloorMs, bpm);
+    double perLaneMinGapBeats = EasyModeMsToBeats(c_EasyModePerLaneMinGapMs, bpm);
+    double globalMinGapBeats = EasyModeMsToBeats(c_EasyModeGlobalMinGapMs, bpm);
+    double durationFloorBeats = EasyModeMsToBeats(c_EasyModeNoteDurationFloorMs, bpm);
 
     // Stage 1: per-lane density thinning. A surviving note's startBeat is
     // never moved - only which notes survive changes - so a lane whose
     // original gaps are already all >= perLaneMinGapBeats passes through
     // completely untouched (see CircularGreedyThinIndices's own comment).
-    std::vector<EasyModeNote> perLaneSurvivors[kLaneCount];
-    for (int lane = 0; lane < kLaneCount; ++lane)
+    std::vector<EasyModeNote> perLaneSurvivors[c_LaneCount];
+    for (int lane = 0; lane < c_LaneCount; ++lane)
     {
         const std::vector<LaneNote>& notes = clip.laneNotes[lane];
         if (notes.empty())
@@ -1797,7 +1797,7 @@ void GameSession::ApplyEasyModeTransform(ChartClip& clip, double bpm)
     // cycling arpeggio) where any single lane looks sparse on its own but
     // the combined stream doesn't.
     std::vector<EasyModeNote> merged;
-    for (int lane = 0; lane < kLaneCount; ++lane)
+    for (int lane = 0; lane < c_LaneCount; ++lane)
     {
         for (const EasyModeNote& note : perLaneSurvivors[lane])
         {
@@ -1827,7 +1827,7 @@ void GameSession::ApplyEasyModeTransform(ChartClip& clip, double bpm)
 
     // Stage 3: chord collapse - a defensive backstop, independent of
     // however globalMinGapBeats gets tuned later. Any run of notes still
-    // within kEasyModeChordEpsilonBeats of the same beat (regardless of
+    // within c_EasyModeChordEpsilonBeats of the same beat (regardless of
     // lane) survives only as its lowest-indexed lane's note - lanes are
     // pitch-ordered ascending, so this keeps a chord's root/bass note.
     // globallyThinned is already sorted (startBeat asc, lane asc) by the
@@ -1838,7 +1838,7 @@ void GameSession::ApplyEasyModeTransform(ChartClip& clip, double bpm)
     collapsed.reserve(globallyThinned.size());
     for (const EasyModeNote& note : globallyThinned)
     {
-        if (!collapsed.empty() && note.startBeat - collapsed.back().startBeat < kEasyModeChordEpsilonBeats)
+        if (!collapsed.empty() && note.startBeat - collapsed.back().startBeat < c_EasyModeChordEpsilonBeats)
         {
             continue; // same near-simultaneous run as the previous (lower-lane) survivor
         }
@@ -1852,21 +1852,21 @@ void GameSession::ApplyEasyModeTransform(ChartClip& clip, double bpm)
     // its own first note, one span later), since ExpandLaneNotesToFillClip
     // tiles whole repetitions independently and won't clip an overrun
     // against the next repetition. perLaneMinGapMs is always comfortably
-    // larger than kEasyModeNoteDurationFloorMs, so this ceiling can never
+    // larger than c_EasyModeNoteDurationFloorMs, so this ceiling can never
     // actually fall below the floor in practice - the std::max below is
     // just defensive insurance against changing those constants later.
-    std::vector<LaneNote> perLaneFinal[kLaneCount];
+    std::vector<LaneNote> perLaneFinal[c_LaneCount];
     for (const EasyModeNote& note : collapsed)
     {
         perLaneFinal[note.lane].push_back(LaneNote{note.startBeat, note.durationBeats});
     }
-    for (int lane = 0; lane < kLaneCount; ++lane)
+    for (int lane = 0; lane < c_LaneCount; ++lane)
     {
         std::vector<LaneNote>& notes = perLaneFinal[lane];
         for (size_t i = 0; i < notes.size(); ++i)
         {
             double nextStart = (i + 1 < notes.size()) ? notes[i + 1].startBeat : notes[0].startBeat + span;
-            double ceiling = nextStart - notes[i].startBeat - kEasyModeSafetyEpsilonBeats;
+            double ceiling = nextStart - notes[i].startBeat - c_EasyModeSafetyEpsilonBeats;
             notes[i].durationBeats =
                 std::clamp(notes[i].durationBeats, durationFloorBeats, std::max(durationFloorBeats, ceiling));
         }

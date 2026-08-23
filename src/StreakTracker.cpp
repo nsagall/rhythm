@@ -9,7 +9,7 @@ void StreakTracker::RegisterHit()
 bool StreakTracker::RegisterMiss()
 {
     ++m_consecutiveMisses;
-    if (m_consecutiveMisses >= kMaxConsecutiveMisses)
+    if (m_consecutiveMisses >= c_MaxConsecutiveMisses)
     {
         m_streak = 0;
         m_consecutiveMisses = 0;

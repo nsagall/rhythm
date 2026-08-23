@@ -75,7 +75,7 @@ struct Entry
 // via its first onset), a Break clip, and a Background clip alike, since
 // all three behave identically once actually sounding: they keep playing
 // until a later Break/Reset's StopAll() (Break additionally self-stops
-// after its own loop_count/kNoteFallBeats-extended duration; Learn and
+// after its own loop_count/c_NoteFallBeats-extended duration; Learn and
 // Background never self-stop - "build up the arrangement" is the live
 // game's own phrase for this). This is the source of truth for what audio
 // should actually be playing at any instant - Entry above is a separate,

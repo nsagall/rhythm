@@ -62,11 +62,11 @@ int main(int argc, char** argv)
 
     session.Start();
 
-    bool heldByUs[kLaneCount] = {};
-    double releaseAtSeconds[kLaneCount] = {};
-    double lastPressedBeat[kLaneCount];
-    bool skipThisOne[kLaneCount] = {};
-    for (int lane = 0; lane < kLaneCount; ++lane)
+    bool heldByUs[c_LaneCount] = {};
+    double releaseAtSeconds[c_LaneCount] = {};
+    double lastPressedBeat[c_LaneCount];
+    bool skipThisOne[c_LaneCount] = {};
+    for (int lane = 0; lane < c_LaneCount; ++lane)
     {
         lastPressedBeat[lane] = -1.0;
     }
@@ -100,7 +100,7 @@ int main(int argc, char** argv)
             printf("[t=%.3fs] section=%d clip=(%s) passing=%s\n", session.Clock().ElapsedSeconds(), sectionIndex,
                    name.c_str(), session.IsPassing() ? "true" : "false");
             lastSectionIndex = sectionIndex;
-            for (int lane = 0; lane < kLaneCount; ++lane)
+            for (int lane = 0; lane < c_LaneCount; ++lane)
             {
                 lastPressedBeat[lane] = -1.0;
             }
@@ -125,7 +125,7 @@ int main(int argc, char** argv)
                        session.Clock().ElapsedSeconds(), extensionsObserved, firstLoopAdvance, advance);
                 inTargetFirstLoop = false;
                 switchedToPerfect = true;
-                for (int lane = 0; lane < kLaneCount; ++lane)
+                for (int lane = 0; lane < c_LaneCount; ++lane)
                 {
                     lastPressedBeat[lane] = -1.0;
                 }
@@ -133,7 +133,7 @@ int main(int argc, char** argv)
             }
         }
 
-        for (int lane = 0; lane < kLaneCount; ++lane)
+        for (int lane = 0; lane < c_LaneCount; ++lane)
         {
             if (heldByUs[lane] && session.Clock().ElapsedSeconds() >= releaseAtSeconds[lane])
             {
@@ -176,7 +176,7 @@ int main(int argc, char** argv)
             double secondsPerBeat = 60.0 / session.Song().bpm;
             bool isTargetFirstLoop = (sectionIndex == targetSectionIndex) && inTargetFirstLoop;
 
-            for (int lane = 0; lane < kLaneCount; ++lane)
+            for (int lane = 0; lane < c_LaneCount; ++lane)
             {
                 if (clip.laneNotes[lane].empty() || heldByUs[lane])
                 {

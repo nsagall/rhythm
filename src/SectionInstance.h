@@ -135,7 +135,7 @@ public:
     // What RegisterMiss found happened - see its own comment.
     struct MissResult
     {
-        // streakTracker just tripped (StreakTracker::kMaxConsecutiveMisses
+        // streakTracker just tripped (StreakTracker::c_MaxConsecutiveMisses
         // reached) - same meaning, same threshold, in both modes; the
         // caller should stop the clip's audio.
         bool shouldStopClip = false;
@@ -158,7 +158,7 @@ public:
     // Records a miss: a no-op once passing, in Pass mode (frozen forever,
     // exactly like RegisterHit) - streakTracker isn't touched either, same
     // as every other consequence below. In easy mode, each of this
-    // section's first kEasyGraceMisses misses is instead fully forgiven
+    // section's first c_EasyGraceMisses misses is instead fully forgiven
     // regardless of mode or current passing state (this section's own
     // hitsRequired progress and streakTracker both left untouched, and no
     // mode-specific consequence fires either) - see the m_easyGraceRemaining
@@ -210,17 +210,17 @@ private:
     int m_streak = 0;
 
     // Miss grace period (easy mode only): counts down each time RegisterMiss
-    // fully forgives a miss, starting at kEasyGraceMisses - so a beginner's
+    // fully forgives a miss, starting at c_EasyGraceMisses - so a beginner's
     // first couple of stumbles in a section don't cost anything. Never
     // consulted when easyMode is false.
-    static constexpr int kEasyGraceMisses = 2;
-    int m_easyGraceRemaining = kEasyGraceMisses;
+    static constexpr int c_EasyGraceMisses = 2;
+    int m_easyGraceRemaining = c_EasyGraceMisses;
 
     bool m_passing = false;
     bool m_hasPendingAdvance = false;
     double m_pendingAdvanceAtSeconds = 0.0;
 
-    double m_nextExpectedBeat[kLaneCount] = {};
-    LaneHold m_laneHolds[kLaneCount];
+    double m_nextExpectedBeat[c_LaneCount] = {};
+    LaneHold m_laneHolds[c_LaneCount];
     std::vector<JudgedLaneNote> m_judgedNotes;
 };

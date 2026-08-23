@@ -62,7 +62,7 @@ public:
     std::wstring wavFilePath;
     std::wstring midiFilePath;
     bool hasMidi = false;
-    std::vector<LaneNote> laneNotes[kLaneCount];
+    std::vector<LaneNote> laneNotes[c_LaneCount];
     double spanBeats = 4.0;
     int hitsRequired = 16;
     // Both resolved at load time: the clip's own start_tolerance_ms/
@@ -156,7 +156,7 @@ public:
     //   loopStartSeconds    - wall-clock second the clip's loop actually started.
     //   stemDuration        - length of one loop of the clip's audio, in seconds.
     //   loopCount           - section's declared loop_count.
-    //   tFallSeconds        - minimum preview lead time required (kNoteFallBeats worth of seconds).
+    //   tFallSeconds        - minimum preview lead time required (c_NoteFallBeats worth of seconds).
     // Mirrors GameSession::BeginSection's Learn case: a Learn section starts its clip and schedules
     // its advance immediately, same as Break - whether the player meets hits_required doesn't affect
     // this. Result is the next loop boundary at/after sectionStartSeconds, floored by loopCount, and

@@ -35,23 +35,23 @@
 //      at that instant, folded into CurrentScore(), with CurrentBank() back
 //      at 0 immediately after.
 //
-// Mirrors GameSession.cpp's own kPrecisePoints/kImprecisePoints/
-// kImprecisionToleranceFraction/kMultiplierTierStreaks constants (private to
+// Mirrors GameSession.cpp's own c_PrecisePoints/c_ImprecisePoints/
+// c_ImprecisionToleranceFraction/c_MultiplierTierStreaks constants (private to
 // that file) so this can compute the same closed-form expectation
 // independently, rather than importing GameSession's own internals.
 
 namespace
 {
 
-constexpr int kPrecisePoints = 10;
-constexpr int kImprecisePoints = 5;
-constexpr double kImprecisionToleranceFraction = 0.5;
-constexpr int kMultiplierTierStreaks[] = {10, 20, 30};
+constexpr int c_PrecisePoints = 10;
+constexpr int c_ImprecisePoints = 5;
+constexpr double c_ImprecisionToleranceFraction = 0.5;
+constexpr int c_MultiplierTierStreaks[] = {10, 20, 30};
 
 int MultiplierForStreak(int streak)
 {
     int multiplier = 1;
-    for (int tierStreak : kMultiplierTierStreaks)
+    for (int tierStreak : c_MultiplierTierStreaks)
     {
         if (streak >= tierStreak)
         {
@@ -100,10 +100,10 @@ int main(int argc, char** argv)
 
     session.Start();
 
-    bool heldByUs[kLaneCount] = {};
-    double releaseAtSeconds[kLaneCount] = {};
-    double lastPressedBeat[kLaneCount];
-    for (int lane = 0; lane < kLaneCount; ++lane)
+    bool heldByUs[c_LaneCount] = {};
+    double releaseAtSeconds[c_LaneCount] = {};
+    double lastPressedBeat[c_LaneCount];
+    for (int lane = 0; lane < c_LaneCount; ++lane)
     {
         lastPressedBeat[lane] = -1.0;
     }
@@ -168,7 +168,7 @@ int main(int argc, char** argv)
         {
             if (event.result == JudgementResult::Hit)
             {
-                expectedBank += event.precise ? kPrecisePoints : kImprecisePoints;
+                expectedBank += event.precise ? c_PrecisePoints : c_ImprecisePoints;
                 ++expectedStreak;
                 sawHitThisBatch = true;
                 printf("[t=%.3fs] Hit (precise=%s)\n", session.Clock().ElapsedSeconds(),
@@ -263,7 +263,7 @@ int main(int argc, char** argv)
         // Resolve holds (press+release both matter, non-easy-mode) - a
         // held-by-us note's release is timed independently of which phase
         // we're in, since it was already started before any phase change.
-        for (int lane = 0; lane < kLaneCount; ++lane)
+        for (int lane = 0; lane < c_LaneCount; ++lane)
         {
             if (heldByUs[lane] && session.Clock().ElapsedSeconds() >= releaseAtSeconds[lane])
             {
@@ -290,7 +290,7 @@ int main(int argc, char** argv)
                     break;
                 }
 
-                for (int lane = 0; lane < kLaneCount; ++lane)
+                for (int lane = 0; lane < c_LaneCount; ++lane)
                 {
                     if (clip.laneNotes[lane].empty() || heldByUs[lane])
                     {
@@ -351,7 +351,7 @@ int main(int argc, char** argv)
                            session.ScoringStreak(), expectedStreak, isolatedMissOk ? "" : " ** MISMATCH **");
                     phase = TestPhase::PlayPerfectlyPhase2;
                     hitsThisPhase = 0;
-                    for (int lane = 0; lane < kLaneCount; ++lane)
+                    for (int lane = 0; lane < c_LaneCount; ++lane)
                     {
                         lastPressedBeat[lane] = -1.0; // let the next due note re-qualify for a press
                     }
@@ -369,7 +369,7 @@ int main(int argc, char** argv)
                     expectedBank = 0;
                     expectedStreak = 0;
                     phase = TestPhase::PlayPerfectlyUntilLockIn;
-                    for (int lane = 0; lane < kLaneCount; ++lane)
+                    for (int lane = 0; lane < c_LaneCount; ++lane)
                     {
                         lastPressedBeat[lane] = -1.0;
                     }
@@ -380,7 +380,7 @@ int main(int argc, char** argv)
                 // Deliberately no OnPress calls at all - see the file's own
                 // header comment. Just confirm every lane really is
                 // unjudgeable (a real press would be silently wasted).
-                for (int lane = 0; lane < kLaneCount; ++lane)
+                for (int lane = 0; lane < c_LaneCount; ++lane)
                 {
                     if (!clip.laneNotes[lane].empty() && session.IsLaneJudgeable(lane))
                     {

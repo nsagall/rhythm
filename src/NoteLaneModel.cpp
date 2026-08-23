@@ -10,14 +10,14 @@ namespace
 // When true (the current setting), a section hands its dots off early to
 // the next clip's preview as soon as that clip's own notes are due to
 // appear - so the upcoming clip's notes scroll down from the top like any
-// other, instead of its entire kBeatsAhead-deep window materializing at
+// other, instead of its entire c_BeatsAhead-deep window materializing at
 // once the instant it becomes current (confirmed real symptom: a note
 // landing near "now" at handoff read as already-past-the-judge-line,
 // since nothing had scrolled it into view first). False keeps a section's
 // dots/judging live for its whole duration, right up to the scheduled
 // advance, with no lead time for the next clip's own preview at all. See
 // nextClipShowing below.
-constexpr bool kPreviewNextClipBeforeHandoff = true;
+constexpr bool c_PreviewNextClipBeforeHandoff = true;
 
 // Returns value formatted with thousands separators (e.g. 12345 -> "12,345") -
 // matches MainWindow's own FormatScoreWithCommas (song-select's best-score
@@ -60,7 +60,7 @@ std::vector<SceneNote> NoteLaneModel::NotesInRange(int lane, double originBeat, 
     // first-ever repetition, so there's no earlier content to show. Without
     // this clamp, a fromBeat landing just before originBeat (routine right
     // when a fresh clip's live-judged pass starts, since it always looks
-    // kBeatsBehind "now") synthesizes a phantom copy of a note near the
+    // c_BeatsBehind "now") synthesizes a phantom copy of a note near the
     // *end* of the pattern, one spanBeats too early.
     if (firstBar < 0)
     {
@@ -104,7 +104,7 @@ void NoteLaneModel::CollectNotes(const GameSession& session, const ClipInstance*
     }
     const ChartClip* drawClip = instance->chartClip;
 
-    for (int lane = 0; lane < kLaneCount; ++lane)
+    for (int lane = 0; lane < c_LaneCount; ++lane)
     {
         double dotsFromBeat = fromBeat;
         bool revealFromFirstOnset = dotsFromBeat < 0.0;
@@ -348,8 +348,8 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
 
     // A learn section's dots keep coming (and being judged) until
     // nextClipShowing flips true - either at the scheduled advance itself,
-    // or (only while kPreviewNextClipBeforeHandoff is true) earlier, once
-    // the next clip's first note comes within kBeatsAhead of now.
+    // or (only while c_PreviewNextClipBeforeHandoff is true) earlier, once
+    // the next clip's first note comes within c_BeatsAhead of now.
     bool isLearnSection =
         clip && session.Phase() == GamePhase::Learning && session.CurrentSectionKind() == SectionKind::Learn;
     bool nowPassing = isLearnSection && session.IsPassing();
@@ -383,10 +383,10 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
     {
         const ClipInstance* explosionClip = m_nextClip.get();
         const ChartClip* failedNextChartClip = m_nextClip->chartClip;
-        for (int lane = 0; lane < kLaneCount; ++lane)
+        for (int lane = 0; lane < c_LaneCount; ++lane)
         {
             for (SceneNote& sceneNote :
-                 NotesInRange(lane, m_nextClip->startBeat, scene.nowBeat - kBeatsBehind, scene.nowBeat + kBeatsAhead,
+                 NotesInRange(lane, m_nextClip->startBeat, scene.nowBeat - c_BeatsBehind, scene.nowBeat + c_BeatsAhead,
                               failedNextChartClip->laneNotes[lane], failedNextChartClip->spanBeats))
             {
                 sceneNote.clip = explosionClip;
@@ -459,13 +459,13 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
     bool nextClipShowing = false;
 
     // Caps how far the live *judged* pass tiles this clip's pattern -
-    // nowBeat + kBeatsAhead by default, tightened to the section's current
+    // nowBeat + c_BeatsAhead by default, tightened to the section's current
     // candidate advance in the "nothing to hand off to" branch below: a
     // note judged past that point might belong to a repeat that never
     // plays, since the section could lock in there instead of repeating
     // (see GameSession::Update). The resulting gap is filled back in,
     // unjudged, by the self-repeat/next-clip preview passes below.
-    double notesUpperBoundBeat = scene.nowBeat + kBeatsAhead;
+    double notesUpperBoundBeat = scene.nowBeat + c_BeatsAhead;
 
     if (isLearnSection)
     {
@@ -473,7 +473,7 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
         double advanceAtBeat = session.PendingAdvanceAtSeconds() / secondsPerBeat;
 
         // DontFail mode never takes the early branch below, regardless of
-        // kPreviewNextClipBeforeHandoff/PreviewClip() - its own notes stay
+        // c_PreviewNextClipBeforeHandoff/PreviewClip() - its own notes stay
         // live (drawn AND judged) all the way to the section's actual
         // advance, unlike Pass mode's post-lock-in handoff. GameSession's
         // own judging (the press-phase timeout in Update()) has no idea
@@ -486,9 +486,9 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
         // early while passing / show a loop repeat while failing" nuance
         // still happens - see the gap-fill CollectNotes call below, which
         // already blends in exactly that once notesUpperBoundBeat is
-        // capped short of nowBeat+kBeatsAhead - just without ever hiding
+        // capped short of nowBeat+c_BeatsAhead - just without ever hiding
         // this clip's own tail to make room for it.
-        if (!kPreviewNextClipBeforeHandoff || session.PreviewClip() == nullptr ||
+        if (!c_PreviewNextClipBeforeHandoff || session.PreviewClip() == nullptr ||
             clip->learnMode == LearnMode::DontFail)
         {
             // Nothing to hand off to yet (no preview, or early handoff is
@@ -501,7 +501,7 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
         else
         {
             double earliestOnset = -1.0;
-            for (int lane = 0; lane < kLaneCount; ++lane)
+            for (int lane = 0; lane < c_LaneCount; ++lane)
             {
                 double onset = session.PreviewFirstOnsetBeatForLane(lane);
                 if (onset >= 0.0 && (earliestOnset < 0.0 || onset < earliestOnset))
@@ -511,8 +511,8 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
             }
 
             double visibleAtBeat =
-                (earliestOnset >= 0.0) ? (earliestOnset - kBeatsAhead) : (advanceAtBeat - kBeatsAhead);
-            double triggerBeat = (visibleAtBeat <= advanceAtBeat) ? visibleAtBeat : (advanceAtBeat - kBeatsAhead);
+                (earliestOnset >= 0.0) ? (earliestOnset - c_BeatsAhead) : (advanceAtBeat - c_BeatsAhead);
+            double triggerBeat = (visibleAtBeat <= advanceAtBeat) ? visibleAtBeat : (advanceAtBeat - c_BeatsAhead);
             nextClipShowing = (scene.nowBeat >= triggerBeat);
         }
     }
@@ -535,7 +535,7 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
 
     bool isLiveJudging = isLearnSection && !nextClipShowing;
 
-    for (int lane = 0; lane < kLaneCount; ++lane)
+    for (int lane = 0; lane < c_LaneCount; ++lane)
     {
         scene.receptors[lane].held = isLiveJudging && session.IsLaneHeld(lane);
     }
@@ -563,7 +563,7 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
 
         auto addExplodingRange = [&](double fromBeat, double toBeat)
         {
-            for (int lane = 0; lane < kLaneCount; ++lane)
+            for (int lane = 0; lane < c_LaneCount; ++lane)
             {
                 for (SceneNote& sceneNote :
                      NotesInRange(lane, originBeat, fromBeat, toBeat, clip->laneNotes[lane], clip->spanBeats))
@@ -578,13 +578,13 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
         // the handoff happens.
         if (scene.justHandedOff)
         {
-            addExplodingRange(scene.nowBeat - kBeatsBehind, notesUpperBoundBeat);
+            addExplodingRange(scene.nowBeat - c_BeatsBehind, notesUpperBoundBeat);
         }
         // Whatever the self-repeat preview (beyond notesUpperBoundBeat)
         // was still showing, right as lock-in makes that preview obsolete.
         if (scene.justLockedIn)
         {
-            addExplodingRange(notesUpperBoundBeat, scene.nowBeat + kBeatsAhead);
+            addExplodingRange(notesUpperBoundBeat, scene.nowBeat + c_BeatsAhead);
         }
     }
 
@@ -619,7 +619,7 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
     if (isLiveJudging)
     {
         CollectNotes(session, m_currentClip.get(), session.CurrentClipOriginBeat(), /*judged=*/true,
-                     scene.nowBeat - kBeatsBehind, notesUpperBoundBeat, scene);
+                     scene.nowBeat - c_BeatsBehind, notesUpperBoundBeat, scene);
     }
     else
     {
@@ -636,27 +636,27 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
     // layered on top of the still-live judged pass.
     //
     // Only when notesUpperBoundBeat is genuinely capped short of
-    // nowBeat+kBeatsAhead is there an actual gap to fill - the common case
+    // nowBeat+c_BeatsAhead is there an actual gap to fill - the common case
     // (nothing capping it) means the judged pass already reached the full
-    // kBeatsAhead reach on its own, so this range is empty. Calling
+    // c_BeatsAhead reach on its own, so this range is empty. Calling
     // CollectNotes anyway with a zero-width [notesUpperBoundBeat,
     // notesUpperBoundBeat] range wouldn't just be a no-op: NotesInRange's
     // own "look one bar back" tail-catch (see its own comment) would
     // re-discover whatever note the judged pass already placed right at
     // that shared boundary and duplicate it into the scene - confirmed
-    // real repro, a note whose span straddles nowBeat+kBeatsAhead gets
+    // real repro, a note whose span straddles nowBeat+c_BeatsAhead gets
     // counted twice for as long as that straddle lasts.
-    if (notesUpperBoundBeat < scene.nowBeat + kBeatsAhead - 1e-9)
+    if (notesUpperBoundBeat < scene.nowBeat + c_BeatsAhead - 1e-9)
     {
         if (isLiveJudging && !session.IsPassing())
         {
             CollectNotes(session, m_currentClip.get(), session.CurrentClipOriginBeat(), /*judged=*/false,
-                         notesUpperBoundBeat, scene.nowBeat + kBeatsAhead, scene);
+                         notesUpperBoundBeat, scene.nowBeat + c_BeatsAhead, scene);
         }
         else if (isLiveJudging)
         {
             CollectNotes(session, m_nextClip.get(), nextOriginBeat, /*judged=*/false, nextFromBeat,
-                         scene.nowBeat + kBeatsAhead, scene);
+                         scene.nowBeat + c_BeatsAhead, scene);
         }
     }
 

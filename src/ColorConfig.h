@@ -16,7 +16,7 @@ namespace Colors
 
 // One named, editable color - section/name are how both Colors.ini and
 // ColorEditor identify it; value points straight at the live global
-// (ClipColor::kNeutral, GameColors::kBgTop, ...) the game actually draws
+// (ClipColor::c_Neutral, GameColors::c_BgTop, ...) the game actually draws
 // with. section/name are plain ASCII string literals owned by
 // AllEntries()'s static table, so they outlive any caller.
 struct Entry
@@ -31,7 +31,7 @@ struct Entry
 // never disagree about what's editable.
 const std::vector<Entry>& AllEntries();
 
-// Colors.ini lives next to Content/ (see kContentRoot in MainWindow.cpp),
+// Colors.ini lives next to Content/ (see c_ContentRoot in MainWindow.cpp),
 // relative to the process's working directory - not under %APPDATA% like
 // Settings, since this is authoring-time tuning data meant to be checked
 // into the repo and shared, not a per-player preference. Both Rhythm.exe
