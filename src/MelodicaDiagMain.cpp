@@ -4,7 +4,6 @@
 #include <cstdio>
 
 #include "AudioEngine.h"
-#include "ChartTiming.h"
 #include "DiagTestHelpers.h"
 #include "GameSession.h"
 

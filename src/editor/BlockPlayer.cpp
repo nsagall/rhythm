@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cmath>
 
-#include "ChartTiming.h"
 #include "EditorChartIO.h"
 
 BlockPlayer::BlockPlayer(AudioEngine& audioEngine) : m_audioEngine(audioEngine)
@@ -105,8 +104,8 @@ bool BlockPlayer::RebuildSchedule(const EditorDocument& doc, std::vector<std::ws
     std::vector<StemHandle> handlesByPosition(song.clips.size());
     // Captured before ExpandLaneNotesToFillClip (below) can widen any clip's
     // spanBeats to its real audio length - see GameSession::LoadChart's own
-    // identical comment and ChartTiming::ClipAlignmentInfo's for why.
-    std::unordered_map<const ChartClip*, ChartTiming::ClipAlignmentInfo> clipAlignmentInfo;
+    // identical comment and ChartClip::ClipAlignmentInfo's for why.
+    std::unordered_map<const ChartClip*, ChartClip::ClipAlignmentInfo> clipAlignmentInfo;
     for (size_t i = 0; i < song.clips.size() && i < doc.clips.size(); ++i)
     {
         StemHandle handle = GetStemForEditorClipId(doc.clips[i].id);
@@ -122,7 +121,7 @@ bool BlockPlayer::RebuildSchedule(const EditorDocument& doc, std::vector<std::ws
             // chart that fails this would refuse to even load in the real
             // game, so the editor shouldn't produce a schedule for it
             // either.
-            if (!ChartTiming::ClipFitsOneLoop(clip, duration, song.bpm))
+            if (!clip.ClipFitsOneLoop(duration, song.bpm))
             {
                 outErrors.clear();
                 outErrors.push_back(L"clip '" + clip.name +
@@ -131,14 +130,14 @@ bool BlockPlayer::RebuildSchedule(const EditorDocument& doc, std::vector<std::ws
                                      L"load this chart).");
                 return false;
             }
-            ChartTiming::ExpandLaneNotesToFillClip(clip, duration, song.bpm);
+            clip.ExpandLaneNotesToFillClip(duration, song.bpm);
         }
     }
 
     // Same whole-chart bar-alignment invariant GameSession::LoadChart
     // checks, needed here too since the editor can build a schedule for a
     // chart the real game would refuse to even load.
-    if (!ChartTiming::ValidateArrangementAlignment(song, clipAlignmentInfo, outErrors))
+    if (!ChartClip::ValidateArrangementAlignment(song, clipAlignmentInfo, outErrors))
     {
         return false;
     }
@@ -296,14 +295,14 @@ void BlockPlayer::ApplyAudioForPosition()
         if (!wasActive)
         {
             double stemDuration = m_audioEngine.GetStemDurationSeconds(stem);
-            // ChartTiming::ComputeClipPhaseSeconds, matching GameSession's
+            // ChartClip::ComputeClipPhaseSeconds, matching GameSession's
             // own real-game phase-seek exactly - see its doc comment for
             // why this must use the clip's beat-based pattern length
             // (spanBeats), not the audio file's own raw measured duration.
             // voice.originSeconds (not 0) is this clip's own persistent
             // phase reference - see BlockSchedule::VoiceWindow::originSeconds.
-            double phase = ChartTiming::ComputeClipPhaseSeconds(voice.originSeconds, m_positionSeconds, *voice.clip,
-                                                                  stemDuration, m_song.bpm);
+            double phase = voice.clip->ComputeClipPhaseSeconds(voice.originSeconds, m_positionSeconds, stemDuration,
+                                                                m_song.bpm);
             m_audioEngine.StartLooping(stem, phase, static_cast<float>(voice.volume), 0);
         }
         else

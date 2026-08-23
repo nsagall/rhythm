@@ -36,10 +36,10 @@ There is no `test`/`ctest` target — see **Diagnostics instead of a test suite*
 `CMakeLists.txt` defines two static libraries and two executables:
 
 - **`RhythmCore`** — UI-agnostic chart/audio core shared by both executables:
-  `ChartFile`/`ChartMidi` (parsing), `ChartTiming` (pure timing math),
-  `AudioEngine` (XAudio2 wrapper), `SongClock`. Kept as its own CMake target
-  specifically so both executables always compile these files with identical
-  flags/definitions rather than risking drift.
+  `ChartFile`/`ChartMidi` (parsing; `ChartClip` also carries the pure timing
+  math, see below), `AudioEngine` (XAudio2 wrapper), `SongClock`. Kept as its
+  own CMake target specifically so both executables always compile these files
+  with identical flags/definitions rather than risking drift.
 - **`Rhythm`** — the game: `MainWindow` (Win32/GDI), `GameSession` (live judging
   state machine), `SectionInstance`, `NoteLane`/`NoteLaneModel`/
   `NoteLaneGdiRenderer` (rendering), `SongLibrary`, `Settings`.
@@ -49,11 +49,16 @@ There is no `test`/`ctest` target — see **Diagnostics instead of a test suite*
 - **`midifile`** — vendored `craigsapp/midifile` (BSD-2-Clause), wrapped by
   `ChartMidi`.
 
-`ChartTiming.h` is the crux of the shared-core design: all note-onset and
-loop/advance-timing arithmetic is pure functions of their parameters (no
-wall-clock or instance state), used identically by the live game (`GameSession`)
-and the editor's analytical scheduler (`src/editor/BlockSchedule.h`) — so the two
-can never compute different answers for the same chart. `BlockSchedule::Build`
+`ChartClip`'s own timing methods (declared alongside its data in `src/ChartFile.h`,
+implemented in `src/ChartTiming.cpp`) are the crux of the shared-core design:
+all note-onset and loop/advance-timing arithmetic is pure functions of their
+parameters plus `*this` (no wall-clock or other instance state) — non-static
+methods for anything that reads a single clip's own data (`NextOnsetAfter`,
+`ComputeClipPhaseSeconds`, ...), static methods for everything else
+(`ComputeLearnAdvanceSeconds`, `ValidateArrangementAlignment`, ...), used
+identically by the live game (`GameSession`) and the editor's analytical
+scheduler (`src/editor/BlockSchedule.h`) — so the two can never compute
+different answers for the same chart. `BlockSchedule::Build`
 precomputes an entire song's timeline assuming a perfect player, then
 `BlockSchedule::Seek` answers "what's true at second X" as a pure function —
 used to scrub the editor's timeline without actually playing anything forward.
@@ -86,7 +91,7 @@ the wall-clock beat/second the first clip of an unbroken run of
 continuously-sounding clips began at (`GameSession::m_arrangementOriginSeconds`,
 `BlockSchedule::Build`'s own local equivalent) — not absolute beat/second 0, and
 not a separate origin per clip. This rests on three chart-authoring assumptions,
-checked once at load time by `ChartTiming::ValidateArrangementAlignment` (never
+checked once at load time by `ChartClip::ValidateArrangementAlignment` (never
 at runtime, so a validated chart can't fail mid-song): every clip's length is a
 whole number of bars; clips that ever sound concurrently are the same length or
 whole multiples of each other; and a clip only ever joins an arrangement already
@@ -94,10 +99,11 @@ in progress on one of its own bar boundaries — restricted, for whatever joins
 right after a Learn section specifically, to "evenly divides that Learn clip's
 own length," since a real player's loop count there is unbounded and unknowable
 at load time (see the function's own doc comment for why). This is what lets a
-clip's very first onset use the exact same formula (`ChartTiming::
+clip's very first onset use the exact same formula (`ChartClip::
 NextOnsetAfter`) as a later reuse, with no separate "fresh start" case anywhere.
-Read `ChartTiming.h`'s doc comments before touching any of this timing code,
-they explain the *why* in detail and are treated as the canonical spec.
+Read `ChartClip`'s timing-method doc comments (`src/ChartFile.h`) before
+touching any of this timing code, they explain the *why* in detail and are
+treated as the canonical spec.
 
 ### Editor's document model is deliberately separate from the runtime model
 
@@ -158,15 +164,15 @@ To author a new generated song, keep everything above `main()` and replace only
 ## Working conventions specific to this codebase
 
 - Header comments in this codebase are long and treated as the authoritative
-  spec for *why*, not just *what* — e.g. `ChartFile.h`, `ChartTiming.h`,
-  `GameSession.h` explain subtle invariants (phase origins, Pass vs. DontFail
+  spec for *why*, not just *what* — e.g. `ChartFile.h` (including `ChartClip`'s
+  own timing methods), `GameSession.h` explain subtle invariants (phase origins, Pass vs. DontFail
   lock-in semantics, count-in catch-up) that aren't obvious from the code alone.
   Read the relevant header comment before modifying timing/judging logic, and
   keep new code held to the same standard when the invariant is genuinely
   non-obvious.
 - `RhythmCore` files must stay UI-agnostic (no HWND/HDC/input-device knowledge) —
-  that's what lets `GameSession`/`ChartTiming` be shared verbatim between the
-  game and the editor's analytical scheduler.
+  that's what lets `GameSession`/`ChartClip`'s timing methods be shared verbatim
+  between the game and the editor's analytical scheduler.
 - Ableton Live (the DAW used to author charts) numbers octaves one lower than the
   "middle C = C4" convention — `kLaneMidiPitches` in `LaneConfig.h` is chosen to
   match what Ableton's piano roll displays, not the general MIDI convention.

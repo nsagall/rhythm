@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cmath>
 
-#include "ChartTiming.h"
 #include "LaneConfig.h"
 
 namespace BlockSchedule
@@ -57,7 +56,7 @@ double WalkOnsetsForLockIn(double originBeat, const ChartClip& clip, const doubl
         }
         double beat = frontier[minIdx].beat;
         lockInBeat = beat;
-        frontier[minIdx].beat = ChartTiming::NextOnsetAfter(originBeat, beat, clip, frontier[minIdx].lane);
+        frontier[minIdx].beat = clip.NextOnsetAfter(originBeat, beat, frontier[minIdx].lane);
     }
     return lockInBeat;
 }
@@ -66,7 +65,7 @@ double WalkOnsetsForLockIn(double originBeat, const ChartClip& clip, const doubl
 // sections in order, mirroring GameSession::ClipInstance exactly - a clip's
 // own phase origin is no longer part of this (see arrangementOriginSeconds
 // in Build() itself - shared by every clip in the same continuously-
-// sounding group, per ChartTiming.h's own namespace comment), only its
+// sounding group, per ChartClip's own class comment), only its
 // playback state: a clip reused by a later section while still open from an
 // earlier one (nothing has stopped it since) does NOT restart or re-seek; it
 // just keeps going, and any lock-in-floor math that section computes uses
@@ -129,8 +128,8 @@ Schedule Build(const ChartSong& song, const std::unordered_map<const ChartClip*,
     // unlike the real game's StopAllExcept (which spares its own
     // already-playing clip) - schedule-equivalent regardless, since every
     // VoiceWindow this section's own clip had open closes and reopens at the
-    // same instant either way, and the alignment invariant (ChartTiming.h's
-    // namespace comment) guarantees re-establishing its origin right here
+    // same instant either way, and the alignment invariant (ChartClip's own
+    // class comment) guarantees re-establishing its origin right here
     // lands on the exact same phase a preserved one would have.
     auto stopAllVoices = [&](double atSeconds)
     {
@@ -238,8 +237,8 @@ Schedule Build(const ChartSong& song, const std::unordered_map<const ChartClip*,
                 entry.lockInSeconds = -1.0;
                 entry.loopSeconds = stemDuration;
 
-                ChartTiming::BreakAdvance advance =
-                    ChartTiming::ComputeBreakAdvance(originSeconds, t, stemDuration, section.loopCount, tFallSeconds);
+                ChartClip::BreakAdvance advance =
+                    ChartClip::ComputeBreakAdvance(originSeconds, t, stemDuration, section.loopCount, tFallSeconds);
                 entry.loopCount = advance.loopCount;
                 entry.endSeconds = advance.advanceSeconds;
 
@@ -274,11 +273,11 @@ Schedule Build(const ChartSong& song, const std::unordered_map<const ChartClip*,
 
                 // Covers both a clip's first-ever appearance and a later
                 // section reusing one already mid-groove in one formula -
-                // see ChartTiming::NextOnsetAfter's own comment for why.
+                // see ChartClip::NextOnsetAfter's own comment for why.
                 double anchors[kLaneCount];
                 for (int lane = 0; lane < kLaneCount; ++lane)
                 {
-                    anchors[lane] = ChartTiming::NextOnsetAfter(originBeat, afterBeat, *clip, lane);
+                    anchors[lane] = clip->NextOnsetAfter(originBeat, afterBeat, lane);
                 }
 
                 // Starts immediately and its own advance is scheduled right
@@ -311,7 +310,7 @@ Schedule Build(const ChartSong& song, const std::unordered_map<const ChartClip*,
                                    static_cast<int>(i));
                 double effectiveLoopStartSeconds = clipStates[clip].loopStartSeconds;
 
-                entry.endSeconds = ChartTiming::ComputeLearnAdvanceSeconds(
+                entry.endSeconds = ChartClip::ComputeLearnAdvanceSeconds(
                     originSeconds, t, effectiveLoopStartSeconds, stemDuration, section.loopCount, tFallSeconds);
 
                 // Mirrors GameSession::Update's own finishedSection
@@ -342,10 +341,10 @@ Schedule Build(const ChartSong& song, const std::unordered_map<const ChartClip*,
                 // GameSession::RegisterHit's own equivalent, reactive
                 // fix-up (there, referenceSeconds is "now" instead of this
                 // perfect player's own lockInSeconds) via
-                // ChartTiming::ExtendAdvanceForFallLeadTime - see its own
+                // ChartClip::ExtendAdvanceForFallLeadTime - see its own
                 // doc comment.
                 entry.endSeconds =
-                    ChartTiming::ExtendAdvanceForFallLeadTime(entry.endSeconds, lockInSeconds, stemDuration, tFallSeconds);
+                    ChartClip::ExtendAdvanceForFallLeadTime(entry.endSeconds, lockInSeconds, stemDuration, tFallSeconds);
 
                 // Informational only - the total number of passes spanning
                 // [audioStartSeconds, endSeconds), each exactly stemDuration
@@ -428,7 +427,7 @@ SeekResult Seek(const Schedule& schedule, double elapsedSeconds)
             // audio voice's absolute-time-aligned phase. But pass 1 is the
             // one exception: the real voice was phase-seeked to
             // fmod(audioStartSeconds - originSeconds, loopSeconds) when it
-            // started (see ChartTiming::ComputeClipPhaseSeconds/
+            // started (see ChartClip::ComputeClipPhaseSeconds/
             // GameSession::StartClipLoop), so its own first buffer-wrap -
             // and therefore the real end of pass 1 - lands
             // loopSeconds - startPhase real seconds later, not a full

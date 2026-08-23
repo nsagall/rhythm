@@ -76,7 +76,7 @@ std::vector<SceneNote> NoteLaneModel::NotesInRange(int lane, double originBeat, 
             double absoluteEnd = absoluteStart + note.durationBeats;
             // toBeat is exclusive: for the live-judged pass it's the
             // clip's own scheduled advance beat, always a whole-loop
-            // boundary from this clip's origin (ChartTiming::
+            // boundary from this clip's origin (ChartClip::
             // ComputeLearnAdvanceSeconds/ComputeBreakAdvance) - so a note
             // at local offset 0 has a bar-tiled candidate landing exactly
             // on toBeat, representing a *next* repetition that never

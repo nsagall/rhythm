@@ -41,7 +41,7 @@ private:
     // is the current arrangement's shared origin (GameSession::
     // CurrentClipOriginBeat/PreviewClipOriginBeat): the pattern repeats
     // every spanBeats starting from there, not from absolute beat 0,
-    // matching how GameSession itself judges these notes (ChartTiming::
+    // matching how GameSession itself judges these notes (ChartClip::
     // NextOnsetAfter). Each returned SceneNote
     // carries lane/startBeat/durationBeats only - state stays Normal and
     // clip stays null, since pure beat-tiling arithmetic has no way to
@@ -137,7 +137,7 @@ private:
     // real failure always overwrites whatever's here first.
     double m_dontFailFrozenProgress = 0.0;
     // -1.0 means "no freeze recorded yet" - never a real loop-start beat
-    // (ChartTiming beats are never negative), so it can't be mistaken for
+    // (chart beats are never negative), so it can't be mistaken for
     // one.
     double m_dontFailFrozenLoopStartBeat = -1.0;
 };

@@ -1,10 +1,7 @@
-#include "ChartTiming.h"
+#include "ChartFile.h"
 
 #include <algorithm>
 #include <cmath>
-
-namespace ChartTiming
-{
 
 namespace
 {
@@ -18,15 +15,15 @@ namespace
 constexpr double kClipLengthToleranceSeconds = 0.1;
 } // namespace
 
-double NextOnsetAfter(double originBeat, double afterBeat, const ChartClip& clip, int lane)
+double ChartClip::NextOnsetAfter(double originBeat, double afterBeat, int lane) const
 {
-    const std::vector<LaneNote>& notes = clip.laneNotes[lane];
+    const std::vector<LaneNote>& notes = laneNotes[lane];
     if (notes.empty())
     {
-        return afterBeat + clip.spanBeats;
+        return afterBeat + spanBeats;
     }
 
-    double span = clip.spanBeats;
+    double span = spanBeats;
     double localAfterBeat = afterBeat - originBeat;
     // The +1e-9 here (not just on the "candidate > localAfterBeat" check
     // below) matters: afterBeat is usually itself a previous call's own
@@ -57,7 +54,8 @@ double NextOnsetAfter(double originBeat, double afterBeat, const ChartClip& clip
     return originBeat + (barIndex + 1) * span + notes.front().startBeat;
 }
 
-double ComputeLoopFloorSeconds(double originSeconds, double loopStartSeconds, double stemDuration, int loopCount)
+double ChartClip::ComputeLoopFloorSeconds(double originSeconds, double loopStartSeconds, double stemDuration,
+                                           int loopCount)
 {
     if (stemDuration <= 0.0)
     {
@@ -68,21 +66,21 @@ double ComputeLoopFloorSeconds(double originSeconds, double loopStartSeconds, do
     return originSeconds + std::ceil(localLoopStart / stemDuration) * stemDuration + (minLoops - 1) * stemDuration;
 }
 
-void ExpandLaneNotesToFillClip(ChartClip& clip, double stemDurationSeconds, double bpm)
+void ChartClip::ExpandLaneNotesToFillClip(double stemDurationSeconds, double bpm)
 {
-    if (clip.spanBeats <= 0.0 || stemDurationSeconds <= 0.0)
+    if (spanBeats <= 0.0 || stemDurationSeconds <= 0.0)
     {
         return;
     }
 
     double secondsPerBeat = 60.0 / bpm;
     double clipBeats = stemDurationSeconds / secondsPerBeat;
-    if (clipBeats <= clip.spanBeats + 1e-6)
+    if (clipBeats <= spanBeats + 1e-6)
     {
         return;
     }
 
-    double originalSpan = clip.spanBeats;
+    double originalSpan = spanBeats;
     // Same tolerance ClipFitsOneLoop uses, in beats - a real stem's measured
     // duration essentially never lands exactly on a beat-derived value, so
     // "does this whole repeat fit" needs the same measurement-slop
@@ -91,12 +89,12 @@ void ExpandLaneNotesToFillClip(ChartClip& clip, double stemDurationSeconds, doub
     double toleranceBeats = kClipLengthToleranceSeconds / secondsPerBeat;
     for (int lane = 0; lane < kLaneCount; ++lane)
     {
-        if (clip.laneNotes[lane].empty())
+        if (laneNotes[lane].empty())
         {
             continue;
         }
 
-        std::vector<LaneNote> original = clip.laneNotes[lane];
+        std::vector<LaneNote> original = laneNotes[lane];
         std::vector<LaneNote> expanded;
         for (double repeatStart = 0.0; repeatStart < clipBeats - 1e-9; repeatStart += originalSpan)
         {
@@ -118,14 +116,15 @@ void ExpandLaneNotesToFillClip(ChartClip& clip, double stemDurationSeconds, doub
                 }
             }
         }
-        clip.laneNotes[lane] = std::move(expanded);
+        laneNotes[lane] = std::move(expanded);
     }
 
-    clip.spanBeats = clipBeats;
+    spanBeats = clipBeats;
 }
 
-double ComputeLearnAdvanceSeconds(double originSeconds, double sectionStartSeconds, double loopStartSeconds,
-                                   double stemDuration, int loopCount, double tFallSeconds)
+double ChartClip::ComputeLearnAdvanceSeconds(double originSeconds, double sectionStartSeconds,
+                                              double loopStartSeconds, double stemDuration, int loopCount,
+                                              double tFallSeconds)
 {
     if (stemDuration <= 0.0)
     {
@@ -155,16 +154,17 @@ double ComputeLearnAdvanceSeconds(double originSeconds, double sectionStartSecon
     return advanceSeconds;
 }
 
-bool ClipFitsOneLoop(const ChartClip& clip, double stemDurationSeconds, double bpm)
+bool ChartClip::ClipFitsOneLoop(double stemDurationSeconds, double bpm) const
 {
     double secondsPerBeat = 60.0 / bpm;
     double clipBeats = stemDurationSeconds / secondsPerBeat;
     double toleranceBeats = kClipLengthToleranceSeconds / secondsPerBeat;
-    return clipBeats >= clip.spanBeats - toleranceBeats;
+    return clipBeats >= spanBeats - toleranceBeats;
 }
 
-BreakAdvance ComputeBreakAdvance(double originSeconds, double loopStartSeconds, double stemDuration,
-                                  int requestedLoopCount, double tFallSeconds)
+ChartClip::BreakAdvance ChartClip::ComputeBreakAdvance(double originSeconds, double loopStartSeconds,
+                                                        double stemDuration, int requestedLoopCount,
+                                                        double tFallSeconds)
 {
     BreakAdvance result;
     result.loopCount = std::max(requestedLoopCount, 1);
@@ -185,8 +185,8 @@ BreakAdvance ComputeBreakAdvance(double originSeconds, double loopStartSeconds, 
     return result;
 }
 
-double ExtendAdvanceForFallLeadTime(double advanceSeconds, double referenceSeconds, double stemDuration,
-                                     double tFallSeconds)
+double ChartClip::ExtendAdvanceForFallLeadTime(double advanceSeconds, double referenceSeconds, double stemDuration,
+                                                double tFallSeconds)
 {
     if (stemDuration <= 0.0)
     {
@@ -199,13 +199,13 @@ double ExtendAdvanceForFallLeadTime(double advanceSeconds, double referenceSecon
     return advanceSeconds;
 }
 
-double ComputeClipPhaseSeconds(double originSeconds, double nowSeconds, const ChartClip& clip, double stemDuration,
-                                double bpm)
+double ChartClip::ComputeClipPhaseSeconds(double originSeconds, double nowSeconds, double stemDuration,
+                                           double bpm) const
 {
     double cycleDuration = stemDuration;
-    if (clip.hasMidi && clip.spanBeats > 0.0 && bpm > 0.0)
+    if (hasMidi && spanBeats > 0.0 && bpm > 0.0)
     {
-        cycleDuration = clip.spanBeats * (60.0 / bpm);
+        cycleDuration = spanBeats * (60.0 / bpm);
     }
     if (cycleDuration <= 0.0)
     {
@@ -220,8 +220,8 @@ double ComputeClipPhaseSeconds(double originSeconds, double nowSeconds, const Ch
     return phase;
 }
 
-std::vector<double> OnsetsInRange(double originBeat, double afterBeatExclusive, double uptoBeatInclusive,
-                                   const std::vector<LaneNote>& notes, double spanBeats)
+std::vector<double> ChartClip::OnsetsInRange(double originBeat, double afterBeatExclusive, double uptoBeatInclusive,
+                                              const std::vector<LaneNote>& notes, double spanBeats)
 {
     std::vector<double> result;
     if (notes.empty() || spanBeats <= 0.0 || uptoBeatInclusive <= afterBeatExclusive)
@@ -255,8 +255,8 @@ namespace
 {
 
 // Tracks the arrangement position ValidateArrangementAlignment needs while
-// walking a chart's sections in order - see the header's own comment for
-// what "exact" vs. the ambiguous fallback mean and why.
+// walking a chart's sections in order - see the class comment on ChartClip
+// for what "exact" vs. the ambiguous fallback mean and why.
 struct ArrangementWalkState
 {
     bool open = false;
@@ -268,9 +268,9 @@ struct ArrangementWalkState
 
 } // namespace
 
-bool ValidateArrangementAlignment(const ChartSong& song,
-                                   const std::unordered_map<const ChartClip*, ClipAlignmentInfo>& clipInfo,
-                                   std::vector<std::wstring>& outErrors)
+bool ChartClip::ValidateArrangementAlignment(const ChartSong& song,
+                                              const std::unordered_map<const ChartClip*, ClipAlignmentInfo>& clipInfo,
+                                              std::vector<std::wstring>& outErrors)
 {
     outErrors.clear();
     if (song.bpm <= 0.0 || song.beatsPerBar <= 0)
@@ -450,5 +450,3 @@ bool ValidateArrangementAlignment(const ChartSong& song,
 
     return outErrors.empty();
 }
-
-} // namespace ChartTiming

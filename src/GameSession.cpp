@@ -4,8 +4,6 @@
 #include <cmath>
 #include <cstdio>
 
-#include "ChartTiming.h"
-
 namespace
 {
 
@@ -100,7 +98,7 @@ double EasyModeMsToBeats(double ms, double bpm)
 // can only widen that gap further. Used by ApplyEasyModeTransform for both
 // its per-lane and cross-lane thinning passes. Returned indices are sorted
 // ascending (not in scan order), matching the ascending-by-startBeat order
-// callers elsewhere in this codebase (ChartTiming::NextOnsetAfter etc.)
+// callers elsewhere in this codebase (ChartClip::NextOnsetAfter etc.)
 // require of a lane's notes.
 std::vector<int> CircularGreedyThinIndices(const std::vector<double>& startBeats, double spanBeats,
                                             double minGapBeats)
@@ -185,9 +183,9 @@ bool GameSession::LoadChart(const std::wstring& chartFilePath, bool easyMode, st
     // spanBeats to its real audio length - ValidateArrangementAlignment
     // needs each clip's own AUTHORED bar-aligned length (ChartFile::Load's
     // AlignToBarBoundary output), not that widened one, to check other
-    // clips' lengths against - see ChartTiming::ClipAlignmentInfo's own
+    // clips' lengths against - see ChartClip::ClipAlignmentInfo's own
     // comment for why those are two different things.
-    std::unordered_map<const ChartClip*, ChartTiming::ClipAlignmentInfo> clipAlignmentInfo;
+    std::unordered_map<const ChartClip*, ChartClip::ClipAlignmentInfo> clipAlignmentInfo;
     for (ChartClip& clip : song.clips)
     {
         StemHandle handle = m_audioEngine.LoadStem(clip.wavFilePath);
@@ -219,9 +217,9 @@ bool GameSession::LoadChart(const std::wstring& chartFilePath, bool easyMode, st
             // against a moment the audio isn't actually at anymore. Not a
             // crash, just silently wrong, so it's rejected at load time
             // instead of shipped. Shared with the editor's analytical
-            // block scheduler (ChartTiming::ClipFitsOneLoop), so both
+            // block scheduler (ChartClip::ClipFitsOneLoop), so both
             // reject exactly the same charts.
-            if (!ChartTiming::ClipFitsOneLoop(clip, stemDuration, song.bpm))
+            if (!clip.ClipFitsOneLoop(stemDuration, song.bpm))
             {
                 double secondsPerBeat = 60.0 / song.bpm;
                 double clipBeats = stemDuration / secondsPerBeat;
@@ -230,17 +228,17 @@ bool GameSession::LoadChart(const std::wstring& chartFilePath, bool easyMode, st
                            std::to_wstring(clipBeats) + L" beats) - trim the MIDI pattern or use a longer audio stem";
                 return false;
             }
-            ChartTiming::ExpandLaneNotesToFillClip(clip, stemDuration, song.bpm);
+            clip.ExpandLaneNotesToFillClip(stemDuration, song.bpm);
         }
     }
 
-    // The whole-chart bar-alignment invariant ChartTiming.h's namespace
+    // The whole-chart bar-alignment invariant ChartClip's own class
     // comment describes - checked once here, with real stem durations, so a
     // chart that could only misbehave at runtime (or only for an unlucky
-    // player - see ChartTiming::ValidateArrangementAlignment's own comment)
+    // player - see ChartClip::ValidateArrangementAlignment's own comment)
     // is refused up front instead.
     std::vector<std::wstring> alignmentErrors;
-    if (!ChartTiming::ValidateArrangementAlignment(song, clipAlignmentInfo, alignmentErrors))
+    if (!ChartClip::ValidateArrangementAlignment(song, clipAlignmentInfo, alignmentErrors))
     {
         outError.clear();
         for (const std::wstring& error : alignmentErrors)
@@ -764,7 +762,7 @@ void GameSession::Update()
             // without locking in doesn't get abandoned - it hasn't proven
             // itself yet, so it just repeats: push the candidate advance
             // back by exactly one more full loop (mirrors
-            // ChartTiming::ComputeLearnAdvanceSeconds/ComputeBreakAdvance's
+            // ChartClip::ComputeLearnAdvanceSeconds/ComputeBreakAdvance's
             // own "extend by whole loops" logic, just applied reactively
             // here instead of decided once up front, since whether it's
             // needed at all depends on the player) and check again next
@@ -878,8 +876,8 @@ void GameSession::Update()
                     {
                         continue;
                     }
-                    for (double onsetBeat : ChartTiming::OnsetsInRange(originBeat, m_autoScoreCursorBeat[lane],
-                                                                         nowBeat, clip.laneNotes[lane], clip.spanBeats))
+                    for (double onsetBeat : ChartClip::OnsetsInRange(originBeat, m_autoScoreCursorBeat[lane],
+                                                                        nowBeat, clip.laneNotes[lane], clip.spanBeats))
                     {
                         RegisterHit(lane, /*wasPrecise=*/true);
                         RecordOnsetJudgement(onsetBeat, lane, JudgementResult::Hit, /*precise=*/true);
@@ -1151,7 +1149,7 @@ double GameSession::PreviewFirstOnsetBeatForLane(int lane) const
     // comment), so this is correct whether preview is joining fresh or
     // continuing an already-open groove - both cases want the first onset
     // at/after the instant this section actually begins.
-    return ChartTiming::NextOnsetAfter(originBeat, transitionBeat - 1e-6, preview, lane);
+    return preview.NextOnsetAfter(originBeat, transitionBeat - 1e-6, lane);
 }
 
 // See its own header comment.
@@ -1348,7 +1346,7 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
             // scheduled beat only an instant away, so the note lane's
             // preview lands it already at (or past) the judge line instead
             // of spawning at the top edge with its full travel time. See
-            // ChartTiming::ComputeBreakAdvance for the extended-loop-count
+            // ChartClip::ComputeBreakAdvance for the extended-loop-count
             // math (shared with the editor's analytical block scheduler).
             double secondsPerBeat = 60.0 / m_song.bpm;
             double tFallSeconds = kNoteFallBeats * secondsPerBeat;
@@ -1357,8 +1355,8 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
             double nowSeconds = m_clock.ElapsedSeconds();
             double originSeconds = EnsureArrangementOrigin(nowSeconds);
 
-            ChartTiming::BreakAdvance advance =
-                ChartTiming::ComputeBreakAdvance(originSeconds, nowSeconds, stemDuration, section.loopCount, tFallSeconds);
+            ChartClip::BreakAdvance advance =
+                ChartClip::ComputeBreakAdvance(originSeconds, nowSeconds, stemDuration, section.loopCount, tFallSeconds);
 
             // clip's own isPlaying may still be true here (left alone
             // above) - flip it false right before StartClipLoop so it still
@@ -1438,8 +1436,8 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
 
             // A single formula covers both a clip's first-ever appearance
             // and a later section reusing one already mid-groove: the
-            // chart-wide bar-alignment invariant (see ChartTiming.h's
-            // namespace comment, checked at LoadChart) guarantees
+            // chart-wide bar-alignment invariant (see ChartClip's own class
+            // comment, checked at LoadChart) guarantees
             // scheduledBeat always lands exactly on one of this clip's own
             // cycle boundaries from originBeat, so querying "next onset
             // after (scheduledBeat - epsilon)" already returns its own
@@ -1447,7 +1445,7 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
             for (int lane = 0; lane < kLaneCount; ++lane)
             {
                 m_currentInstance.SetNextExpectedBeat(
-                    lane, ChartTiming::NextOnsetAfter(originBeat, scheduledBeat - 1e-6, clip, lane));
+                    lane, clip.NextOnsetAfter(originBeat, scheduledBeat - 1e-6, lane));
             }
 
             // Starts immediately and schedules its own advance right away
@@ -1462,7 +1460,7 @@ void GameSession::BeginSection(int sectionIndex, double scheduledBeat)
 
             StartClipLoop(section.clipIndex, clip.initVolume);
             const ClipInstance& instance = m_clipInstances.at(&clip);
-            m_currentInstance.SchedulePendingAdvance(ChartTiming::ComputeLearnAdvanceSeconds(
+            m_currentInstance.SchedulePendingAdvance(ChartClip::ComputeLearnAdvanceSeconds(
                 originSeconds, nowSeconds, instance.loopStartSeconds, stemDuration, section.loopCount,
                 tFallSeconds));
 
@@ -1539,14 +1537,14 @@ void GameSession::RegisterHit(int lane, bool wasPrecise)
         // PendingAdvanceAtSeconds() is still the old, too-close value -
         // during which the note lane would already start showing the next
         // section's notes early, then visibly snap back the instant
-        // Update() finally corrects it. See ChartTiming::
+        // Update() finally corrects it. See ChartClip::
         // ComputeLearnAdvanceSeconds's own doc comment for why a candidate
         // advance is otherwise never revisited once scheduled.
         double now = m_clock.ElapsedSeconds();
         double secondsPerBeat = 60.0 / m_song.bpm;
         double tFallSeconds = kNoteFallBeats * secondsPerBeat;
         double stemDuration = m_audioEngine.GetStemDurationSeconds(m_stemHandles[section.clipIndex]);
-        double extendedAdvance = ChartTiming::ExtendAdvanceForFallLeadTime(m_currentInstance.PendingAdvanceAtSeconds(),
+        double extendedAdvance = ChartClip::ExtendAdvanceForFallLeadTime(m_currentInstance.PendingAdvanceAtSeconds(),
                                                                             now, stemDuration, tFallSeconds);
         if (extendedAdvance != m_currentInstance.PendingAdvanceAtSeconds())
         {
@@ -1606,14 +1604,14 @@ void GameSession::StartClipLoop(int clipIndex, double volume, int finiteLoopCoun
     // Background clips (and any other direct StartClipLoop call) rely on
     // this to establish it fresh, right here.
     double originSeconds = EnsureArrangementOrigin(nowSeconds);
-    // ChartTiming::ComputeClipPhaseSeconds, not a raw fmod against
+    // ChartClip::ComputeClipPhaseSeconds, not a raw fmod against
     // stemDuration - see its own doc comment for why: the audio needs to
     // phase-align to the judged notes' own beat grid (clip.spanBeats),
     // measured from the arrangement origin, not the audio file's own
     // measured length, or the two drift apart over many loops and a clip
     // reached late in a song can start audibly partway through (even near
     // the end of) its own pattern.
-    double phaseSeconds = ChartTiming::ComputeClipPhaseSeconds(originSeconds, nowSeconds, *clip, stemDuration, m_song.bpm);
+    double phaseSeconds = clip->ComputeClipPhaseSeconds(originSeconds, nowSeconds, stemDuration, m_song.bpm);
     m_audioEngine.StartLooping(handle, phaseSeconds, static_cast<float>(volume), finiteLoopCount);
     instance.isPlaying = true;
     instance.loopStartSeconds = nowSeconds;

@@ -98,7 +98,7 @@ public:
 
     // Moves lane's next-expected-note pointer forward to the next note
     // after it, on the clip's own persistent origin (originBeat) - see
-    // ChartTiming::NextOnsetAfter.
+    // ChartClip::NextOnsetAfter.
     void AdvanceExpectedNote(int lane, double originBeat, const ChartClip& clip);
 
     bool IsLaneHeld(int lane) const;

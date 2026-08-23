@@ -682,7 +682,7 @@ void EditorApp::RebuildBlockSchedule()
     // failure - skip it and keep the text-level errors already showing.
     // Only when text-level validation passed does this add anything new:
     // the audio-dependent checks ValidateDocument itself can't run
-    // (ClipFitsOneLoop, ChartTiming::ValidateArrangementAlignment) - both
+    // (ClipFitsOneLoop, ChartClip::ValidateArrangementAlignment) - both
     // "the real game would refuse to load this chart" checks, surfaced
     // here so the editor catches them before a save ever reaches that far.
     if (!m_currentErrors.empty())
@@ -790,7 +790,7 @@ void EditorApp::DoSave()
     // past a check that hadn't caught up yet. This is also the only path
     // that catches the audio-dependent checks EditorChartIO::SaveDocument's
     // own ValidateDocument call can't run on its own (ClipFitsOneLoop,
-    // ChartTiming::ValidateArrangementAlignment) - see RebuildBlockSchedule's
+    // ChartClip::ValidateArrangementAlignment) - see RebuildBlockSchedule's
     // own comment.
     EditorChartIO::ValidateDocument(m_doc, m_currentErrors);
     m_lastValidatedVersion = m_doc.docVersion;

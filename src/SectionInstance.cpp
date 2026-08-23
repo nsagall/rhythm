@@ -2,8 +2,6 @@
 
 #include <cmath>
 
-#include "ChartTiming.h"
-
 // Binds this instance to sectionIndex and mode; every other field starts at
 // its own "nothing has happened yet" default, except m_passing itself -
 // DontFail mode starts already passing (see the header's own comment).
@@ -52,7 +50,7 @@ void SectionInstance::AdvanceExpectedNote(int lane, double originBeat, const Cha
     {
         return;
     }
-    m_nextExpectedBeat[lane] = ChartTiming::NextOnsetAfter(originBeat, m_nextExpectedBeat[lane], clip, lane);
+    m_nextExpectedBeat[lane] = clip.NextOnsetAfter(originBeat, m_nextExpectedBeat[lane], lane);
 }
 
 bool SectionInstance::IsLaneHeld(int lane) const

@@ -40,7 +40,7 @@ enum class GamePhase
 //     see m_arrangementOriginSeconds. The section's first candidate
 //     advance is computed that same instant (loop_count full loops,
 //     floored the same way a break section's own wait is, via
-//     ChartTiming::ComputeLearnAdvanceSeconds). Hitting hits_required worth
+//     ChartClip::ComputeLearnAdvanceSeconds). Hitting hits_required worth
 //     of the shared streak starts the clip passing - IsPassing() flips
 //     true, its volume switches from init_volume to volume. In the default
 //     Pass mode (ChartClip::learnMode), that's permanent for the rest of
@@ -145,7 +145,7 @@ public:
     // there. A note's start-tolerance window is normally symmetric (see
     // OnPress), but the very first note of any section shares its onset
     // second with the section's own start instant (see
-    // ChartTiming::NextOnsetAfter) - before that instant, the
+    // ChartClip::NextOnsetAfter) - before that instant, the
     // section isn't current yet, so IsLaneJudgeable rejects the press
     // outright regardless of tolerance, silently discarding the early half
     // of that one note's window that every other note in the chart gets to
@@ -590,8 +590,8 @@ private:
     // instead of an arbitrary wall-clock duration.
     double CountInSeconds() const;
 
-    // NextOnsetAfter moved to ChartTiming.h (shared with the editor's
-    // analytical block scheduler) - see that header for its doc comment.
+    // NextOnsetAfter lives on ChartClip itself (shared with the editor's
+    // analytical block scheduler) - see its own doc comment there.
 
     // Returns the lane note whose phase-within-span matches
     // absoluteStartBeat's phase (measured relative to originBeat - the
@@ -629,7 +629,7 @@ private:
     // real stopping point too, just not a previewable one.
     int NextPersistentSectionAtOrAfter(int startIndex) const;
 
-    // ExpandLaneNotesToFillClip moved to ChartTiming.h (shared with the
+    // ExpandLaneNotesToFillClip lives on ChartClip itself (shared with the
     // editor's analytical block scheduler).
 
     // When easy mode is on, simplifies clip's MIDI-derived pattern before
@@ -667,7 +667,7 @@ private:
     // produces, so it never needs to know easy mode exists.
     static void ApplyEasyModeTransform(ChartClip& clip, double bpm);
 
-    // ComputeLoopFloorSeconds moved to ChartTiming.h (shared with the
+    // ComputeLoopFloorSeconds lives on ChartClip itself (shared with the
     // editor's analytical block scheduler).
 
     // Records a judgement for a specific lane note, for OnsetJudgement() to
@@ -731,13 +731,13 @@ private:
 
     // The current arrangement's shared phase reference - the wall-clock
     // second the first clip of this unbroken run of continuously-sounding
-    // clips began at (see EnsureArrangementOrigin). Every ChartTiming call
-    // (NextOnsetAfter, ComputeClipPhaseSeconds, ComputeLearnAdvanceSeconds,
+    // clips began at (see EnsureArrangementOrigin). Every ChartClip timing
+    // method (NextOnsetAfter, ComputeClipPhaseSeconds, ComputeLearnAdvanceSeconds,
     // ComputeBreakAdvance) uses this, never absolute beat/second 0 - see
-    // ChartTiming.h's own namespace comment for why every clip that ever
+    // ChartClip's own class comment for why every clip that ever
     // sounds together with another lands on one of its own bar boundaries
     // from here, chart-authoring assumptions ChartFile::Load/GameSession::
-    // LoadChart validate up front (ChartTiming::ValidateArrangementAlignment)
+    // LoadChart validate up front (ChartClip::ValidateArrangementAlignment)
     // so this can never need to special-case an unaligned join at runtime.
     // m_arrangementOriginValid is false whenever nothing is currently
     // playing - Start()/Stop()/a Reset section/a Break section that

@@ -287,7 +287,7 @@ struct AllpassFilter
 // second pass's output, so the tail has already settled into its loop-
 // steady-state by the time playback actually starts - the returned buffer
 // is exactly dry.size() samples (no trailing tail appended), which matters
-// because every clip's duration is load-bearing: ChartTiming's loop/advance
+// because every clip's duration is load-bearing: ChartClip's loop/advance
 // math assumes a clip's audio length exactly matches its authored beat
 // length, so we can't just bolt a decay tail onto the end.
 std::vector<double> ApplyLoopingReverb(const std::vector<double>& dry, double wetSend, double roomSize)

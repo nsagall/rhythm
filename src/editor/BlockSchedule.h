@@ -12,8 +12,8 @@
 // of direction: seeking backwards to an arbitrary point is exactly as
 // correct as playing forward to it, since Seek() is a pure function of the
 // precomputed Schedule and the requested position. All timing math here
-// delegates to ChartTiming (src/ChartTiming.h), the same functions
-// GameSession itself uses for live play, so the two can never compute
+// delegates to ChartClip's own timing methods (src/ChartFile.h), the same
+// functions GameSession itself uses for live play, so the two can never compute
 // different answers for the same chart.
 //
 // Every ChartClip* below (Entry::clip, VoiceWindow::clip, ActiveVoice::clip)
@@ -118,7 +118,7 @@ struct Schedule
 // onset" is a precise restatement of the real rule). song's clips must
 // already carry real, AudioEngine-measured stem durations in
 // stemDurationsByClip (keyed by each clip's own address in song.clips) and
-// must already be ChartTiming::ExpandLaneNotesToFillClip'd using those
+// must already be ChartClip::ExpandLaneNotesToFillClip'd using those
 // durations - Build() does no audio I/O and no expansion itself, only the
 // timing arithmetic (see src/editor/BlockPlayer.cpp for how a
 // fully-resolved song is obtained).

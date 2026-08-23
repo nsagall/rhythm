@@ -33,7 +33,7 @@ public:
     bool PrepareStems(const EditorDocument& doc, std::wstring& outError);
 
     // Re-resolves doc via EditorChartIO::ValidateDocument (getting a real
-    // ChartSong), applies ChartTiming::ExpandLaneNotesToFillClip per clip
+    // ChartSong), applies ChartClip::ExpandLaneNotesToFillClip per clip
     // using the stem durations PrepareStems/EnsureStemsLoaded already
     // recorded, and rebuilds the schedule via BlockSchedule::Build. Calls
     // EnsureStemsLoaded first, so a clip added since the last full
