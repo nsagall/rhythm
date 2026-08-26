@@ -10,7 +10,7 @@
 
 // Standalone diagnostic (not part of the normal build): verifies the
 // DontFail hits-meter/note-glow visual changes -
-//   1. A DontFail clip's own ClipInstance::passing never goes true (so its
+//   1. A DontFail clip's own ClipPlaythrough::passing never goes true (so its
 //      notes never draw the green "passing" glow - see NoteLaneModel::
 //      UpdateClipInstances's own comment).
 //   2. scene.showHitsMeter stays true for the whole DontFail section,
@@ -61,10 +61,10 @@ struct PerfectPlayer
         {
             return;
         }
-        double secondsPerBeat = 60.0 / session.Song().bpm;
+        double secondsPerBeat = 60.0 / session.Song().Bpm();
         for (int lane = 0; lane < c_LaneCount; ++lane)
         {
-            if (!lanesToPlay[lane] || clip->laneNotes[lane].empty() || heldByUs[lane])
+            if (!lanesToPlay[lane] || clip->LaneNotes(lane).empty() || heldByUs[lane])
             {
                 continue;
             }
@@ -172,7 +172,7 @@ int main(int argc, char** argv)
     double progressJustBeforeFail = -1.0;
     double progressAfterJump = -1.0;
     double spanBeats = 0.0;
-    double bpm = session.Song().bpm;
+    double bpm = session.Song().Bpm();
 
     bool freezeHeld = true;    // stays true unless we observe progress changing while failing
     bool jumpObserved = false; // progress rose noticeably the instant it re-passed
@@ -186,14 +186,14 @@ int main(int argc, char** argv)
 
         const ChartClip* clip = session.CurrentClip();
         bool inDontFail = clip && session.CurrentSectionKind() == SectionKind::Learn &&
-                           clip->learnMode == LearnMode::DontFail;
+                           clip->Mode() == LearnMode::DontFail;
 
         if (inDontFail && !reachedDontFail)
         {
             reachedDontFail = true;
-            spanBeats = clip->spanBeats;
+            spanBeats = clip->SpanBeats();
             printf("[t=%.3fs] entered DontFail clip (spanBeats=%.3f, hitsRequired=%d)\n",
-                   session.Clock().ElapsedSeconds(), spanBeats, clip->hitsRequired);
+                   session.Clock().ElapsedSeconds(), spanBeats, clip->HitsRequired());
         }
 
         NoteLaneScene scene = model.BuildScene(session);

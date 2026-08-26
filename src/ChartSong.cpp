@@ -206,9 +206,9 @@ bool ChartSong::Load(const std::wstring& chartFilePath, std::vector<std::wstring
     auto clipContext = [&]()
     {
         std::wstring context = L"clip #" + std::to_wstring(clipOrdinal + 1);
-        if (!currentClip.name.empty())
+        if (!currentClip.m_name.empty())
         {
-            context += L" (" + currentClip.name + L")";
+            context += L" (" + currentClip.m_name + L")";
         }
         return context;
     };
@@ -232,12 +232,12 @@ bool ChartSong::Load(const std::wstring& chartFilePath, std::vector<std::wstring
         std::wstring context = clipContext();
         ++clipOrdinal;
 
-        if (currentClip.displayName.empty())
+        if (currentClip.m_displayName.empty())
         {
             outErrors.push_back(context + L": missing required field 'display_name'");
         }
 
-        if (currentClip.name.empty())
+        if (currentClip.m_name.empty())
         {
             // wavFilePath/midiFilePath are both derived from the single
             // `name` field together, so an empty name means it was never
@@ -246,34 +246,34 @@ bool ChartSong::Load(const std::wstring& chartFilePath, std::vector<std::wstring
         }
         else
         {
-            for (const ChartClip& existing : song.clips)
+            for (const ChartClip& existing : song.m_clips)
             {
-                if (existing.name == currentClip.name)
+                if (existing.m_name == currentClip.m_name)
                 {
-                    outErrors.push_back(context + L": a clip named '" + currentClip.name + L"' was already declared");
+                    outErrors.push_back(context + L": a clip named '" + currentClip.m_name + L"' was already declared");
                     break;
                 }
             }
 
-            std::ifstream stemTest(currentClip.wavFilePath.c_str(), std::ios::binary);
+            std::ifstream stemTest(currentClip.m_wavFilePath.c_str(), std::ios::binary);
             if (!stemTest)
             {
-                outErrors.push_back(context + L": file '" + currentClip.wavFilePath + L"' does not exist");
+                outErrors.push_back(context + L": file '" + currentClip.m_wavFilePath + L"' does not exist");
             }
 
-            std::ifstream midiTest(currentClip.midiFilePath.c_str(), std::ios::binary);
+            std::ifstream midiTest(currentClip.m_midiFilePath.c_str(), std::ios::binary);
             if (!midiTest)
             {
                 // No .mid file next to the .wav - fine, this clip just
                 // can't be used in a `learn` section (checked in
                 // flushSection once its sections are known).
-                currentClip.hasMidi = false;
+                currentClip.m_hasMidi = false;
             }
             else
             {
                 MidiLaneData midiData;
                 std::wstring midiError;
-                if (!ChartMidi::LoadLaneNotes(currentClip.midiFilePath, midiData, midiError))
+                if (!ChartMidi::LoadLaneNotes(currentClip.m_midiFilePath, midiData, midiError))
                 {
                     outErrors.push_back(context + L": " + midiError);
                 }
@@ -281,24 +281,24 @@ bool ChartSong::Load(const std::wstring& chartFilePath, std::vector<std::wstring
                 {
                     for (int lane = 0; lane < c_LaneCount; ++lane)
                     {
-                        currentClip.laneNotes[lane] = std::move(midiData.lanes[lane]);
+                        currentClip.m_laneNotes[lane] = std::move(midiData.lanes[lane]);
                     }
-                    currentClip.spanBeats = AlignToBarBoundary(midiData.totalBeats, song.beatsPerBar);
-                    currentClip.hasMidi = true;
+                    currentClip.m_spanBeats = AlignToBarBoundary(midiData.totalBeats, song.m_beatsPerBar);
+                    currentClip.m_hasMidi = true;
                 }
             }
         }
 
         if (!startToleranceProvided)
         {
-            currentClip.startToleranceMs = song.startToleranceMs;
+            currentClip.m_startToleranceMs = song.m_startToleranceMs;
         }
         if (!releaseToleranceProvided)
         {
-            currentClip.releaseToleranceMs = song.releaseToleranceMs;
+            currentClip.m_releaseToleranceMs = song.m_releaseToleranceMs;
         }
 
-        song.clips.push_back(currentClip);
+        song.m_clips.push_back(currentClip);
         currentClip = ChartClip{};
         haveClip = false;
         startToleranceProvided = false;
@@ -347,9 +347,9 @@ bool ChartSong::Load(const std::wstring& chartFilePath, std::vector<std::wstring
         if (clipGiven)
         {
             int foundIndex = -1;
-            for (size_t i = 0; i < song.clips.size(); ++i)
+            for (size_t i = 0; i < song.m_clips.size(); ++i)
             {
-                if (song.clips[i].name == currentClipNameRaw)
+                if (song.m_clips[i].m_name == currentClipNameRaw)
                 {
                     foundIndex = static_cast<int>(i);
                     break;
@@ -362,7 +362,7 @@ bool ChartSong::Load(const std::wstring& chartFilePath, std::vector<std::wstring
             else
             {
                 currentSectionData.clipIndex = foundIndex;
-                if (currentSectionData.kind == SectionKind::Learn && !song.clips[foundIndex].hasMidi)
+                if (currentSectionData.kind == SectionKind::Learn && !song.m_clips[foundIndex].m_hasMidi)
                 {
                     outErrors.push_back(context + L": clip '" + currentClipNameRaw +
                                          L"' has no .mid file and can't be used in a [learn] section");
@@ -374,7 +374,7 @@ bool ChartSong::Load(const std::wstring& chartFilePath, std::vector<std::wstring
             currentSectionData.clipIndex = -1;
         }
 
-        song.sections.push_back(currentSectionData);
+        song.m_sections.push_back(currentSectionData);
         currentSectionData = ChartSection{};
         haveSection = false;
         clipNameProvided = false;
@@ -450,7 +450,7 @@ bool ChartSong::Load(const std::wstring& chartFilePath, std::vector<std::wstring
         {
             if (key == L"title")
             {
-                song.title = value;
+                song.m_title = value;
             }
             else if (key == L"bpm")
             {
@@ -465,7 +465,7 @@ bool ChartSong::Load(const std::wstring& chartFilePath, std::vector<std::wstring
                 }
                 else
                 {
-                    song.bpm = bpm;
+                    song.m_bpm = bpm;
                 }
             }
             else if (key == L"time_signature")
@@ -479,8 +479,8 @@ bool ChartSong::Load(const std::wstring& chartFilePath, std::vector<std::wstring
                 }
                 else
                 {
-                    song.beatsPerBar = beatsPerBar;
-                    song.timeSignatureDenominator = denominator;
+                    song.m_beatsPerBar = beatsPerBar;
+                    song.m_timeSignatureDenominator = denominator;
                 }
             }
             else if (key == L"start_tolerance_ms" || key == L"release_tolerance_ms")
@@ -496,11 +496,11 @@ bool ChartSong::Load(const std::wstring& chartFilePath, std::vector<std::wstring
                 }
                 else if (key == L"start_tolerance_ms")
                 {
-                    song.startToleranceMs = tolerance;
+                    song.m_startToleranceMs = tolerance;
                 }
                 else
                 {
-                    song.releaseToleranceMs = tolerance;
+                    song.m_releaseToleranceMs = tolerance;
                 }
             }
             else
@@ -519,7 +519,7 @@ bool ChartSong::Load(const std::wstring& chartFilePath, std::vector<std::wstring
                 }
                 else
                 {
-                    currentClip.displayName = value;
+                    currentClip.m_displayName = value;
                 }
             }
             else if (key == L"name")
@@ -530,9 +530,9 @@ bool ChartSong::Load(const std::wstring& chartFilePath, std::vector<std::wstring
                 }
                 else
                 {
-                    currentClip.name = value;
-                    currentClip.wavFilePath = chartDir + value + L".wav";
-                    currentClip.midiFilePath = chartDir + value + L".mid";
+                    currentClip.m_name = value;
+                    currentClip.m_wavFilePath = chartDir + value + L".wav";
+                    currentClip.m_midiFilePath = chartDir + value + L".mid";
                 }
             }
             else if (key == L"hits_required")
@@ -548,7 +548,7 @@ bool ChartSong::Load(const std::wstring& chartFilePath, std::vector<std::wstring
                 }
                 else
                 {
-                    currentClip.hitsRequired = hits;
+                    currentClip.m_hitsRequired = hits;
                 }
             }
             else if (key == L"start_tolerance_ms" || key == L"release_tolerance_ms")
@@ -564,12 +564,12 @@ bool ChartSong::Load(const std::wstring& chartFilePath, std::vector<std::wstring
                 }
                 else if (key == L"start_tolerance_ms")
                 {
-                    currentClip.startToleranceMs = tolerance;
+                    currentClip.m_startToleranceMs = tolerance;
                     startToleranceProvided = true;
                 }
                 else
                 {
-                    currentClip.releaseToleranceMs = tolerance;
+                    currentClip.m_releaseToleranceMs = tolerance;
                     releaseToleranceProvided = true;
                 }
             }
@@ -586,22 +586,22 @@ bool ChartSong::Load(const std::wstring& chartFilePath, std::vector<std::wstring
                 }
                 else if (key == L"init_volume")
                 {
-                    currentClip.initVolume = volume;
+                    currentClip.m_initVolume = volume;
                 }
                 else
                 {
-                    currentClip.volume = volume;
+                    currentClip.m_volume = volume;
                 }
             }
             else if (key == L"learn_mode")
             {
                 if (value == L"pass")
                 {
-                    currentClip.learnMode = LearnMode::Pass;
+                    currentClip.m_learnMode = LearnMode::Pass;
                 }
                 else if (value == L"dontfail")
                 {
-                    currentClip.learnMode = LearnMode::DontFail;
+                    currentClip.m_learnMode = LearnMode::DontFail;
                 }
                 else
                 {
@@ -656,11 +656,11 @@ bool ChartSong::Load(const std::wstring& chartFilePath, std::vector<std::wstring
     {
         outErrors.push_back(L"Chart is missing a required [song] section");
     }
-    else if (song.bpm <= 0.0)
+    else if (song.m_bpm <= 0.0)
     {
         outErrors.push_back(L"[song] section is missing its required field 'bpm'");
     }
-    if (song.sections.empty())
+    if (song.m_sections.empty())
     {
         outErrors.push_back(L"Chart must declare at least one [learn], [break], [reset], or [background] block");
     }

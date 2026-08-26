@@ -35,7 +35,7 @@ double WalkOnsetsForLockIn(double originBeat, const ChartClip& clip, const doubl
     std::vector<LaneFrontier> frontier;
     for (int lane = 0; lane < c_LaneCount; ++lane)
     {
-        if (!clip.laneNotes[lane].empty())
+        if (!clip.LaneNotes(lane).empty())
         {
             frontier.push_back({lane, anchors[lane]});
         }
@@ -61,43 +61,28 @@ double WalkOnsetsForLockIn(double originBeat, const ChartClip& clip, const doubl
     return lockInBeat;
 }
 
-// Everything Build() needs to track per clip while walking the song's
-// sections in order, mirroring GameSession::ClipInstance exactly - a clip's
-// own phase origin is no longer part of this (see arrangementOriginSeconds
-// in Build() itself - shared by every clip in the same continuously-
-// sounding group, per ChartClip's own class comment), only its
-// playback state: a clip reused by a later section while still open from an
-// earlier one (nothing has stopped it since) does NOT restart or re-seek; it
-// just keeps going, and any lock-in-floor math that section computes uses
-// the ORIGINAL start time, not its own. voiceIndex == -1 means "not
-// currently open" - kept as a plain index into schedule.voices (not a
-// pointer) since that vector is still being push_back'd to while Build()
-// runs, so a pointer into it would be unsafe until construction finishes;
-// this never escapes Build(), unlike every ChartClip* elsewhere here.
-struct ClipBuildState
-{
-    int voiceIndex = -1;
-    double loopStartSeconds = -1.0;
-};
-
 } // namespace
 
 Schedule Build(const ChartSong& song, const std::unordered_map<const ChartClip*, double>& stemDurationsByClip)
 {
     Schedule schedule;
-    if (song.bpm <= 0.0)
+    if (song.Bpm() <= 0.0)
     {
         return schedule;
     }
 
-    double secondsPerBeat = 60.0 / song.bpm;
+    double secondsPerBeat = 60.0 / song.Bpm();
     double tFallSeconds = c_NoteFallBeats * secondsPerBeat;
 
     double t = 0.0;
     const ChartClip* queuedBackgroundClip = nullptr;
     int queuedBackgroundSectionIndex = -1;
 
-    std::unordered_map<const ChartClip*, ClipBuildState> clipStates;
+    std::unordered_map<const ChartClip*, ClipInstance> clipInstances;
+    // BlockSchedule-only bookkeeping: which schedule.voices entry is this clip's currently-open one
+    // (if any) - kept as a plain index, not a pointer, since that vector is still being push_back'd
+    // to while Build() runs, so a pointer into it would be unsafe until construction finishes.
+    std::unordered_map<const ChartClip*, int> voiceIndexByClip;
 
     // The current arrangement's shared phase reference - mirrors
     // GameSession::m_arrangementOriginSeconds exactly, including when it's
@@ -140,10 +125,9 @@ Schedule Build(const ChartSong& song, const std::unordered_map<const ChartClip*,
                 window.stopSeconds = atSeconds;
             }
         }
-        for (auto& entry : clipStates)
+        for (auto& entry : clipInstances)
         {
-            entry.second.voiceIndex = -1;
-            entry.second.loopStartSeconds = -1.0;
+            entry.second.MarkStopped();
         }
         arrangementOriginValid = false;
     };
@@ -154,17 +138,21 @@ Schedule Build(const ChartSong& song, const std::unordered_map<const ChartClip*,
     // Establishes the arrangement origin if nothing else has already,
     // mirroring StartClipLoop's own safety-net call, so a Background voice
     // (which never goes through Learn/Break's own explicit
-    // pre-establishment) still gets one. Returns true only when a new
-    // VoiceWindow was actually opened.
+    // pre-establishment) still gets one. Returns the (possibly just-opened)
+    // instance either way.
     auto startVoiceIfNeeded = [&](const ChartClip* clip, double atSeconds, double volumeBeforeLockIn,
-                                   double volumeAfterLockIn, double lockInSecondsForThisStart, int sectionIndex)
+                                   double volumeAfterLockIn, double lockInSecondsForThisStart,
+                                   int sectionIndex) -> ClipInstance&
     {
-        ClipBuildState& state = clipStates[clip];
-        if (state.voiceIndex >= 0)
+        ClipInstance& instance = clipInstances[clip];
+        if (instance.IsPlaying())
         {
-            return false;
+            return instance;
         }
         double originSeconds = establishArrangementOrigin(atSeconds);
+        instance.SetContext(*clip, originSeconds, stemDurationsByClip.at(clip));
+        instance.MarkStarted(atSeconds);
+
         VoiceWindow window;
         window.sectionIndex = sectionIndex;
         window.clip = clip;
@@ -173,28 +161,27 @@ Schedule Build(const ChartSong& song, const std::unordered_map<const ChartClip*,
         window.volumeBeforeLockIn = volumeBeforeLockIn;
         window.volumeAfterLockIn = volumeAfterLockIn;
         window.lockInSeconds = lockInSecondsForThisStart;
-        window.originSeconds = originSeconds;
+        window.originSeconds = instance.OriginSeconds();
         schedule.voices.push_back(window);
-        state.voiceIndex = static_cast<int>(schedule.voices.size()) - 1;
-        state.loopStartSeconds = atSeconds;
-        return true;
+        voiceIndexByClip[clip] = static_cast<int>(schedule.voices.size()) - 1;
+        return instance;
     };
 
-    for (size_t i = 0; i < song.sections.size(); ++i)
+    for (size_t i = 0; i < song.Sections().size(); ++i)
     {
-        const ChartSection& section = song.sections[i];
+        const ChartSection& section = song.Sections()[i];
         // The one unavoidable index resolution per section: converting the
         // immutable ChartSection's own file-format reference into a real
         // pointer, used for everything from here on instead of the int.
         const ChartClip* clip =
-            section.clipIndex >= 0 ? &song.clips[static_cast<size_t>(section.clipIndex)] : nullptr;
+            section.clipIndex >= 0 ? &song.Clips()[static_cast<size_t>(section.clipIndex)] : nullptr;
 
         // "The next section begins" is exactly this point - realize
         // whatever the previous section (if it was Background) queued,
         // mirroring GameSession::BeginSection's own top-of-function check.
         if (queuedBackgroundClip != nullptr)
         {
-            startVoiceIfNeeded(queuedBackgroundClip, t, queuedBackgroundClip->volume, queuedBackgroundClip->volume,
+            startVoiceIfNeeded(queuedBackgroundClip, t, queuedBackgroundClip->Volume(), queuedBackgroundClip->Volume(),
                                 -1.0, queuedBackgroundSectionIndex);
             queuedBackgroundClip = nullptr;
         }
@@ -218,41 +205,35 @@ Schedule Build(const ChartSong& song, const std::unordered_map<const ChartClip*,
                 // game's equivalent (StopAllExcept) skips its own clip.
                 stopAllVoices(t);
 
-                double stemDuration = stemDurationsByClip.at(clip);
-
-                // stopAllVoices() just invalidated the arrangement origin
-                // unconditionally, so this always (re)establishes it fresh,
-                // right at t - startVoiceIfNeeded's own establishment
-                // (moments later) is then just a no-op confirming the same
-                // value.
-                double originSeconds = establishArrangementOrigin(t);
-
                 Entry entry;
                 entry.sectionIndex = static_cast<int>(i);
                 entry.kind = SectionKind::Break;
                 entry.clip = clip;
                 entry.sectionStartSeconds = t;
                 entry.audioStartSeconds = t;
-                entry.originSeconds = originSeconds;
                 entry.lockInSeconds = -1.0;
-                entry.loopSeconds = stemDuration;
-
-                ChartClip::BreakAdvance advance =
-                    ChartClip::ComputeBreakAdvance(originSeconds, t, stemDuration, section.loopCount, tFallSeconds);
-                entry.loopCount = advance.loopCount;
-                entry.endSeconds = advance.advanceSeconds;
 
                 // stopAllVoices() just cleared every voice, so this always
                 // opens fresh (matches the real StartClipLoop always
-                // actually (re)starting a break's clip, phase-seeked at t).
-                startVoiceIfNeeded(clip, t, clip->volume, clip->volume, -1.0, static_cast<int>(i));
+                // actually (re)starting a break's clip, phase-seeked at t) -
+                // and establishes the arrangement origin fresh, right at t,
+                // since stopAllVoices() just invalidated it unconditionally.
+                ClipInstance& instance = startVoiceIfNeeded(clip, t, clip->Volume(), clip->Volume(), -1.0,
+                                                             static_cast<int>(i));
+                entry.originSeconds = instance.OriginSeconds();
+                entry.loopSeconds = instance.StemDurationSeconds();
+
+                ChartClip::BreakAdvance advance = instance.ComputeBreakAdvance(t, section.loopCount, tFallSeconds);
+                entry.loopCount = advance.loopCount;
+                entry.endSeconds = advance.advanceSeconds;
+
                 // Unlike Learn/Background, a break clip self-stops once its
                 // own loop_count/c_NoteFallBeats-extended duration elapses
                 // (GameSession's finishedSection handling calls
                 // StopClipLoop for a finished Break specifically).
-                int voiceIdx = clipStates[clip].voiceIndex;
+                int voiceIdx = voiceIndexByClip.at(clip);
                 schedule.voices[static_cast<size_t>(voiceIdx)].stopSeconds = entry.endSeconds;
-                clipStates[clip].voiceIndex = -1;
+                instance.MarkStopped();
 
                 t = entry.endSeconds;
                 schedule.entries.push_back(entry);
@@ -261,14 +242,15 @@ Schedule Build(const ChartSong& song, const std::unordered_map<const ChartClip*,
 
             case SectionKind::Learn:
             {
-                double stemDuration = stemDurationsByClip.at(clip);
                 double afterBeat = t / secondsPerBeat - 1e-6;
 
                 // Established here, ahead of the anchor computation below,
                 // which needs it right away - startVoiceIfNeeded's own
                 // establishment (moments later) is then just a no-op
                 // confirming the same value.
+                ClipInstance& instance = clipInstances[clip];
                 double originSeconds = establishArrangementOrigin(t);
+                instance.SetContext(*clip, originSeconds, stemDurationsByClip.at(clip));
                 double originBeat = originSeconds / secondsPerBeat;
 
                 // Covers both a clip's first-ever appearance and a later
@@ -277,7 +259,7 @@ Schedule Build(const ChartSong& song, const std::unordered_map<const ChartClip*,
                 double anchors[c_LaneCount];
                 for (int lane = 0; lane < c_LaneCount; ++lane)
                 {
-                    anchors[lane] = clip->NextOnsetAfter(originBeat, afterBeat, lane);
+                    anchors[lane] = instance.NextOnsetAfter(song.Bpm(), afterBeat, lane);
                 }
 
                 // Starts immediately and its own advance is scheduled right
@@ -285,7 +267,7 @@ Schedule Build(const ChartSong& song, const std::unordered_map<const ChartClip*,
                 // GameSession::BeginSection's Learn case exactly, which no
                 // longer waits for any hits_required-th onset at all.
                 double audioStartSeconds = t;
-                double lockInBeat = WalkOnsetsForLockIn(originBeat, *clip, anchors, clip->hitsRequired, afterBeat);
+                double lockInBeat = WalkOnsetsForLockIn(originBeat, *clip, anchors, clip->HitsRequired(), afterBeat);
                 double lockInSeconds = lockInBeat * secondsPerBeat;
 
                 Entry entry;
@@ -294,24 +276,19 @@ Schedule Build(const ChartSong& song, const std::unordered_map<const ChartClip*,
                 entry.clip = clip;
                 entry.sectionStartSeconds = t;
                 entry.audioStartSeconds = audioStartSeconds;
-                entry.originSeconds = originSeconds;
+                entry.originSeconds = instance.OriginSeconds();
                 entry.lockInSeconds = lockInSeconds;
-                entry.loopSeconds = stemDuration;
+                entry.loopSeconds = instance.StemDurationSeconds();
 
-                // If this clip is already playing (still open from an
-                // earlier, un-stopped section), startVoiceIfNeeded is a
-                // no-op and loopStartSeconds keeps its ORIGINAL value -
-                // exactly mirroring how the real StartClipLoop's guard
-                // leaves ClipInstance::loopStartSeconds untouched in that
-                // case, so this section's own advance floor is computed
-                // relative to when the clip truly started, not this
-                // section's own start.
-                startVoiceIfNeeded(clip, audioStartSeconds, clip->initVolume, clip->volume, lockInSeconds,
+                // A Learn section always (re)starts its own clip fresh -
+                // ValidateArrangementAlignment rejects any chart where it
+                // would instead join a clip still open from an earlier,
+                // un-stopped section - so startVoiceIfNeeded here always
+                // actually starts a voice, never finds one already playing.
+                startVoiceIfNeeded(clip, audioStartSeconds, clip->InitVolume(), clip->Volume(), lockInSeconds,
                                    static_cast<int>(i));
-                double effectiveLoopStartSeconds = clipStates[clip].loopStartSeconds;
 
-                entry.endSeconds = ChartClip::ComputeLearnAdvanceSeconds(
-                    originSeconds, t, effectiveLoopStartSeconds, stemDuration, section.loopCount, tFallSeconds);
+                entry.endSeconds = instance.ComputeLearnAdvanceSeconds(t, section.loopCount, tFallSeconds);
 
                 // Mirrors GameSession::Update's own finishedSection
                 // handling: a learn section that hasn't locked in by its
@@ -343,8 +320,7 @@ Schedule Build(const ChartSong& song, const std::unordered_map<const ChartClip*,
                 // perfect player's own lockInSeconds) via
                 // ChartClip::ExtendAdvanceForFallLeadTime - see its own
                 // doc comment.
-                entry.endSeconds =
-                    ChartClip::ExtendAdvanceForFallLeadTime(entry.endSeconds, lockInSeconds, stemDuration, tFallSeconds);
+                entry.endSeconds = instance.ExtendAdvanceForFallLeadTime(entry.endSeconds, lockInSeconds, tFallSeconds);
 
                 // Informational only - the total number of passes spanning
                 // [audioStartSeconds, endSeconds), each exactly stemDuration
@@ -354,12 +330,12 @@ Schedule Build(const ChartSong& song, const std::unordered_map<const ChartClip*,
                 // can never desync playback even if it's slightly off at a
                 // boundary.
                 entry.loopCount = 1;
-                if (stemDuration > 0.0)
+                if (instance.StemDurationSeconds() > 0.0)
                 {
                     double span = entry.endSeconds - audioStartSeconds;
                     if (span > 1e-6)
                     {
-                        entry.loopCount = static_cast<int>(std::ceil(span / stemDuration - 1e-9));
+                        entry.loopCount = static_cast<int>(std::ceil(span / instance.StemDurationSeconds() - 1e-9));
                         if (entry.loopCount < 1)
                         {
                             entry.loopCount = 1;

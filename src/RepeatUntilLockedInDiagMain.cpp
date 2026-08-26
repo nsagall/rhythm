@@ -140,11 +140,11 @@ int main(int argc, char** argv)
 
         if (startPressing)
         {
-            const ChartClip& clip = session.Song().clips[session.Song().sections[0].clipIndex];
-            double secondsPerBeat = 60.0 / session.Song().bpm;
+            const ChartClip& clip = session.Song().Clips()[session.Song().Sections()[0].clipIndex];
+            double secondsPerBeat = 60.0 / session.Song().Bpm();
             for (int lane = 0; lane < c_LaneCount; ++lane)
             {
-                if (clip.laneNotes[lane].empty() || heldByUs[lane])
+                if (clip.LaneNotes(lane).empty() || heldByUs[lane])
                 {
                     continue;
                 }

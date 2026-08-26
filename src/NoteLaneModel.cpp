@@ -95,7 +95,7 @@ std::vector<SceneNote> NoteLaneModel::NotesInRange(int lane, double originBeat, 
     return result;
 }
 
-void NoteLaneModel::CollectNotes(const GameSession& session, const ClipInstance* instance, double originBeat,
+void NoteLaneModel::CollectNotes(const GameSession& session, const ClipPlaythrough* instance, double originBeat,
                                   bool judged, double fromBeat, double upperBoundBeat, NoteLaneScene& scene) const
 {
     if (!instance)
@@ -118,7 +118,7 @@ void NoteLaneModel::CollectNotes(const GameSession& session, const ClipInstance*
         }
 
         std::vector<SceneNote> visibleNotes = NotesInRange(lane, originBeat, dotsFromBeat, upperBoundBeat,
-                                                             drawClip->laneNotes[lane], drawClip->spanBeats);
+                                                             drawClip->LaneNotes(lane), drawClip->SpanBeats());
         if (revealFromFirstOnset)
         {
             // NotesInRange always tiles one bar earlier than dotsFromBeat to
@@ -154,7 +154,7 @@ void NoteLaneModel::CollectNotes(const GameSession& session, const ClipInstance*
         if (!visibleNotes.empty())
         {
             std::fwprintf(stderr, L"[NoteLaneModel] judged=%d clip=%ls lane=%d origin=%.4f from=%.4f to=%.4f:",
-                           judged ? 1 : 0, drawClip->name.c_str(), lane, originBeat, dotsFromBeat, upperBoundBeat);
+                           judged ? 1 : 0, drawClip->Name().c_str(), lane, originBeat, dotsFromBeat, upperBoundBeat);
             for (const SceneNote& n : visibleNotes)
             {
                 std::fwprintf(stderr, L" [%.4f+%.4f]", n.startBeat, n.durationBeats);
@@ -207,17 +207,17 @@ void NoteLaneModel::CollectNotes(const GameSession& session, const ClipInstance*
     }
 }
 
-std::unique_ptr<ClipInstance> NoteLaneModel::MakeClipInstance(const GameSession& session, const ChartClip* chartClip,
+std::unique_ptr<ClipPlaythrough> NoteLaneModel::MakeClipInstance(const GameSession& session, const ChartClip* chartClip,
                                                                 double startBeat)
 {
     if (!chartClip)
     {
         return nullptr;
     }
-    auto instance = std::make_unique<ClipInstance>();
+    auto instance = std::make_unique<ClipPlaythrough>();
     instance->chartClip = chartClip;
     instance->startBeat = startBeat;
-    const ChartClip* base = session.Song().clips.data();
+    const ChartClip* base = session.Song().Clips().data();
     instance->color = ClipColor::ForIndex(static_cast<int>(chartClip - base));
     return instance;
 }
@@ -241,7 +241,7 @@ void NoteLaneModel::UpdateClipInstances(const GameSession& session, double nowBe
 {
     const ChartClip* currentChartClip = session.CurrentClip();
     double currentStartBeat =
-        currentChartClip ? CurrentLoopStartBeat(session.CurrentClipOriginBeat(), nowBeat, currentChartClip->spanBeats)
+        currentChartClip ? CurrentLoopStartBeat(session.CurrentClipOriginBeat(), nowBeat, currentChartClip->SpanBeats())
                           : 0.0;
 
     // Identity is the (chartClip, startBeat) pair, not chartClip alone -
@@ -284,7 +284,7 @@ void NoteLaneModel::UpdateClipInstances(const GameSession& session, double nowBe
         // comment on NoteLaneScene::hitsMeterProgress), so its notes never
         // gain or lose this glow mid-clip; see DrawNoteBar/DrawNoteGlyph's
         // own comment on the glow this field drives.
-        m_currentClip->passing = session.IsPassing() && m_currentClip->chartClip->learnMode != LearnMode::DontFail;
+        m_currentClip->passing = session.IsPassing() && m_currentClip->chartClip->Mode() != LearnMode::DontFail;
     }
 
     const ChartClip* previewChartClip = session.PreviewClip();
@@ -304,7 +304,7 @@ void NoteLaneModel::UpdateClipInstances(const GameSession& session, double nowBe
         // at the next section. Its start beat is simply one spanBeats past
         // the current instance's own.
         previewChartClip = m_currentClip->chartClip;
-        previewStartBeat = m_currentClip->startBeat + previewChartClip->spanBeats;
+        previewStartBeat = m_currentClip->startBeat + previewChartClip->SpanBeats();
     }
 
     const ChartClip* trackedNextClip = m_nextClip ? m_nextClip->chartClip : nullptr;
@@ -318,7 +318,7 @@ void NoteLaneModel::UpdateClipInstances(const GameSession& session, double nowBe
 
 void NoteLaneModel::ResetIfSongChanged(const GameSession& session)
 {
-    const std::vector<ChartClip>& clips = session.Song().clips;
+    const std::vector<ChartClip>& clips = session.Song().Clips();
     const ChartClip* clipsBase = clips.empty() ? nullptr : clips.data();
     if (clipsBase == m_lastSongClipsBase)
     {
@@ -342,7 +342,7 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
 
     scene.clockRunning = session.Phase() != GamePhase::Idle;
     scene.nowBeat = scene.clockRunning ? session.Clock().BeatPosition() : 0.0;
-    scene.beatsPerBar = session.Song().beatsPerBar;
+    scene.beatsPerBar = session.Song().BeatsPerBar();
 
     const ChartClip* clip = session.CurrentClip();
 
@@ -356,7 +356,7 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
 
     if (isLearnSection)
     {
-        scene.hitsMeterIsDontFail = clip->learnMode == LearnMode::DontFail;
+        scene.hitsMeterIsDontFail = clip->Mode() == LearnMode::DontFail;
     }
     // Visible for the whole learn section in both modes now - DontFail
     // always was (its own hitsMeterProgress tracks the clip itself, which
@@ -381,13 +381,13 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
     bool justFailedThisFrame = sameClipAsLastFrame && m_prevPassing && !nowPassing;
     if (justFailedThisFrame && m_nextClip)
     {
-        const ClipInstance* explosionClip = m_nextClip.get();
+        const ClipPlaythrough* explosionClip = m_nextClip.get();
         const ChartClip* failedNextChartClip = m_nextClip->chartClip;
         for (int lane = 0; lane < c_LaneCount; ++lane)
         {
             for (SceneNote& sceneNote :
                  NotesInRange(lane, m_nextClip->startBeat, scene.nowBeat - c_BeatsBehind, scene.nowBeat + c_BeatsAhead,
-                              failedNextChartClip->laneNotes[lane], failedNextChartClip->spanBeats))
+                              failedNextChartClip->LaneNotes(lane), failedNextChartClip->SpanBeats()))
             {
                 sceneNote.clip = explosionClip;
                 scene.explodingNotes.push_back(sceneNote);
@@ -403,9 +403,9 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
     if (scene.showHitsMeter && scene.hitsMeterIsDontFail)
     {
         double originBeat = session.CurrentClipOriginBeat();
-        double currentLoopStartBeat = CurrentLoopStartBeat(originBeat, scene.nowBeat, clip->spanBeats);
-        double liveProgress = clip->spanBeats > 0.0
-                                   ? std::clamp((scene.nowBeat - currentLoopStartBeat) / clip->spanBeats, 0.0, 1.0)
+        double currentLoopStartBeat = CurrentLoopStartBeat(originBeat, scene.nowBeat, clip->SpanBeats());
+        double liveProgress = clip->SpanBeats() > 0.0
+                                   ? std::clamp((scene.nowBeat - currentLoopStartBeat) / clip->SpanBeats(), 0.0, 1.0)
                                    : 0.0;
         if (nowPassing)
         {
@@ -436,16 +436,16 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
             scene.hitsMeterProgress = m_dontFailFrozenProgress;
         }
     }
-    else if (scene.showHitsMeter && clip->hitsRequired > 0)
+    else if (scene.showHitsMeter && clip->HitsRequired() > 0)
     {
         scene.hitsMeterProgress =
-            std::clamp(static_cast<double>(session.CurrentStreak()) / clip->hitsRequired, 0.0, 1.0);
+            std::clamp(static_cast<double>(session.CurrentStreak()) / clip->HitsRequired(), 0.0, 1.0);
     }
 
     UpdateClipInstances(session, scene.nowBeat);
 
-    auto clipInstanceName = [](const ClipInstance* instance)
-    { return instance ? instance->chartClip->name : L"(none)"; };
+    auto clipInstanceName = [](const ClipPlaythrough* instance)
+    { return instance ? instance->chartClip->Name() : L"(none)"; };
     scene.debugPreviousClipName = clipInstanceName(m_previousClip.get());
     scene.debugCurrentClipName = clipInstanceName(m_currentClip.get());
     scene.debugNextClipName = clipInstanceName(m_nextClip.get());
@@ -469,7 +469,7 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
 
     if (isLearnSection)
     {
-        double secondsPerBeat = 60.0 / session.Song().bpm;
+        double secondsPerBeat = 60.0 / session.Song().Bpm();
         double advanceAtBeat = session.PendingAdvanceAtSeconds() / secondsPerBeat;
 
         // DontFail mode never takes the early branch below, regardless of
@@ -489,7 +489,7 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
         // capped short of nowBeat+c_BeatsAhead - just without ever hiding
         // this clip's own tail to make room for it.
         if (!c_PreviewNextClipBeforeHandoff || session.PreviewClip() == nullptr ||
-            clip->learnMode == LearnMode::DontFail)
+            clip->Mode() == LearnMode::DontFail)
         {
             // Nothing to hand off to yet (no preview, or early handoff is
             // disabled) - keep this clip's own dots/judging live right up
@@ -528,7 +528,7 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
     // to scroll into view. DontFail mode is untouched - the branch above
     // already keeps its notes live all the way to the real advance
     // regardless of preview state (see its own comment for why).
-    if (isLearnSection && nowPassing && clip->learnMode == LearnMode::Pass)
+    if (isLearnSection && nowPassing && clip->Mode() == LearnMode::Pass)
     {
         nextClipShowing = true;
     }
@@ -558,7 +558,7 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
         // m_previousClip) hasn't happened yet on the very frame
         // justHandedOff/justLockedIn first fires - see UpdateClipInstances'
         // own comment.
-        const ClipInstance* explosionClip = m_currentClip.get();
+        const ClipPlaythrough* explosionClip = m_currentClip.get();
         double originBeat = session.CurrentClipOriginBeat();
 
         auto addExplodingRange = [&](double fromBeat, double toBeat)
@@ -566,7 +566,7 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
             for (int lane = 0; lane < c_LaneCount; ++lane)
             {
                 for (SceneNote& sceneNote :
-                     NotesInRange(lane, originBeat, fromBeat, toBeat, clip->laneNotes[lane], clip->spanBeats))
+                     NotesInRange(lane, originBeat, fromBeat, toBeat, clip->LaneNotes(lane), clip->SpanBeats()))
                 {
                     sceneNote.clip = explosionClip;
                     scene.explodingNotes.push_back(sceneNote);
@@ -671,11 +671,11 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
         case GamePhase::Learning:
             if (session.CurrentSectionKind() == SectionKind::Break)
             {
-                scene.statusText = clip ? (clip->displayName + L" - Listen...") : L"...";
+                scene.statusText = clip ? (clip->DisplayName() + L" - Listen...") : L"...";
             }
             else if (clip)
             {
-                scene.statusText = clip->displayName;
+                scene.statusText = clip->DisplayName();
             }
             break;
         case GamePhase::Complete:

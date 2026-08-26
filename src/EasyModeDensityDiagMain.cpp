@@ -36,7 +36,7 @@ std::vector<FlatNote> Flatten(const ChartClip& clip)
     std::vector<FlatNote> notes;
     for (int lane = 0; lane < c_LaneCount; ++lane)
     {
-        for (const LaneNote& note : clip.laneNotes[lane])
+        for (const LaneNote& note : clip.LaneNotes(lane))
         {
             notes.push_back({note.startBeat, lane, note.durationBeats});
         }
@@ -89,14 +89,14 @@ void DumpChart(const std::wstring& chartPath)
         return;
     }
 
-    wprintf(L"=== %ls (bpm=%.2f) ===\n", chartPath.c_str(), hard.Song().bpm);
+    wprintf(L"=== %ls (bpm=%.2f) ===\n", chartPath.c_str(), hard.Song().Bpm());
     const ChartSong& hardSong = hard.Song();
     const ChartSong& easySong = easy.Song();
-    for (size_t i = 0; i < hardSong.clips.size(); ++i)
+    for (size_t i = 0; i < hardSong.Clips().size(); ++i)
     {
-        const ChartClip& hardClip = hardSong.clips[i];
-        const ChartClip& easyClip = easySong.clips[i];
-        if (!hardClip.hasMidi)
+        const ChartClip& hardClip = hardSong.Clips()[i];
+        const ChartClip& easyClip = easySong.Clips()[i];
+        if (!hardClip.HasMidi())
         {
             continue;
         }
@@ -104,7 +104,7 @@ void DumpChart(const std::wstring& chartPath)
         std::vector<FlatNote> after = Flatten(easyClip);
         int totalBefore = static_cast<int>(before.size());
         int totalAfter = static_cast<int>(after.size());
-        wprintf(L"  clip '%ls' span=%.2f: %d notes -> %d notes%ls\n", hardClip.name.c_str(), hardClip.spanBeats,
+        wprintf(L"  clip '%ls' span=%.2f: %d notes -> %d notes%ls\n", hardClip.Name().c_str(), hardClip.SpanBeats(),
                 totalBefore, totalAfter, (totalBefore == totalAfter) ? L"  (unchanged - already sparse enough)" : L"");
         printf("  before:\n");
         PrintFlat(before);

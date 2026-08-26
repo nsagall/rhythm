@@ -68,50 +68,50 @@ bool LoadIntoDocument(const std::wstring& chartFilePath, EditorDocument& outDoc,
     EditorDocument doc;
     doc.chartFilePath = chartFilePath;
     doc.folderPath = GetDirectory(chartFilePath);
-    doc.title = song.title;
-    doc.bpm = song.bpm;
-    doc.beatsPerBar = song.beatsPerBar;
-    doc.timeSignatureDenominator = song.timeSignatureDenominator;
-    doc.startToleranceMs = song.startToleranceMs;
-    doc.releaseToleranceMs = song.releaseToleranceMs;
+    doc.title = song.Title();
+    doc.bpm = song.Bpm();
+    doc.beatsPerBar = song.BeatsPerBar();
+    doc.timeSignatureDenominator = song.TimeSignatureDenominator();
+    doc.startToleranceMs = song.StartToleranceMs();
+    doc.releaseToleranceMs = song.ReleaseToleranceMs();
 
-    doc.clips.reserve(song.clips.size());
-    for (const ChartClip& clip : song.clips)
+    doc.clips.reserve(song.Clips().size());
+    for (const ChartClip& clip : song.Clips())
     {
         EditorClip editorClip;
         editorClip.id = doc.nextClipId++;
-        editorClip.name = clip.name;
-        editorClip.displayName = clip.displayName;
+        editorClip.name = clip.Name();
+        editorClip.displayName = clip.DisplayName();
         // ChartSong::Load already guarantees the .wav exists (it's a hard
-        // load error otherwise), so a clip that made it into `song.clips`
+        // load error otherwise), so a clip that made it into `song.Clips()`
         // always has one.
         editorClip.hasWav = true;
-        editorClip.hasMidi = clip.hasMidi;
+        editorClip.hasMidi = clip.HasMidi();
         for (int lane = 0; lane < c_LaneCount; ++lane)
         {
-            editorClip.laneNotes[lane] = clip.laneNotes[lane];
+            editorClip.laneNotes[lane] = clip.LaneNotes(lane);
         }
-        editorClip.spanBeats = clip.spanBeats;
-        editorClip.hitsRequired = clip.hitsRequired;
-        editorClip.learnMode = clip.learnMode;
+        editorClip.spanBeats = clip.SpanBeats();
+        editorClip.hitsRequired = clip.HitsRequired();
+        editorClip.learnMode = clip.Mode();
         // "Equals the song default" heuristic: ChartSong::Load assigns a
-        // non-overriding clip's tolerance from song.startToleranceMs
+        // non-overriding clip's tolerance from song.StartToleranceMs()
         // verbatim, so an unset override is bit-identical to the song
         // value here; an explicit override that happens to match the
         // default numerically will display as inherited, a documented,
         // functionally-harmless limitation (the resolved value is the same
         // either way).
-        editorClip.startToleranceMs.isOverridden = (clip.startToleranceMs != song.startToleranceMs);
-        editorClip.startToleranceMs.value = clip.startToleranceMs;
-        editorClip.releaseToleranceMs.isOverridden = (clip.releaseToleranceMs != song.releaseToleranceMs);
-        editorClip.releaseToleranceMs.value = clip.releaseToleranceMs;
-        editorClip.initVolume = clip.initVolume;
-        editorClip.volume = clip.volume;
+        editorClip.startToleranceMs.isOverridden = (clip.StartToleranceMs() != song.StartToleranceMs());
+        editorClip.startToleranceMs.value = clip.StartToleranceMs();
+        editorClip.releaseToleranceMs.isOverridden = (clip.ReleaseToleranceMs() != song.ReleaseToleranceMs());
+        editorClip.releaseToleranceMs.value = clip.ReleaseToleranceMs();
+        editorClip.initVolume = clip.InitVolume();
+        editorClip.volume = clip.Volume();
         doc.clips.push_back(std::move(editorClip));
     }
 
-    doc.blocks.reserve(song.sections.size());
-    for (const ChartSection& section : song.sections)
+    doc.blocks.reserve(song.Sections().size());
+    for (const ChartSection& section : song.Sections())
     {
         EditorBlock editorBlock;
         editorBlock.id = doc.nextBlockId++;

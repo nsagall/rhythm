@@ -102,7 +102,7 @@ int main(int argc, char** argv)
         GamePhase phase = session.Phase();
         int sectionIndex = session.CurrentSectionIndex();
         SectionKind kind = session.CurrentSectionKind();
-        double secondsPerBeat = 60.0 / session.Song().bpm;
+        double secondsPerBeat = 60.0 / session.Song().Bpm();
 
         bool sectionChangedThisTick = (phase != lastPhase || sectionIndex != lastSection);
         if (sectionChangedThisTick)
@@ -111,7 +111,7 @@ int main(int argc, char** argv)
             lastSection = sectionIndex;
             const ChartClip* clip = session.CurrentClip();
             printf("[t=%.3fs] phase=%ls section=%d kind=%d clip=(%ls)\n", session.Clock().ElapsedSeconds(),
-                   PhaseName(phase), sectionIndex, static_cast<int>(kind), clip ? clip->name.c_str() : L"-");
+                   PhaseName(phase), sectionIndex, static_cast<int>(kind), clip ? clip->Name().c_str() : L"-");
             if (clip && phase == GamePhase::Learning && kind == SectionKind::Learn)
             {
                 // sectionStartBeat approximates this clip's own origin (see
@@ -121,13 +121,13 @@ int main(int argc, char** argv)
                 // only ever a hair later than the true origin for a
                 // continuing/reused clip, which is fine for eyeballing here.
                 double sectionStartBeat = session.Clock().BeatPosition();
-                StemHandle stem = session.DebugStemHandle(session.Song().sections[sectionIndex].clipIndex);
+                StemHandle stem = session.DebugStemHandle(session.Song().Sections()[sectionIndex].clipIndex);
                 printf("  spanBeats=%.4f sectionStartBeat=%.4f audioPhaseSeconds=%.4f (should be ~0 for a "
                        "first-ever appearance)\n",
-                       clip->spanBeats, sectionStartBeat, engine.GetPositionSeconds(stem));
+                       clip->SpanBeats(), sectionStartBeat, engine.GetPositionSeconds(stem));
                 for (int lane = 0; lane < c_LaneCount; ++lane)
                 {
-                    if (clip->laneNotes[lane].empty())
+                    if (clip->LaneNotes(lane).empty())
                     {
                         continue;
                     }
@@ -135,7 +135,7 @@ int main(int argc, char** argv)
                     double beatsAfterSectionStart = anchor - sectionStartBeat;
                     printf("  lane %d anchor=%.4f (%.4f beats after this section began, %.1f%% of one pattern "
                            "span)\n",
-                           lane, anchor, beatsAfterSectionStart, 100.0 * beatsAfterSectionStart / clip->spanBeats);
+                           lane, anchor, beatsAfterSectionStart, 100.0 * beatsAfterSectionStart / clip->SpanBeats());
                 }
             }
         }
@@ -147,15 +147,15 @@ int main(int argc, char** argv)
                 session.OnRelease(lane);
                 JudgementResult result = session.ConsumeLastJudgement();
                 if (lastSection >= 0 && session.CurrentClip() &&
-                    session.CurrentClip()->name == targetClipName)
+                    session.CurrentClip()->Name() == targetClipName)
                 {
                     printf("[t=%.3fs]   lane %d release -> %ls (streak=%d) stemPlaying=%s stemPos=%.4fs\n",
                            session.Clock().ElapsedSeconds(), lane, JudgementName(result), session.CurrentStreak(),
-                           engine.IsPlaying(session.DebugStemHandle(session.Song().sections[lastSection].clipIndex))
+                           engine.IsPlaying(session.DebugStemHandle(session.Song().Sections()[lastSection].clipIndex))
                                ? "true"
                                : "false",
                            engine.GetPositionSeconds(
-                               session.DebugStemHandle(session.Song().sections[lastSection].clipIndex)));
+                               session.DebugStemHandle(session.Song().Sections()[lastSection].clipIndex)));
                 }
                 heldByUs[lane] = false;
             }
@@ -167,11 +167,11 @@ int main(int argc, char** argv)
         bool judgingLive = phase == GamePhase::Learning && kind == SectionKind::Learn;
         if (judgingLive)
         {
-            const ChartClip& clip = session.Song().clips[session.Song().sections[sectionIndex].clipIndex];
-            bool isTarget = clip.name == targetClipName;
+            const ChartClip& clip = session.Song().Clips()[session.Song().Sections()[sectionIndex].clipIndex];
+            bool isTarget = clip.Name() == targetClipName;
             for (int lane = 0; lane < c_LaneCount; ++lane)
             {
-                if (clip.laneNotes[lane].empty() || heldByUs[lane])
+                if (clip.LaneNotes(lane).empty() || heldByUs[lane])
                 {
                     continue;
                 }
@@ -191,7 +191,7 @@ int main(int argc, char** argv)
                 JudgementResult result = session.ConsumeLastJudgement();
                 if (isTarget)
                 {
-                    StemHandle h = session.DebugStemHandle(sectionIndex >= 0 ? session.Song().sections[sectionIndex].clipIndex : -1);
+                    StemHandle h = session.DebugStemHandle(sectionIndex >= 0 ? session.Song().Sections()[sectionIndex].clipIndex : -1);
                     printf("[t=%.3fs]   lane %d press beat=%.4f -> %ls (streak=%d) stemPlaying=%s stemPos=%.4fs "
                            "nowElapsed=%.4fs\n",
                            session.Clock().ElapsedSeconds(), lane, nextBeat, JudgementName(result),

@@ -441,7 +441,7 @@ void NoteLaneGdiRenderer::DrawAlphaText(HDC hdc, RECT rect, const std::wstring& 
 // behind it, and a small specular highlight - the note's start marker, sitting at the bottom
 // (leading) edge of its duration bar. passing adds a second, wider green glow ring underneath
 // everything else - a supplementary "this track is currently passing" cue that doesn't touch
-// color. In practice only ever true for a Pass-mode clip (see ClipInstance::passing/
+// color. In practice only ever true for a Pass-mode clip (see ClipPlaythrough::passing/
 // NoteLaneModel::UpdateClipInstances) - a DontFail clip's own progress is conveyed by the hits
 // meter bar instead, so its notes never carry this glow.
 void NoteLaneGdiRenderer::DrawNoteGlyph(HDC hdc, int x, int y, COLORREF color, bool glow, bool passing)

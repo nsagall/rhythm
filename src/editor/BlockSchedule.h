@@ -37,13 +37,12 @@ struct Entry
     const ChartClip* clip = nullptr; // points into the ChartSong passed to Build()
 
     double sectionStartSeconds = 0.0; // == previous entry's endSeconds (0 for the first)
-    // Learn and Break alike: == sectionStartSeconds. Both start their clip
-    // immediately when the section begins - no press gate, no lock-in wait
-    // - even on the rare chart where the same clip was already playing
-    // from an earlier, still-open section (see Build()'s own
-    // ClipBuildState::loopStartSeconds comment), where it does not
-    // necessarily mean the underlying audio voice re-seeks its phase at
-    // this instant.
+    // Learn and Break alike: == sectionStartSeconds. Both always (re)start
+    // their own clip fresh the instant the section begins - no press gate,
+    // no lock-in wait, and (Learn specifically) never a still-open instance
+    // from an earlier section to join instead - see
+    // ChartClip::ComputeLearnAdvanceSeconds's own comment for why that's
+    // guaranteed rather than merely typical.
     double audioStartSeconds = 0.0;
     // The current arrangement's shared phase reference - the wall-clock
     // second its first clip began at, whether that was this entry or an

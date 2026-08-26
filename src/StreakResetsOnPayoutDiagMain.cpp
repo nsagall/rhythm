@@ -35,7 +35,7 @@ namespace
 void PlayDueNotesPerfectly(GameSession& session, const ChartClip& clip, double lastPressedBeat[c_LaneCount],
                             bool heldByUs[c_LaneCount], double releaseAtSeconds[c_LaneCount])
 {
-    double secondsPerBeat = 60.0 / session.Song().bpm;
+    double secondsPerBeat = 60.0 / session.Song().Bpm();
 
     for (int lane = 0; lane < c_LaneCount; ++lane)
     {
@@ -49,7 +49,7 @@ void PlayDueNotesPerfectly(GameSession& session, const ChartClip& clip, double l
 
     for (int lane = 0; lane < c_LaneCount; ++lane)
     {
-        if (clip.laneNotes[lane].empty() || heldByUs[lane] || !session.IsLaneJudgeable(lane))
+        if (clip.LaneNotes(lane).empty() || heldByUs[lane] || !session.IsLaneJudgeable(lane))
         {
             continue;
         }
@@ -212,8 +212,8 @@ int main(int argc, char** argv)
 
         if (kind == SectionKind::Learn)
         {
-            const ChartSection& section = session.Song().sections[sectionIndex];
-            const ChartClip& clip = session.Song().clips[section.clipIndex];
+            const ChartSection& section = session.Song().Sections()[sectionIndex];
+            const ChartClip& clip = session.Song().Clips()[section.clipIndex];
             PlayDueNotesPerfectly(session, clip, lastPressedBeat, heldByUs, releaseAtSeconds);
         }
 

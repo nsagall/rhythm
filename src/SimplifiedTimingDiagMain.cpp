@@ -84,9 +84,9 @@ int main(int argc, char** argv)
         lastPressedBeat[lane] = -1.0;
     }
 
-    for (size_t i = 0; i < session.Song().sections.size(); ++i)
+    for (size_t i = 0; i < session.Song().Sections().size(); ++i)
     {
-        if (session.Song().sections[i].kind == SectionKind::Break)
+        if (session.Song().Sections()[i].kind == SectionKind::Break)
         {
             breakSectionIndex = static_cast<int>(i);
             break;
@@ -103,7 +103,7 @@ int main(int argc, char** argv)
         GamePhase phase = session.Phase();
         int sectionIndex = session.CurrentSectionIndex();
         SectionKind kind = session.CurrentSectionKind();
-        double secondsPerBeat = 60.0 / session.Song().bpm;
+        double secondsPerBeat = 60.0 / session.Song().Bpm();
 
         bool sectionChangedThisTick = (phase != lastPhase || sectionIndex != lastSection);
         if (sectionChangedThisTick)
@@ -125,11 +125,11 @@ int main(int argc, char** argv)
             lastSection = sectionIndex;
             const ChartClip* clip = session.CurrentClip();
             printf("[t=%.3fs] phase=%ls section=%d kind=%d clip=(%ls)\n", session.Clock().ElapsedSeconds(),
-                   PhaseName(phase), sectionIndex, static_cast<int>(kind), clip ? clip->name.c_str() : L"-");
+                   PhaseName(phase), sectionIndex, static_cast<int>(kind), clip ? clip->Name().c_str() : L"-");
             if (phase == GamePhase::Learning && kind == SectionKind::Learn && sectionIndex == 0 && !section0Seen)
             {
                 section0Seen = true;
-                section0ClipIndex = session.Song().sections[0].clipIndex;
+                section0ClipIndex = session.Song().Sections()[0].clipIndex;
             }
         }
 
@@ -157,10 +157,10 @@ int main(int argc, char** argv)
         bool judgingLive = phase == GamePhase::Learning && kind == SectionKind::Learn;
         if (judgingLive)
         {
-            const ChartClip& clip = session.Song().clips[session.Song().sections[sectionIndex].clipIndex];
+            const ChartClip& clip = session.Song().Clips()[session.Song().Sections()[sectionIndex].clipIndex];
             for (int lane = 0; lane < c_LaneCount; ++lane)
             {
-                if (clip.laneNotes[lane].empty() || heldByUs[lane])
+                if (clip.LaneNotes(lane).empty() || heldByUs[lane])
                 {
                     continue;
                 }

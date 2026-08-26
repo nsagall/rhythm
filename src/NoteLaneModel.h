@@ -28,7 +28,7 @@ private:
     // changed since last call - see this class's own .cpp for why that's
     // the right signal) and, if so, clears m_previousClip/m_currentClip/
     // m_nextClip before anything else runs this frame - every
-    // ClipInstance::chartClip they hold points into the *previous* song's
+    // ClipPlaythrough::chartClip they hold points into the *previous* song's
     // now-destroyed ChartClip vector otherwise. Called first thing in
     // BuildScene, ahead of UpdateClipInstances and anything that might
     // dereference a stale instance's chartClip.
@@ -57,7 +57,7 @@ private:
     // (PreviewFirstOnsetBeatForLane) - used for a not-yet-started clip, so
     // its lanes reveal one at a time instead of all at once. No-op if
     // instance is null (nothing to draw).
-    void CollectNotes(const GameSession& session, const ClipInstance* instance, double originBeat, bool judged,
+    void CollectNotes(const GameSession& session, const ClipPlaythrough* instance, double originBeat, bool judged,
                        double fromBeat, double upperBoundBeat, NoteLaneScene& scene) const;
 
     // Creates a fresh instance identified by (chartClip, startBeat) -
@@ -71,7 +71,7 @@ private:
     // pick a palette entry (ClipColor::ForIndex) for this brand new
     // instance; never stored or reused as a lookup key afterward, unlike
     // the index pattern this replaced.
-    static std::unique_ptr<ClipInstance> MakeClipInstance(const GameSession& session, const ChartClip* chartClip,
+    static std::unique_ptr<ClipPlaythrough> MakeClipInstance(const GameSession& session, const ChartClip* chartClip,
                                                             double startBeat);
 
     // Keeps m_previousClip/m_currentClip/m_nextClip in sync for this frame
@@ -84,7 +84,7 @@ private:
 
     // Persistent (NOT rebuilt every frame) identity for the up-to-three
     // clip playthroughs the note lane ever cares about. A fresh
-    // ClipInstance is only created when a new playthrough actually begins
+    // ClipPlaythrough is only created when a new playthrough actually begins
     // - detected by comparing (chartClip, startBeat) as a pair, not just
     // chartClip, since a clip looping in place keeps the same chartClip but
     // starts a new playthrough (see UpdateClipInstances) - reusing
@@ -97,7 +97,7 @@ private:
     // session.CurrentClip()'s own identity exactly (null when there isn't
     // one, e.g. Idle/CountIn). passing is refreshed from session every
     // frame while non-null.
-    std::unique_ptr<ClipInstance> m_currentClip;
+    std::unique_ptr<ClipPlaythrough> m_currentClip;
     // Whatever m_currentClip held immediately before its last transition -
     // exists so a renderer reacting to a handoff/lock-in event has a
     // stable place to find the outgoing clip's identity even after
@@ -105,7 +105,7 @@ private:
     // own explosion-notes path (see its comment for why m_currentClip
     // itself is still correct there), but kept in sync regardless, as the
     // general "what was current a moment ago" answer.
-    std::unique_ptr<ClipInstance> m_previousClip;
+    std::unique_ptr<ClipPlaythrough> m_previousClip;
     // Whatever playthrough is predicted to become current next. Mirrors
     // session.PreviewClip()'s own identity whenever that's non-null (a real
     // section-level preview); otherwise, while the current section is an
@@ -114,10 +114,10 @@ private:
     // clip's own next loop repeat instead, so the note lane always has
     // something legitimate to preview rather than going blank right up
     // until a section transition or lock-in. See UpdateClipInstances.
-    std::unique_ptr<ClipInstance> m_nextClip;
+    std::unique_ptr<ClipPlaythrough> m_nextClip;
 
     // Last frame's IsPassing() value, purely to edge-detect justLockedIn/
-    // justFailed (see NoteLaneScene) - not the same as any ClipInstance::
+    // justFailed (see NoteLaneScene) - not the same as any ClipPlaythrough::
     // passing field, which is a per-instance snapshot rather than a
     // frame-to-frame edge tracker.
     bool m_prevPassing = false;

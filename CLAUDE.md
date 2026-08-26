@@ -122,7 +122,7 @@ so the editor and the live game never disagree about what's valid.
 
 `NoteLaneModel` (game logic: which notes are visible, their judged state) and
 `NoteLaneGdiRenderer` (GDI drawing) communicate only through `NoteLaneScene.h`'s
-plain data structs (`NoteLaneScene`, `SceneNote`, `ClipInstance`) — beats, lane
+plain data structs (`NoteLaneScene`, `SceneNote`, `ClipPlaythrough`) — beats, lane
 indices, and semantic state only, no pixel positions or HDC. `INoteLaneRenderer`
 (`NoteLaneRenderer.h`) is the swap point for a different visual style with zero
 changes to the model. Follow this pattern (data-only scene structs + an interface)

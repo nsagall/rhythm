@@ -257,8 +257,8 @@ int main(int argc, char** argv)
             break;
         }
 
-        const ChartClip& clip = session.Song().clips[session.Song().sections[0].clipIndex];
-        double secondsPerBeat = 60.0 / session.Song().bpm;
+        const ChartClip& clip = session.Song().Clips()[session.Song().Sections()[0].clipIndex];
+        double secondsPerBeat = 60.0 / session.Song().Bpm();
 
         // Resolve holds (press+release both matter, non-easy-mode) - a
         // held-by-us note's release is timed independently of which phase
@@ -292,7 +292,7 @@ int main(int argc, char** argv)
 
                 for (int lane = 0; lane < c_LaneCount; ++lane)
                 {
-                    if (clip.laneNotes[lane].empty() || heldByUs[lane])
+                    if (clip.LaneNotes(lane).empty() || heldByUs[lane])
                     {
                         continue;
                     }
@@ -382,7 +382,7 @@ int main(int argc, char** argv)
                 // unjudgeable (a real press would be silently wasted).
                 for (int lane = 0; lane < c_LaneCount; ++lane)
                 {
-                    if (!clip.laneNotes[lane].empty() && session.IsLaneJudgeable(lane))
+                    if (!clip.LaneNotes(lane).empty() && session.IsLaneJudgeable(lane))
                     {
                         autoAccrualStayedUnjudgeable = false;
                     }

@@ -100,37 +100,37 @@ bool BlockPlayer::RebuildSchedule(const EditorDocument& doc, std::vector<std::ws
     // per-clip results are kept in these two position-indexed vectors only
     // long enough to hand off to the pointer-keyed maps below, once
     // m_song.clips has its own final, stable addresses.
-    std::vector<double> durationsByPosition(song.clips.size(), 0.0);
-    std::vector<StemHandle> handlesByPosition(song.clips.size());
+    std::vector<double> durationsByPosition(song.Clips().size(), 0.0);
+    std::vector<StemHandle> handlesByPosition(song.Clips().size());
     // Captured before ExpandLaneNotesToFillClip (below) can widen any clip's
     // spanBeats to its real audio length - see GameSession::LoadChart's own
     // identical comment and ChartClip::ClipAlignmentInfo's for why.
     std::unordered_map<const ChartClip*, ChartClip::ClipAlignmentInfo> clipAlignmentInfo;
-    for (size_t i = 0; i < song.clips.size() && i < doc.clips.size(); ++i)
+    for (size_t i = 0; i < song.Clips().size() && i < doc.clips.size(); ++i)
     {
         StemHandle handle = GetStemForEditorClipId(doc.clips[i].id);
         handlesByPosition[i] = handle;
         double duration = handle.IsValid() ? m_audioEngine.GetStemDurationSeconds(handle) : 0.0;
         durationsByPosition[i] = duration;
 
-        ChartClip& clip = song.clips[i];
-        clipAlignmentInfo[&clip] = {clip.spanBeats, duration};
-        if (clip.hasMidi)
+        ChartClip& clip = song.MutableClips()[i];
+        clipAlignmentInfo[&clip] = {clip.SpanBeats(), duration};
+        if (clip.HasMidi())
         {
             // Mirrors GameSession::LoadChart's own rejection check - a
             // chart that fails this would refuse to even load in the real
             // game, so the editor shouldn't produce a schedule for it
             // either.
-            if (!clip.ClipFitsOneLoop(duration, song.bpm))
+            if (!clip.ClipFitsOneLoop(duration, song.Bpm()))
             {
                 outErrors.clear();
-                outErrors.push_back(L"clip '" + clip.name +
+                outErrors.push_back(L"clip '" + clip.Name() +
                                      L"': its MIDI pattern is longer than one loop of its audio - trim the "
                                      L"MIDI pattern or use a longer audio stem (the real game would refuse to "
                                      L"load this chart).");
                 return false;
             }
-            clip.ExpandLaneNotesToFillClip(duration, song.bpm);
+            clip.ExpandLaneNotesToFillClip(duration, song.Bpm());
         }
     }
 
@@ -151,9 +151,9 @@ bool BlockPlayer::RebuildSchedule(const EditorDocument& doc, std::vector<std::ws
     // needing to lean on that at all).
     m_stemHandlesByClip.clear();
     std::unordered_map<const ChartClip*, double> stemDurationsByClip;
-    for (size_t i = 0; i < m_song.clips.size() && i < handlesByPosition.size(); ++i)
+    for (size_t i = 0; i < m_song.Clips().size() && i < handlesByPosition.size(); ++i)
     {
-        const ChartClip* clip = &m_song.clips[i];
+        const ChartClip* clip = &m_song.Clips()[i];
         m_stemHandlesByClip[clip] = handlesByPosition[i];
         stemDurationsByClip[clip] = durationsByPosition[i];
     }
@@ -302,7 +302,7 @@ void BlockPlayer::ApplyAudioForPosition()
             // voice.originSeconds (not 0) is this clip's own persistent
             // phase reference - see BlockSchedule::VoiceWindow::originSeconds.
             double phase = voice.clip->ComputeClipPhaseSeconds(voice.originSeconds, m_positionSeconds, stemDuration,
-                                                                m_song.bpm);
+                                                                m_song.Bpm());
             m_audioEngine.StartLooping(stem, phase, static_cast<float>(voice.volume), 0);
         }
         else
@@ -341,7 +341,7 @@ std::wstring BlockPlayer::NowPlayingText() const
     const wchar_t* kindName = entry.kind == SectionKind::Break ? L"Break" : L"Learn";
     const ChartClip& clip = *entry.clip;
 
-    std::wstring text = clip.name + L", " + kindName + L" (#" + std::to_wstring(result.entryIndex + 1) +
+    std::wstring text = clip.Name() + L", " + kindName + L" (#" + std::to_wstring(result.entryIndex + 1) +
                          L" of " + std::to_wstring(m_schedule.entries.size()) + L")";
     if (result.loopIndex >= 1)
     {
@@ -355,7 +355,7 @@ std::wstring BlockPlayer::NowPlayingText() const
         {
             if (voice.clip != entry.clip)
             {
-                text += L" " + voice.clip->name;
+                text += L" " + voice.clip->Name();
             }
         }
     }

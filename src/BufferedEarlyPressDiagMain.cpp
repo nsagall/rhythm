@@ -65,14 +65,14 @@ int main(int argc, char** argv)
 
     session.Start();
 
-    const ChartClip& clip = session.Song().clips[session.Song().sections[0].clipIndex];
-    double secondsPerBeat = 60.0 / session.Song().bpm;
+    const ChartClip& clip = session.Song().Clips()[session.Song().Sections()[0].clipIndex];
+    double secondsPerBeat = 60.0 / session.Song().Bpm();
 
     bool laneHasFreshFirstNote[c_LaneCount] = {};
     for (int lane = 0; lane < c_LaneCount; ++lane)
     {
         laneHasFreshFirstNote[lane] =
-            !clip.laneNotes[lane].empty() && std::abs(clip.laneNotes[lane].front().startBeat) < 1e-6;
+            !clip.LaneNotes(lane).empty() && std::abs(clip.LaneNotes(lane).front().startBeat) < 1e-6;
     }
 
     int fastTapLane = -1;
@@ -138,7 +138,7 @@ int main(int argc, char** argv)
                     continue;
                 }
                 double onsetSeconds = onsetBeat * secondsPerBeat;
-                double toleranceSeconds = clip.startToleranceMs / 1000.0;
+                double toleranceSeconds = clip.StartToleranceMs() / 1000.0;
                 // Deliberately in the *early* half of the tolerance window -
                 // the exact half this bug used to make unreachable.
                 double target = onsetSeconds - toleranceSeconds * 0.5;
@@ -173,7 +173,7 @@ int main(int argc, char** argv)
         if (heldByUs[holdThroughLane >= 0 ? holdThroughLane : 0] && holdThroughLane >= 0 &&
             session.IsLaneHeld(holdThroughLane) && releaseAtSeconds[holdThroughLane] == 0.0)
         {
-            double durationBeats = clip.laneNotes[holdThroughLane].front().durationBeats;
+            double durationBeats = clip.LaneNotes(holdThroughLane).front().durationBeats;
             releaseAtSeconds[holdThroughLane] =
                 (bufferedOnsetBeat[holdThroughLane] + durationBeats) * secondsPerBeat;
             printf("[t=%.4f] lane %d hold established, will release at t=%.4fs\n", session.Clock().ElapsedSeconds(),

@@ -7,7 +7,7 @@
 #include "Colors.h"
 #include "LaneConfig.h"
 
-// Never dereferenced by a renderer (see ClipInstance::chartClip) - forward
+// Never dereferenced by a renderer (see ClipPlaythrough::chartClip) - forward
 // declared only so that field can exist as a pointer, without pulling
 // ChartClip.h's actual definition into every renderer that includes this
 // header.
@@ -18,7 +18,7 @@ class ChartClip;
 // semantic/identity state - no pixel positions, no HDC, no GDI drawing
 // calls - so a renderer can turn it into pixels however it likes, and a
 // different renderer can consume the exact same struct without
-// NoteLaneModel changing at all. ClipInstance::color is the one exception
+// NoteLaneModel changing at all. ClipPlaythrough::color is the one exception
 // to "no colors here": a COLORREF is just a packed RGB value, not a
 // drawing operation, and which one identifies a given clip is treated as
 // part of that clip's identity (see ClipColor.h) rather than a rendering
@@ -39,14 +39,14 @@ constexpr double c_BeatsBehind = 1.0;
 // ChartClip is immutable song data and can be played more than once in a
 // song - a later section reusing it, or simply its own pattern looping
 // again before locking in - and each such playthrough gets its own
-// ClipInstance (never mutated to represent a different one), since
+// ClipPlaythrough (never mutated to represent a different one), since
 // passing resets fresh every time and identity/color needs to be
 // distinguishable even between two instances of the same ChartClip. Owned
 // persistently by NoteLaneModel (see its m_previousClip/m_currentClip/
 // m_nextClip) rather than rebuilt every frame - a fresh instance is only
 // created when a new playthrough actually begins (or is predicted ahead of
 // time - see startBeat below), not on every BuildScene call.
-struct ClipInstance
+struct ClipPlaythrough
 {
     // Which ChartClip this is a playthrough of - this instance's own
     // identity, not something a caller needs to look up separately.
@@ -75,7 +75,7 @@ struct ClipInstance
 
     // Whether this playthrough is currently passing, for a renderer's own
     // supplementary "correct" cue (a glow outline) - independent of any one
-    // note's own state/color. Reset false whenever a new ClipInstance is
+    // note's own state/color. Reset false whenever a new ClipPlaythrough is
     // created (a fresh playthrough hasn't earned anything yet), kept in
     // sync with the session every frame while this instance is current -
     // except for a DontFail clip, which never sets this true at all (always
@@ -117,10 +117,10 @@ struct SceneNote
 
     // Never null for a note that actually made it into NoteLaneScene::
     // notes/explodingNotes - points into one of NoteLaneModel's own
-    // persistent instances (see ClipInstance's own comment), which outlive
+    // persistent instances (see ClipPlaythrough's own comment), which outlive
     // this NoteLaneScene, so the pointer stays valid for at least as long
     // as this NoteLaneScene does.
-    const ClipInstance* clip = nullptr;
+    const ClipPlaythrough* clip = nullptr;
 };
 
 // One lane's judge-line receptor state, as far as game rules go - a
@@ -142,7 +142,7 @@ struct NoteLaneScene
     // Rails/receptors' base color/identity - nullptr means no current/
     // preview clip (Idle or Complete), which a renderer should show as a
     // neutral color.
-    const ClipInstance* primaryClip = nullptr;
+    const ClipPlaythrough* primaryClip = nullptr;
 
     SceneReceptor receptors[c_LaneCount];
     std::vector<SceneNote> notes;

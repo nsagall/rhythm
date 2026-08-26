@@ -18,12 +18,12 @@
 // editable or what a given name means.
 
 // Which accent color a clip's own instance (see NoteLaneScene.h's
-// ClipInstance) is identified by. A COLORREF is just a packed RGB value,
+// ClipPlaythrough) is identified by. A COLORREF is just a packed RGB value,
 // not a drawing call - so which one a given clip gets is part of that
 // clip's identity, not a decision any one renderer should own privately.
 // Shared (not NoteLaneGdiRenderer-private) so every renderer gets the same
 // answer for the same clip for free; a renderer that wants a different
-// scheme entirely is still free to ignore ClipInstance::color and derive
+// scheme entirely is still free to ignore ClipPlaythrough::color and derive
 // its own some other way.
 namespace ClipColor
 {

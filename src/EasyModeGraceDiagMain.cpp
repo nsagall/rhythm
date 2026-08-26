@@ -124,7 +124,7 @@ int main(int argc, char** argv)
         GamePhase phase = session.Phase();
         int sectionIndex = session.CurrentSectionIndex();
         SectionKind sectionKind = session.CurrentSectionKind();
-        double secondsPerBeat = 60.0 / session.Song().bpm;
+        double secondsPerBeat = 60.0 / session.Song().Bpm();
 
         bool sectionChangedThisTick = (phase != lastPhase || sectionIndex != lastSection);
 
@@ -153,10 +153,10 @@ int main(int argc, char** argv)
                 const ChartClip* clip = session.CurrentClip();
                 printf("[t=%.2fs] learn instance %d begins (section=%d clip=%ls)\n",
                        session.Clock().ElapsedSeconds(), learnSectionInstance, sectionIndex,
-                       clip ? clip->name.c_str() : L"-");
+                       clip ? clip->Name().c_str() : L"-");
                 if (learnSectionInstance == 1)
                 {
-                    int clipIndex = session.Song().sections[sectionIndex].clipIndex;
+                    int clipIndex = session.Song().Sections()[sectionIndex].clipIndex;
                     watchedInstance1Stem = session.DebugStemHandle(clipIndex);
                     watchingInstance1Stem = true;
                 }
@@ -179,10 +179,10 @@ int main(int argc, char** argv)
         bool judgingLive = phase == GamePhase::Learning && sectionKind == SectionKind::Learn;
         if (judgingLive)
         {
-            const ChartClip& clip = session.Song().clips[session.Song().sections[sectionIndex].clipIndex];
+            const ChartClip& clip = session.Song().Clips()[session.Song().Sections()[sectionIndex].clipIndex];
             for (int lane = 0; lane < c_LaneCount; ++lane)
             {
-                if (clip.laneNotes[lane].empty() || heldByUs[lane])
+                if (clip.LaneNotes(lane).empty() || heldByUs[lane])
                 {
                     continue;
                 }

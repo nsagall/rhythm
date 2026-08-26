@@ -112,7 +112,7 @@ private:
     int YForBeatsFromNow(RECT laneRect, double beatsFromNow) const;
 
     // Returns clipColor for a Normal note, or the fixed held/hit/miss color
-    // for anything else - clipColor comes from ClipInstance::color (see
+    // for anything else - clipColor comes from ClipPlaythrough::color (see
     // ClipColor.h), never from a palette of this renderer's own. precise is
     // only consulted for state == Hit - see c_NoteColorHitImprecise.
     COLORREF ColorForNote(NoteVisualState state, COLORREF clipColor, bool precise) const;

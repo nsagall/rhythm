@@ -22,13 +22,13 @@ namespace DiagTestHelpers
 // mirrors GameSession::FindLaneNote's real logic exactly.
 inline const LaneNote* FindLaneNote(const ChartClip& clip, int lane, double originBeat, double absoluteStartBeat)
 {
-    double span = clip.spanBeats;
+    double span = clip.SpanBeats();
     double phase = std::fmod(absoluteStartBeat - originBeat, span);
     if (phase < 0.0)
     {
         phase += span;
     }
-    for (const LaneNote& note : clip.laneNotes[lane])
+    for (const LaneNote& note : clip.LaneNotes(lane))
     {
         if (std::abs(note.startBeat - phase) < 1e-6)
         {

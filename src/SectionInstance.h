@@ -18,11 +18,11 @@ enum class JudgementResult
 // The live, mutable state of one run through the current [learn]/[break]
 // section - everything that's true only "while this particular section is
 // current," as distinct from ChartSection/ChartClip (immutable - exactly
-// what the .chart file says) and from a clip's own playback voice
-// (GameSession's private ClipInstance - shared across every section that
-// ever references that clip, since two sections reusing the same clip must
-// never disagree about whether it's playing or where its groove is - see
-// ClipInstance's own comment). GameSession replaces its current instance
+// what the .chart file says) and from a clip's own playback voice (see
+// ChartClip's own ClipInstance - shared across every section that ever
+// references that clip, since two sections reusing the same clip must
+// never disagree about whether it's playing or where its groove is).
+// GameSession replaces its current instance
 // wholesale (m_currentInstance = SectionInstance(index)) every time a new
 // section begins, so there's never any stale field left over to remember
 // to reset by hand.

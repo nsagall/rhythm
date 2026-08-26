@@ -55,7 +55,7 @@ std::vector<SongEntry> SongLibrary::Scrape(const std::wstring& contentRoot, std:
             continue;
         }
 
-        std::wstring title = song.title.empty() ? folder.path().filename().wstring() : song.title;
+        std::wstring title = song.Title().empty() ? folder.path().filename().wstring() : song.Title();
         songs.push_back({title, chartPath});
     }
 
