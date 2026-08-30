@@ -16,3 +16,9 @@ cmake --build build
 ```powershell
 .\build\Rhythm.exe
 ```
+
+## Installer
+
+`installer/build-installer.ps1` packages the game and the chart editor into a
+single `RhythmSetup-<version>.exe` wizard (Inno Setup). See
+[`installer/README.md`](installer/README.md).

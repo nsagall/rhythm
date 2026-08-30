@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(Rhythm LANGUAGES CXX)
+project(Rhythm VERSION 1.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -117,4 +117,65 @@ target_link_libraries(ColorEditor PRIVATE RhythmColors imgui d3d11 dxgi d3dcompi
 
 if(MINGW)
     target_link_options(ColorEditor PRIVATE -municode)
+endif()
+
+# ---------------------------------------------------------------------------
+# Install / packaging layout for the Inno Setup wizard (installer/Rhythm.iss)
+# ---------------------------------------------------------------------------
+# `cmake --install <builddir> --prefix <stage>` produces exactly the tree the
+# installer ships: the two shipping executables at the root, the whole Content/
+# song library and Colors.ini beside them (both resolved relative to the
+# process working directory at runtime - see c_ContentRoot in MainWindow.cpp
+# and ConfigFilePath() in ColorConfig.cpp), plus the MinGW runtime DLLs the
+# exes link against. ColorEditor is a dev-only tool and is deliberately left
+# out. installer/build-installer.ps1 drives configure -> build -> install ->
+# ISCC end to end.
+install(TARGETS Rhythm RhythmEditor RUNTIME DESTINATION ".")
+install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/Content" DESTINATION ".")
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/Colors.ini" DESTINATION ".")
+
+if(MINGW)
+    # libstdc++ / libgcc / libwinpthread are not present on a stock Windows
+    # box; copy them from the compiler's own bin/ next to the exes. objdump -p
+    # on both exes confirms these three are the only non-system imports.
+    get_filename_component(_mingw_bin "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    foreach(_dll libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll)
+        if(EXISTS "${_mingw_bin}/${_dll}")
+            install(FILES "${_mingw_bin}/${_dll}" DESTINATION ".")
+        else()
+            message(WARNING "Runtime DLL not found for packaging: ${_mingw_bin}/${_dll}")
+        endif()
+    endforeach()
+elseif(MSVC)
+    set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP ON)
+    include(InstallRequiredSystemLibraries)
+    install(FILES ${CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS} DESTINATION ".")
+endif()
+
+# Optional convenience target: `cmake --build <builddir> --target installer`
+# builds the setup .exe in one step, if Inno Setup's compiler is discoverable.
+find_program(ISCC_EXECUTABLE
+    NAMES ISCC iscc
+    PATHS
+        "$ENV{ProgramFiles\(x86\)}/Inno Setup 6"
+        "$ENV{ProgramFiles}/Inno Setup 6"
+        "$ENV{LOCALAPPDATA}/Programs/Inno Setup 6"
+    DOC "Inno Setup command-line compiler (ISCC.exe)")
+
+if(ISCC_EXECUTABLE)
+    file(TO_NATIVE_PATH "${CMAKE_BINARY_DIR}/stage" _stage_native)
+    file(TO_NATIVE_PATH "${CMAKE_BINARY_DIR}/installer" _installer_native)
+    file(TO_NATIVE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/installer/Rhythm.iss" _iss_native)
+    add_custom_target(installer
+        COMMAND "${CMAKE_COMMAND}" --install "${CMAKE_BINARY_DIR}"
+                --prefix "${CMAKE_BINARY_DIR}/stage"
+        COMMAND "${ISCC_EXECUTABLE}"
+                "/DAppVersion=${PROJECT_VERSION}"
+                "/DStageDir=${_stage_native}"
+                "/DOutputDir=${_installer_native}"
+                "${_iss_native}"
+        DEPENDS Rhythm RhythmEditor
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        COMMENT "Staging install tree and building RhythmSetup-${PROJECT_VERSION}.exe with Inno Setup"
+        VERBATIM USES_TERMINAL)
 endif()
