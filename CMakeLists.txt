@@ -29,7 +29,10 @@ add_library(RhythmCore STATIC
 )
 target_include_directories(RhythmCore PUBLIC src)
 target_compile_definitions(RhythmCore PUBLIC UNICODE _UNICODE)
-target_link_libraries(RhythmCore PUBLIC midifile xaudio2_9 ole32 winmm)
+# No xaudio2_9 here on purpose: AudioEngine resolves XAudio2Create at runtime
+# (LoadLibrary xaudio2_9.dll, else the bundled xaudio2_9redist.dll) so the
+# build has no load-time dependency on a DLL that is missing on Windows 7/8.1.
+target_link_libraries(RhythmCore PUBLIC midifile ole32 winmm)
 
 # Colors.ini load/save for Colors.h's ClipColor::/GameColors:: globals -
 # its own tiny target (no midifile/xaudio2/audio deps at all) so
@@ -127,12 +130,34 @@ endif()
 # song library and Colors.ini beside them (both resolved relative to the
 # process working directory at runtime - see c_ContentRoot in MainWindow.cpp
 # and ConfigFilePath() in ColorConfig.cpp), plus the MinGW runtime DLLs the
-# exes link against. ColorEditor is a dev-only tool and is deliberately left
-# out. installer/build-installer.ps1 drives configure -> build -> install ->
-# ISCC end to end.
+# exes link against and the two Microsoft redistributables that let the apps
+# also run on Windows 7 / 8.1 (see below). ColorEditor is a dev-only tool and
+# is deliberately left out. installer/build-installer.ps1 drives configure ->
+# build -> install -> ISCC end to end.
 install(TARGETS Rhythm RhythmEditor RUNTIME DESTINATION ".")
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/Content" DESTINATION ".")
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/Colors.ini" DESTINATION ".")
+
+# XAudio 2.9 (both apps) and the D3DCompiler (RhythmEditor's ImGui backend) are
+# in-box on Windows 10/11 but absent on Windows 7 / 8.1. Ship both beside the
+# exes so those systems are covered - the app directory is searched before
+# System32, so on 10/11 the OS copies still win and these are just dead weight.
+#   - xaudio2_9redist.dll: vendored (third_party/xaudio2redist/), loaded by
+#     name at runtime as AudioEngine's fallback - see its CreateXAudio2Engine.
+#   - d3dcompiler_47.dll: copied from this build machine's System32 (it is a
+#     Microsoft-redistributable component; every Win8.1+ box building this app
+#     has it). RhythmEditor imports it at load time.
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/third_party/xaudio2redist/xaudio2_9redist.dll"
+        DESTINATION ".")
+
+file(TO_CMAKE_PATH "$ENV{SystemRoot}" _windir)
+set(_d3dcompiler "${_windir}/System32/d3dcompiler_47.dll")
+if(EXISTS "${_d3dcompiler}")
+    install(FILES "${_d3dcompiler}" DESTINATION ".")
+else()
+    message(WARNING "d3dcompiler_47.dll not found at ${_d3dcompiler}; "
+                    "RhythmEditor will not start on Windows 7/8.1 without it")
+endif()
 
 if(MINGW)
     # libstdc++ / libgcc / libwinpthread are not present on a stock Windows

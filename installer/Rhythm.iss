@@ -58,6 +58,10 @@ PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
+; Windows 7 SP1 and up. The apps carry their own XAudio 2.9 + D3DCompiler
+; (staged beside the exes) for 7/8.1, where those aren't in-box; on 10/11 the
+; OS copies are used instead. See the redistributable block in CMakeLists.txt.
+MinVersion=6.1sp1
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern

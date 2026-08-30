@@ -2,8 +2,26 @@
 
 Builds `RhythmSetup-<version>.exe` — a self-contained Inno Setup wizard that
 installs **Rhythm.exe** (the game) and **RhythmEditor.exe** (the chart editor),
-the whole `Content/` song library, `Colors.ini`, and the MinGW runtime DLLs the
-two exes link against. `ColorEditor.exe` is a dev-only tool and is not shipped.
+the whole `Content/` song library, `Colors.ini`, and every shared library the
+two exes need. `ColorEditor.exe` is a dev-only tool and is not shipped.
+
+## Shared libraries — what's covered
+
+A fresh Windows 10 or 11 machine needs nothing else installed. Windows 7 SP1 and
+8.1 are also supported. The install folder carries:
+
+| Library | For | Why it's shipped |
+|---|---|---|
+| `libstdc++-6.dll`, `libgcc_s_seh-1.dll`, `libwinpthread-1.dll` | both apps | MinGW C++ runtime — never present on a stock machine. Copied from the compiler's `bin/`. |
+| `xaudio2_9redist.dll` | both apps (audio) | XAudio 2.9 is in-box on Win 10/11 but not 7/8.1. `AudioEngine` loads the OS `xaudio2_9.dll` when present and falls back to this. Vendored in `third_party/xaudio2redist/`. |
+| `d3dcompiler_47.dll` | RhythmEditor (ImGui/D3D11) | In-box on Win 10/11 and 8.1, but not 7. Copied from the build machine's `System32`. |
+
+No Visual C++ Redistributable, DirectX End-User Runtime, or .NET is required —
+this is a MinGW build and XAudio 2.9 needs no separate DX redist. For audio,
+`AudioEngine` asks for `xaudio2_9.dll` by name first, so the OS copy is used on
+Win 10/11 and the shipped `xaudio2_9redist.dll` only loads on 7/8.1. The shipped
+`d3dcompiler_47.dll` sits next to `RhythmEditor.exe` and is used on every Windows
+version (app directory precedence) — a fixed known-good D3DCompiler.
 
 ## Prerequisites
 

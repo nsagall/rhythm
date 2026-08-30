@@ -90,6 +90,38 @@ bool LoadWavFile(const std::wstring& path, std::vector<BYTE>& outPcmData, WAVEFO
     return true;
 }
 
+// Creates the XAudio2 engine, resolving the entry point at runtime rather than
+// through a load-time import of XAudio2_9.dll. That system DLL ships in-box on
+// Windows 10 and 11 but is absent on Windows 7 and 8.1, so we fall back to
+// xaudio2_9redist.dll - Microsoft's XAudio 2.9 redistributable, shipped beside
+// the executable by the installer (vendored in third_party/xaudio2redist/).
+// The module handle is deliberately never freed: XAudio2 runs its own worker
+// threads for the rest of the process's lifetime.
+HRESULT CreateXAudio2Engine(IXAudio2** outEngine)
+{
+    using XAudio2CreateFn = HRESULT(WINAPI*)(IXAudio2**, UINT32, XAUDIO2_PROCESSOR);
+
+    static const XAudio2CreateFn create = []() -> XAudio2CreateFn {
+        for (const wchar_t* dllName : {L"xaudio2_9.dll", L"xaudio2_9redist.dll"})
+        {
+            if (HMODULE module = LoadLibraryW(dllName))
+            {
+                if (FARPROC proc = GetProcAddress(module, "XAudio2Create"))
+                {
+                    return reinterpret_cast<XAudio2CreateFn>(proc);
+                }
+            }
+        }
+        return nullptr;
+    }();
+
+    if (!create)
+    {
+        return HRESULT_FROM_WIN32(ERROR_MOD_NOT_FOUND);
+    }
+    return create(outEngine, 0, XAUDIO2_DEFAULT_PROCESSOR);
+}
+
 } // namespace
 
 // Ensures Shutdown() has run before the engine is destroyed.
@@ -108,7 +140,7 @@ bool AudioEngine::Initialize()
         return false;
     }
 
-    if (FAILED(XAudio2Create(&m_xaudio2, 0, XAUDIO2_DEFAULT_PROCESSOR)))
+    if (FAILED(CreateXAudio2Engine(&m_xaudio2)))
     {
         return false;
     }
