@@ -3,7 +3,7 @@
 
 This is a simple game that I created with the express purpose of gaining familiarity with Claude Code. It's a simple rhythm game for Win32, allowing a user to "play" various instruments and add them to the song in progress (inspired by the game Frequency)
 
-![Gameplay screenshot](screenshots/gameplay.jpg)
+![Gameplay screenshot](screenshots/screenshot_1.jpg)
 
 ## Features
 
