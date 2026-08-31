@@ -475,7 +475,7 @@ bool ChartClip::ValidateArrangementAlignment(const ChartSong& song,
     {
         return true; // nothing sensible to check - ChartSong::Load already rejects this
     }
-    double secondsPerBeat = 60.0 / song.Bpm();
+    double secondsPerBeat = song.SecondsPerBeat();
     double tFallSeconds = c_NoteFallBeats * secondsPerBeat;
     // Same slop ExpandLaneNotesToFillClip/ClipFitsOneLoop already tolerate
     // between a clip's declared beat length and its real, audio-measured one

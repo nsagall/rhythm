@@ -46,7 +46,7 @@ struct Entry
     double audioStartSeconds = 0.0;
     // The current arrangement's shared phase reference - the wall-clock
     // second its first clip began at, whether that was this entry or an
-    // earlier one (see Build()'s own arrangementOriginSeconds) - not
+    // earlier one (see Build()'s own arrangementOriginBeat) - not
     // necessarily == audioStartSeconds. Every phase/loop-boundary
     // computation for this entry's clip is measured relative to this, not
     // absolute second 0, so Seek() can correctly reproduce where the real, phase-seeked audio

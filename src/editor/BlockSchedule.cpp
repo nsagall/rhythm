@@ -71,7 +71,7 @@ Schedule Build(const ChartSong& song, const std::unordered_map<const ChartClip*,
         return schedule;
     }
 
-    double secondsPerBeat = 60.0 / song.Bpm();
+    double secondsPerBeat = song.SecondsPerBeat();
     double tFallSeconds = c_NoteFallBeats * secondsPerBeat;
 
     double t = 0.0;
@@ -84,38 +84,31 @@ Schedule Build(const ChartSong& song, const std::unordered_map<const ChartClip*,
     // to while Build() runs, so a pointer into it would be unsafe until construction finishes.
     std::unordered_map<const ChartClip*, int> voiceIndexByClip;
 
-    // The current arrangement's shared phase reference - mirrors
-    // GameSession::m_arrangementOriginSeconds exactly, including when it's
-    // (re)established: valid whenever at least one voice is open, cleared by
-    // stopAllVoices below (a Reset, or a Break - see its own comment for why
-    // Break can invalidate unconditionally here even though the real game's
-    // StopAllExcept sometimes doesn't).
-    bool arrangementOriginValid = false;
-    double arrangementOriginSeconds = 0.0;
+    // The current bar-alignment origin, as a whole number of beats since
+    // t=0 - mirrors ChartSong::OriginBeat() exactly (this analytical
+    // schedule's own timeline has no separate count-in offset the way
+    // GameSession's does, so t=0 already IS beat 0 here - see ChartSong::
+    // BeginPlaythrough's own comment for the live game's equivalent). 0 for
+    // the song's very first arrangement, and reset to whatever beat t is
+    // at, unconditionally, each time a Reset or Break section is reached
+    // (see their own cases below) - a Learn or Background section never
+    // touches it. Re-anchoring at a Break even when its own clip (or
+    // another still-open voice) was already playing is always safe: the
+    // alignment invariant (ChartClip's own class comment) guarantees t is
+    // already one of its own loop boundaries, so this lands on the exact
+    // same phase a preserved origin would have. Integral for the same
+    // reason ChartSong::OriginBeat() is - the origin is only ever
+    // re-anchored to an already beat-aligned instant, never fractional.
+    long long arrangementOriginBeat = 0;
 
-    // Mirrors GameSession::EnsureArrangementOrigin exactly - see its own
-    // comment.
-    auto establishArrangementOrigin = [&](double atSeconds)
-    {
-        if (!arrangementOriginValid)
-        {
-            arrangementOriginValid = true;
-            arrangementOriginSeconds = atSeconds;
-        }
-        return arrangementOriginSeconds;
-    };
-
-    // Closes every currently-open voice window and invalidates the
-    // arrangement origin - called on entering a Break or Reset section (both
-    // silence everything before anything else in the real game too, via
-    // AudioEngine::StopAll()/StopAllExcept() + GameSession's own
-    // ClipInstance::isPlaying fill). Unconditional here even for Break,
-    // unlike the real game's StopAllExcept (which spares its own
-    // already-playing clip) - schedule-equivalent regardless, since every
-    // VoiceWindow this section's own clip had open closes and reopens at the
-    // same instant either way, and the alignment invariant (ChartClip's own
-    // class comment) guarantees re-establishing its origin right here
-    // lands on the exact same phase a preserved one would have.
+    // Closes every currently-open voice window - called on entering a Break
+    // or Reset section (both silence everything before anything else in the
+    // real game too, via AudioEngine::StopAll()/StopAllExcept() +
+    // GameSession's own ClipInstance::isPlaying fill). Unconditional here
+    // even for Break, unlike the real game's StopAllExcept (which spares
+    // its own already-playing clip) - schedule-equivalent regardless, since
+    // every VoiceWindow this section's own clip had open closes and reopens
+    // at the same instant either way.
     auto stopAllVoices = [&](double atSeconds)
     {
         for (VoiceWindow& window : schedule.voices)
@@ -129,17 +122,12 @@ Schedule Build(const ChartSong& song, const std::unordered_map<const ChartClip*,
         {
             entry.second.MarkStopped();
         }
-        arrangementOriginValid = false;
     };
 
     // Mirrors GameSession::StartClipLoop's own idempotency guard - a no-op
     // if this clip already has an open voice (from a Learn/Break/
-    // Background section reached earlier and never since stopped).
-    // Establishes the arrangement origin if nothing else has already,
-    // mirroring StartClipLoop's own safety-net call, so a Background voice
-    // (which never goes through Learn/Break's own explicit
-    // pre-establishment) still gets one. Returns the (possibly just-opened)
-    // instance either way.
+    // Background section reached earlier and never since stopped). Returns
+    // the (possibly just-opened) instance either way.
     auto startVoiceIfNeeded = [&](const ChartClip* clip, double atSeconds, double volumeBeforeLockIn,
                                    double volumeAfterLockIn, double lockInSecondsForThisStart,
                                    int sectionIndex) -> ClipInstance&
@@ -149,8 +137,7 @@ Schedule Build(const ChartSong& song, const std::unordered_map<const ChartClip*,
         {
             return instance;
         }
-        double originSeconds = establishArrangementOrigin(atSeconds);
-        instance.SetContext(*clip, originSeconds, stemDurationsByClip.at(clip));
+        instance.SetContext(*clip, static_cast<double>(arrangementOriginBeat) * secondsPerBeat, stemDurationsByClip.at(clip));
         instance.MarkStarted(atSeconds);
 
         VoiceWindow window;
@@ -195,6 +182,7 @@ Schedule Build(const ChartSong& song, const std::unordered_map<const ChartClip*,
 
             case SectionKind::Reset:
                 stopAllVoices(t);
+                arrangementOriginBeat = std::llround(t / secondsPerBeat);
                 break;
 
             case SectionKind::Break:
@@ -204,6 +192,7 @@ Schedule Build(const ChartSong& song, const std::unordered_map<const ChartClip*,
                 // plain unconditional close here even though the real
                 // game's equivalent (StopAllExcept) skips its own clip.
                 stopAllVoices(t);
+                arrangementOriginBeat = std::llround(t / secondsPerBeat);
 
                 Entry entry;
                 entry.sectionIndex = static_cast<int>(i);
@@ -216,8 +205,8 @@ Schedule Build(const ChartSong& song, const std::unordered_map<const ChartClip*,
                 // stopAllVoices() just cleared every voice, so this always
                 // opens fresh (matches the real StartClipLoop always
                 // actually (re)starting a break's clip, phase-seeked at t) -
-                // and establishes the arrangement origin fresh, right at t,
-                // since stopAllVoices() just invalidated it unconditionally.
+                // against arrangementOriginBeat, just re-anchored to t
+                // above.
                 ClipInstance& instance = startVoiceIfNeeded(clip, t, clip->Volume(), clip->Volume(), -1.0,
                                                              static_cast<int>(i));
                 entry.originSeconds = instance.OriginSeconds();
@@ -236,22 +225,33 @@ Schedule Build(const ChartSong& song, const std::unordered_map<const ChartClip*,
                 instance.MarkStopped();
 
                 t = entry.endSeconds;
+
+                // A Break implicitly ends with a Reset - mirrors
+                // GameSession's own finishedSection handling for a Break
+                // exactly (see its own comment for why: without this,
+                // whatever picks up next only lands on a shared loop
+                // boundary if the break's own played duration happens to be
+                // a whole multiple of that next clip's own length, which
+                // nothing guarantees). Everything is already closed by
+                // stopAllVoices() above/instance.MarkStopped() just now, so
+                // there's nothing left to stop here, just the re-anchor.
+                arrangementOriginBeat = std::llround(t / secondsPerBeat);
+
                 schedule.entries.push_back(entry);
                 break;
             }
 
             case SectionKind::Learn:
             {
-                double afterBeat = t / secondsPerBeat - 1e-6;
+                double afterBeat = t / secondsPerBeat - c_FreshJoinEpsilonBeats;
 
-                // Established here, ahead of the anchor computation below,
-                // which needs it right away - startVoiceIfNeeded's own
-                // establishment (moments later) is then just a no-op
-                // confirming the same value.
+                // Read here, ahead of the anchor computation below, which
+                // needs it right away - a Learn never moves the origin
+                // (only Reset/Break do), so startVoiceIfNeeded's own read
+                // moments later just sees this exact same value.
                 ClipInstance& instance = clipInstances[clip];
-                double originSeconds = establishArrangementOrigin(t);
-                instance.SetContext(*clip, originSeconds, stemDurationsByClip.at(clip));
-                double originBeat = originSeconds / secondsPerBeat;
+                instance.SetContext(*clip, static_cast<double>(arrangementOriginBeat) * secondsPerBeat, stemDurationsByClip.at(clip));
+                double originBeat = static_cast<double>(arrangementOriginBeat);
 
                 // Covers both a clip's first-ever appearance and a later
                 // section reusing one already mid-groove in one formula -

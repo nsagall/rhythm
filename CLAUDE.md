@@ -87,10 +87,24 @@ lane pitches (`c_LaneMidiPitches` in `src/LaneConfig.h`) from a clip's MIDI file
 source of truth other lane-shaped code sizes itself off.
 
 Every clip's loop boundaries are anchored to a shared **arrangement origin** —
-the wall-clock beat/second the first clip of an unbroken run of
-continuously-sounding clips began at (`GameSession::m_arrangementOriginSeconds`,
-`BlockSchedule::Build`'s own local equivalent) — not absolute beat/second 0, and
-not a separate origin per clip. This rests on three chart-authoring assumptions,
+not absolute beat/second 0, and not a separate origin per clip. `ChartSong`
+itself tracks this as per-playthrough state (`ChartSong::OriginBeat()`,
+`BeginPlaythrough()`), not chart content and not touched by `Load()` — kept
+there rather than on `GameSession` because `GameSession` replaces its
+`ChartSong` wholesale on every `LoadChart()`, so a fresh playthrough already
+gets a fresh origin for free. It's 0 (this playthrough's own beat 0) at song
+start and is re-anchored to the current beat, unconditionally, as a whole
+number of beats, every time a `[reset]` or `[break]` section is reached
+(`BlockSchedule::Build`'s own local `arrangementOriginBeat` is the editor's
+equivalent, anchored at its own t=0) — a `[learn]`/`[background]` section
+never moves it, so either always inherits whichever reset/break (or song
+start) came most recently. `[reset]` itself is not a pause or a "fresh song"
+marker — it has no clip and adds no elapsed time, its only effect is
+stopping whatever's still looping and moving this origin. `ChartSong` also
+centralizes the tempo-based beat↔second conversions every consumer needs
+(`SecondsPerBeat()`, `AbsoluteBeatToSeconds()`, `SecondsToAbsoluteBeat()`) so
+that arithmetic isn't repeated ad hoc at each call site. This rests on three
+chart-authoring assumptions,
 checked once at load time by `ChartClip::ValidateArrangementAlignment` (never
 at runtime, so a validated chart can't fail mid-song): every clip's length is a
 whole number of bars; clips that ever sound concurrently are the same length or

@@ -195,9 +195,9 @@ void NoteLaneModel::CollectNotes(const GameSession& session, const ClipPlaythrou
                 {
                     // Never held or judged - only possible for a clip's
                     // first-ever appearance, which anchors to its pattern's
-                    // true beginning (see GameSession.h's own
-                    // m_arrangementOriginSeconds comment) and so can start
-                    // partway into a bar. Never included in the scene.
+                    // true beginning (see ChartSong::OriginBeat()'s own
+                    // comment) and so can start partway into a bar. Never
+                    // included in the scene.
                     continue;
                 }
             }

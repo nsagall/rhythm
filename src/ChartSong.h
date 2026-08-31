@@ -10,7 +10,7 @@ enum class SectionKind
 {
     Learn,      // [learn]: judge presses/releases against the clip, exactly like today's single-clip flow
     Break,      // [break]: stop everything else playing, play this clip, block until loop_count loops finish
-    Reset,      // [reset]: stop everything else playing, then advance immediately (a silence gate, no clip)
+    Reset,      // [reset]: stop everything else looping, then advance immediately (no clip, no pause - see ChartSong::OriginBeat()'s own comment)
     Background, // [background]: queue this clip to start playing (without stopping anything) when the *next* section begins
 };
 
@@ -71,6 +71,62 @@ public:
     // holds the fully parsed/validated song.
     bool Load(const std::wstring& chartFilePath, std::vector<std::wstring>& outErrors);
 
+    // ---------------------------------------------------------------
+    // Per-playthrough timing state - unlike every other member on this
+    // class, NOT chart content, and untouched by Load(). Kept here rather
+    // than on GameSession because GameSession owns exactly one ChartSong at
+    // a time (see its own m_song) and replaces it wholesale on every
+    // LoadChart(), so a fresh playthrough already gets a fresh instance of
+    // this state for free, with no separate reset path needed on
+    // GameSession's own side. GameSession::BeginSection calls
+    // BeginPlaythrough() the moment section 0 actually begins (letting a
+    // replay of the same chart re-anchor without a fresh LoadChart());
+    // BlockSchedule::Build (the editor's offline analytical scheduler, whose
+    // own timeline has no count-in) anchors it to 0.0 - see its own comment.
+    // ---------------------------------------------------------------
+
+    // (Re)anchors a playthrough: wallClockSecondsAtBeatZero becomes this
+    // playthrough's own beat 0 (see AbsoluteBeatToSeconds/
+    // SecondsToAbsoluteBeat), and the bar-alignment origin resets to that
+    // same beat.
+    void BeginPlaythrough(double wallClockSecondsAtBeatZero)
+    {
+        m_songStartSeconds = wallClockSecondsAtBeatZero;
+        m_originBeat = 0;
+    }
+
+    // The current bar-alignment origin, as a whole number of beats since
+    // this playthrough's own beat 0 (a beat before that - e.g. during the
+    // count-in - is simply negative, not a separate case). Integral because
+    // the origin is only ever (re)anchored to an already beat-aligned
+    // instant (a Reset/Break's own scheduled beat, or BeginPlaythrough's own
+    // 0) - never fractional, so storing it as one forecloses any
+    // float-drift risk in that invariant. Reset to whatever beat gameplay is
+    // at each time a Reset or Break section is reached (see
+    // GameSession::BeginSection/BlockSchedule::Build's own Reset/Break cases
+    // for why re-anchoring there is always safe) - a Learn or Background
+    // section never touches it.
+    long long OriginBeat() const { return m_originBeat; }
+    void SetOriginBeat(long long beat) { m_originBeat = beat; }
+
+    // This playthrough's own beat<->seconds conversions, both measured from
+    // BeginPlaythrough's own wallClockSecondsAtBeatZero - centralizes the
+    // 60.0/Bpm() arithmetic so it's never repeated (or drifted) at each of
+    // its many callers.
+    double SecondsPerBeat() const { return 60.0 / m_bpm; }
+    double AbsoluteBeatToSeconds(double absoluteBeat) const
+    {
+        return m_songStartSeconds + absoluteBeat * SecondsPerBeat();
+    }
+    double SecondsToAbsoluteBeat(double wallClockSeconds) const
+    {
+        return (wallClockSeconds - m_songStartSeconds) / SecondsPerBeat();
+    }
+
+    // OriginBeat(), converted to a wall-clock second - shorthand for
+    // AbsoluteBeatToSeconds(static_cast<double>(OriginBeat())).
+    double OriginSeconds() const { return AbsoluteBeatToSeconds(static_cast<double>(m_originBeat)); }
+
 private:
     std::wstring m_title;
     double m_bpm = 120.0;
@@ -80,4 +136,9 @@ private:
     double m_releaseToleranceMs = 120.0;
     std::vector<ChartClip> m_clips;
     std::vector<ChartSection> m_sections;
+
+    // See the "per-playthrough timing state" section above - not chart
+    // content, not touched by Load().
+    double m_songStartSeconds = 0.0;
+    long long m_originBeat = 0;
 };

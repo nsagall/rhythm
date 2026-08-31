@@ -270,10 +270,12 @@ private:
     // Idempotent - a no-op if the clip is already playing.
     void StartClipLoop(int clipIndex, double volume, int finiteLoopCount = 0);
 
-    // Establishes the arrangement origin at nowSeconds if nothing is currently playing.
-    //   nowSeconds - candidate origin instant, used only if no origin is currently valid.
-    // Returns the origin to use: nowSeconds, or the existing one if still valid.
-    double EnsureArrangementOrigin(double nowSeconds);
+    // m_song.OriginBeat()/OriginSeconds() (see ChartSong's own comment), converted into the beat
+    // numbering scheduledBeat and every note's own expected beat already use throughout this class -
+    // beats since SongClock::Start() (i.e. since the count-in began), not since ChartSong's own beat
+    // 0 (the count-in's end). ChartSong knows nothing about SongClock, so this one small conversion
+    // stays here rather than on ChartSong.
+    double ArrangementOriginBeat() const;
 
     // Stops clipIndex's stem if it's playing.
     //   clipIndex - index of the clip to stop.
@@ -374,15 +376,23 @@ private:
     // Per-clip playback voices, keyed by each clip's own address in m_song.clips.
     std::unordered_map<const ChartClip*, ClipInstance> m_clipInstances;
 
-    // The current arrangement's shared phase reference: the wall-clock second its first clip began at.
-    // Invalid whenever nothing is currently playing - see EnsureArrangementOrigin.
-    bool m_arrangementOriginValid = false;
-    double m_arrangementOriginSeconds = 0.0;
-
     // See TryBufferEarlyPress/ConsumeBufferedPresses/BufferedPress.
     BufferedPress m_bufferedPress[c_LaneCount];
 
     QueuedBackground m_queuedBackground;
+
+    // Set when a Break's own advance fires (see Update()'s finishedSection
+    // handling) and consumed at the very top of the next BeginSection call -
+    // a Break implicitly ends with a Reset, re-anchoring the bar-alignment
+    // origin to that instant (see ChartSong::OriginBeat()'s own comment for
+    // why). Deferred to BeginSection, rather than done directly in Update(),
+    // specifically so the re-anchor uses the exact same scheduledBeat-derived
+    // nowSeconds the section it lands on then reads right back - computing
+    // it independently in both places (Update()'s own PendingAdvanceAtSeconds()
+    // vs. BeginSection's scheduledBeat parameter) can differ by a
+    // rounding hair, which is enough to fail the exact-boundary check.
+    bool m_arrangementResetPending = false;
+
     JudgementResult m_lastJudgement = JudgementResult::None;
 
     // See CurrentScore()/CurrentBank()/ScoringStreak().

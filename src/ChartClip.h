@@ -18,6 +18,24 @@ enum class LearnMode
 // ChartSong.h can't be included here since it holds a std::vector<ChartClip>.
 class ChartSong;
 
+// How far below a fresh join's own scheduled beat a caller should query
+// ChartClip::NextOnsetAfter's own afterBeat parameter to reliably land on
+// that clip's true first note, rather than skipping past it - see
+// NextOnsetAfter's own doc comment for why querying "just before" a fresh
+// join's own beat is the trick that makes one formula cover both a clip's
+// first-ever appearance and a later reuse. Needs to comfortably exceed the
+// real floating-point drift a long chain of section advances can
+// accumulate (ComputeLearnAdvanceSeconds works from real, measured stem
+// durations, not perfectly round beat values, so each hop adds a few
+// millionths of a beat - confirmed real repro: after three chained learn
+// sections, "A Real Good Time"'s chords section arrived about six
+// millionths of a beat past its own true first onset, enough for the
+// scheduled-beat query to land on its *second* note instead and the first
+// one never appeared at all) while staying far below any realistic
+// note-to-note spacing (chart authors never place two distinct onsets
+// within a thousandth of a beat of each other).
+constexpr double c_FreshJoinEpsilonBeats = 1e-3;
+
 // A reusable audio+MIDI bundle: a stem file, its MIDI-authored note pattern, and the
 // judging thresholds for a [learn] section. Purely a definition - a section block must
 // reference it to do anything, and the same clip may be referenced by more than one section.
