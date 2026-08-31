@@ -7,24 +7,12 @@
 #include "DiagTestHelpers.h"
 #include "GameSession.h"
 
-// Standalone diagnostic (not part of the normal build): verifies that
-// GameSession::m_streakTracker resets to 0 - and CurrentMultiplier() drops
-// back to x1 - the instant a section's bank actually pays out (see
-// Update()'s own banking comment and StreakTracker::Reset()), not just on
-// the shared 3-consecutive-miss trip (already covered by
-// ScoringDiagMain.cpp). This is what makes the streak carry across a
-// Reset/Background section, or into a Break with nothing of its own to pay
-// out, but NOT across a Learn section's own advance - reaching an advance at
-// all requires having just scored something, so its own payout resets the
-// streak every time in practice.
+// Standalone diagnostic: verifies m_streakTracker resets to 0 (and CurrentMultiplier() to x1) the
+// instant a section's bank pays out, not just on the 3-miss trip (ScoringDiagMain covers that).
 //
-// Drives test_charts/section_modes_test.chart end to end, playing every
-// judgeable note perfectly: [background: bass_drum] -> [learn:
-// fast_test_hat, hits_required=4] -> [reset] -> [break: bass_drum] ->
-// [learn: fast_test_hat again]. The first learn section's streak/multiplier
-// are captured the instant its payout happens; the second learn section's
-// streak/multiplier are captured the instant it begins - both must read
-// back to 0 / x1, not whatever the first section had built up.
+// Drives section_modes_test.chart end to end, playing perfectly: [background] -> [learn,
+// hits_required=4] -> [reset] -> [break] -> [learn]. The first learn's streak/multiplier are
+// captured at its payout; the second's at its start - both must read 0 / x1.
 
 namespace
 {
@@ -138,12 +126,8 @@ int main(int argc, char** argv)
         session.Update();
         prevSectionIndex = session.CurrentSectionIndex();
 
-        // We only ever play perfect, on-time presses in this diagnostic - no
-        // deliberate misses - so the only possible source of a
-        // multiplier-drop-to-x1 event is the payout itself (never the
-        // 3-miss trip), which is why this doesn't need to be gated on
-        // sawFirstLearnPayout already being true (it isn't yet, this early
-        // in the very iteration the payout happens).
+        // This diagnostic only plays perfect presses, so the only source of a multiplier-drop-to-x1
+        // event is the payout itself, never the 3-miss trip.
         for (const auto& event : session.ConsumeHudChangeEvents())
         {
             if (event.field == GameSession::HudField::Multiplier && event.newValue == 1)

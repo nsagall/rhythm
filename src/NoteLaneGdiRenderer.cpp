@@ -27,17 +27,12 @@ constexpr double c_ExplosionMinSpeedPxPerSec = 90.0;
 constexpr double c_ExplosionMaxSpeedPxPerSec = 260.0;
 constexpr double c_ExplosionDragPerSec = 2.5; // exponential slowdown - a burst outward that settles, not a straight-line fly-off
 
-// The hits meter's own little "lock-in" burst - a single celebration point
-// rather than one burst per note, so it gets a bit more than one note's
-// worth of sparks (c_ExplosionParticlesPerNote) to still read as an event
-// worth noticing beside the (possibly much larger) note-explosion burst
-// firing at the very same instant.
+// The hits meter's "lock-in" spark burst - a bit more than one note's worth (c_ExplosionParticlesPerNote)
+// so it still reads beside the note-explosion burst firing at the same instant.
 constexpr int c_HitsMeterExplosionParticleCount = 16;
 
-// The hits meter's own confetti burst (Pass mode only - see
-// AppendHitsMeterConfetti) - fewer pieces than the full-width playfield
-// burst (c_ConfettiPieceCount), scaled down to match the meter's own much
-// narrower width.
+// The hits meter's confetti burst (Pass mode only) - fewer pieces than the playfield burst, scaled
+// to the meter's narrower width.
 constexpr int c_HitsMeterConfettiPieceCount = 18;
 
 // Hit ripples grow twice as fast as miss ripples, which are themselves a
@@ -63,16 +58,11 @@ constexpr int c_GlyphRadiusX = 7;
 constexpr int c_GlyphRadiusY = 7;
 constexpr int c_ReceptorRadius = 14;
 
-// The smallest on-screen space (in pixels) ever left between two notes in
-// the same lane, even when one's release beat and the next's onset beat are
-// identical (or a hair apart) - see DrawNotes' gap-enforcement pass, which
-// shortens the earlier note's trailing edge (never the later note's leading
-// edge/glyph, which always sits exactly at its real onset time) to make
-// room for it.
+// Smallest on-screen gap (px) ever left between two notes in the same lane. DrawNotes' gap pass
+// shortens the earlier note's trailing edge (never the later note's glyph) to make room.
 constexpr int c_MinNoteGapPx = 5;
-// However short c_MinNoteGapPx above forces a note's bar to get, never
-// shrink it past this - keeps a very short/back-to-back note's bar from
-// visually inverting or vanishing entirely.
+// Never shrink a note's bar past this, however short c_MinNoteGapPx forces it - keeps a
+// back-to-back note's bar from inverting or vanishing.
 constexpr int c_MinNoteBarHeightPx = 6;
 
 // A lane's central rail (see DrawRails) pulses from a straight line into a
@@ -224,10 +214,8 @@ int NoteLaneGdiRenderer::LineY(RECT laneRect) const
     return laneRect.top + static_cast<int>(c_BeatsAhead * PixelsPerBeat(laneRect));
 }
 
-// Notes spawn at the top (the future) and scroll straight down toward the
-// judge line near the bottom: c_BeatsAhead of the timeline occupies the
-// space above the line, c_BeatsBehind the space below it. Shared across
-// every column - only the horizontal position varies by lane.
+// Notes spawn at the top and scroll down toward the judge line: c_BeatsAhead occupies the space
+// above the line, c_BeatsBehind the space below. Only the horizontal position varies by lane.
 int NoteLaneGdiRenderer::LaneCenterX(RECT laneRect, int lane) const
 {
     double totalWidth = laneRect.right - laneRect.left;
@@ -256,12 +244,8 @@ COLORREF NoteLaneGdiRenderer::ColorForNote(NoteVisualState state, COLORREF clipC
     }
 }
 
-// Returns a solid brush for `color`, creating it once and reusing it for
-// this renderer's lifetime - every note/receptor/ripple/confetti piece
-// redraws every single frame (up to 60 times a second) from a small,
-// bounded palette (clip colors, hit/miss, and their Darken()/
-// Lighten() derivatives), so creating and immediately destroying a fresh
-// HBRUSH for each one would be pure per-frame GDI churn for no benefit.
+// Returns a solid brush for color, created once and reused for the renderer's lifetime - the color
+// palette is small and bounded, and everything redraws every frame.
 HBRUSH NoteLaneGdiRenderer::CachedSolidBrush(COLORREF color)
 {
     HBRUSH& brush = m_brushCache[color];
@@ -272,9 +256,7 @@ HBRUSH NoteLaneGdiRenderer::CachedSolidBrush(COLORREF color)
     return brush;
 }
 
-// Same idea as CachedSolidBrush, for the PS_SOLID pens used to outline
-// rings and the lane border - (thickness, color) pairs are the same
-// small, bounded set every frame.
+// Same idea as CachedSolidBrush, for PS_SOLID pens keyed by (thickness, color).
 HPEN NoteLaneGdiRenderer::CachedSolidPen(int width, COLORREF color)
 {
     UINT64 key = (static_cast<UINT64>(static_cast<UINT32>(width)) << 32) | static_cast<UINT32>(color);
@@ -372,10 +354,8 @@ void NoteLaneGdiRenderer::DrawAlphaRoundRect(HDC hdc, RECT rect, int cornerRadiu
     shape.Blend(alpha);
 }
 
-// Alpha-blends an outlined (unfilled) rounded rectangle - same shape as
-// DrawAlphaRoundRect, but a stroke rather than a fill, so it can sit on top
-// of already-drawn content (e.g. the HUD panel's text) as a border glow
-// instead of covering it.
+// Alpha-blends an outlined rounded rectangle - a stroke, not a fill, so it can sit on top of
+// already-drawn content (e.g. the HUD panel's text) as a border glow.
 void NoteLaneGdiRenderer::DrawAlphaRoundRectOutline(HDC hdc, RECT rect, int cornerRadius, int thickness,
                                                      COLORREF color, BYTE alpha)
 {
@@ -415,7 +395,7 @@ void NoteLaneGdiRenderer::DrawAlphaRect(HDC hdc, int cx, int cy, int halfWidth, 
     shape.Blend(alpha);
 }
 
-// Alpha-blends DrawTextW output - see the header's own comment.
+// Alpha-blends DrawTextW output. No-op for empty text.
 void NoteLaneGdiRenderer::DrawAlphaText(HDC hdc, RECT rect, const std::wstring& text, HFONT font, COLORREF color,
                                          UINT flags, BYTE alpha)
 {
@@ -437,13 +417,9 @@ void NoteLaneGdiRenderer::DrawAlphaText(HDC hdc, RECT rect, const std::wstring& 
     shape.Blend(alpha);
 }
 
-// Draws a music-notation-free notehead marker: dark bevel rim, color fill, a soft alpha glow
-// behind it, and a small specular highlight - the note's start marker, sitting at the bottom
-// (leading) edge of its duration bar. passing adds a second, wider green glow ring underneath
-// everything else - a supplementary "this track is currently passing" cue that doesn't touch
-// color. In practice only ever true for a Pass-mode clip (see ClipPlaythrough::passing/
-// NoteLaneModel::UpdateClipInstances) - a DontFail clip's own progress is conveyed by the hits
-// meter bar instead, so its notes never carry this glow.
+// Draws a notehead marker (dark bevel rim, color fill, soft glow, specular highlight) at the
+// leading edge of a note's duration bar. passing adds a wider green glow ring underneath - a
+// "currently passing" cue, in practice only ever true for a Pass-mode clip.
 void NoteLaneGdiRenderer::DrawNoteGlyph(HDC hdc, int x, int y, COLORREF color, bool glow, bool passing)
 {
     if (passing)
@@ -476,16 +452,9 @@ void NoteLaneGdiRenderer::DrawNoteGlyph(HDC hdc, int x, int y, COLORREF color, b
     SelectObject(hdc, oldPen);
 }
 
-// Draws a note's duration bar spanning [yTop, yBottom] at horizontal center
-// x, with the same dark-rim/fill bevel language as the glyph, so the bar
-// and its start marker read as one consistent object. Capsule-shaped
-// rather than a rounded square: the rounding ellipse's own
-// diameter is the bar's full width (clamped to its height, for a very short
-// bar), so the top/bottom ends are always true semicircles instead of a
-// fixed, width-independent corner radius. passing adds a glowing green
-// outline around the whole bar underneath everything else, matching
-// DrawNoteGlyph's own passing glow (see its comment - in practice
-// Pass-mode-only).
+// Draws a note's duration bar spanning [yTop, yBottom] at center x, in the same bevel language as
+// the glyph. Capsule-shaped: the corner rounding equals the bar's full width, so the ends are true
+// semicircles. passing adds a green outline, matching DrawNoteGlyph's passing glow.
 void NoteLaneGdiRenderer::DrawNoteBar(HDC hdc, int x, int yTop, int yBottom, int halfWidth, COLORREF color,
                                        bool passing)
 {
@@ -544,9 +513,8 @@ void NoteLaneGdiRenderer::DrawReceptor(HDC hdc, int x, int y, COLORREF laneColor
     DrawAlphaCircle(hdc, x, y, 3, Lighten(laneColor, 60), 150);
 }
 
-// A scattering of small twinkling sparkles for ambiance - drift gently on
-// wall-clock time (alive even before the player presses Start) and get an
-// extra brightness kick from the beat pulse once the song runs.
+// A scattering of small twinkling sparkles for ambiance - drift on wall-clock time (alive even
+// before Start) and brighten with the beat pulse once the song runs.
 void NoteLaneGdiRenderer::DrawSparkles(HDC hdc, RECT laneRect, double beatPulse)
 {
     DWORD ticks = GetTickCount();
@@ -564,9 +532,8 @@ void NoteLaneGdiRenderer::DrawSparkles(HDC hdc, RECT laneRect, double beatPulse)
     }
 }
 
-// A faint horizontal line at every measure boundary crossing the visible
-// window, so the falling pattern reads against the song's own bar grid
-// instead of floating with no sense of scale.
+// A faint horizontal line at every measure boundary in the visible window, so the falling pattern
+// reads against the song's bar grid.
 void NoteLaneGdiRenderer::DrawMeasureLines(HDC hdc, RECT laneRect, const NoteLaneScene& scene)
 {
     if (scene.beatsPerBar <= 0)
@@ -591,13 +558,9 @@ void NoteLaneGdiRenderer::DrawMeasureLines(HDC hdc, RECT laneRect, const NoteLan
     }
 }
 
-// A faint glowing rail down each column, in the current/upcoming clip's
-// own color, so every lane has a visible identity even where no notes are
-// currently on screen. Normally a straight line, same as before - but
-// beatPulse (brightest right on the beat, decaying between beats - see
-// Draw()'s own comment) bends it into a traveling sine-wave squiggle whose
-// amplitude tracks the pulse, so it visibly relaxes back to straight before
-// bulging again on the next beat.
+// A faint glowing rail down each column in the current clip's color, so every lane has an identity
+// even with no notes on screen. beatPulse bends it from a straight line into a traveling sine-wave
+// squiggle whose amplitude tracks the pulse.
 void NoteLaneGdiRenderer::DrawRails(HDC hdc, RECT laneRect, COLORREF primaryColor, double beatPulse)
 {
     int lineY = LineY(laneRect);
@@ -676,23 +639,14 @@ void NoteLaneGdiRenderer::DrawReceptors(HDC hdc, RECT laneRect, const NoteLaneSc
     }
 }
 
-// Draws every note in scene.notes: upcoming notes in their own clip color; a
-// held or precisely-hit note in c_NoteColorHit; an imprecisely-hit note (a
-// "partial miss" - correct, but sloppy - see ColorForNote) in
-// c_NoteColorHitImprecise; a missed note in c_NoteColorMiss - all three then
-// hold for the rest of the note's time on screen, matching the real outcome
-// rather than fading back to Normal. Judged hit/miss/held notes get the same
-// glow halo as the passing outline (note.clip->passing) so the pass/fail
-// moment pops instead of being a flat color swap.
+// Draws every note in scene.notes: upcoming notes in their clip color, held/precise-hit in
+// c_NoteColorHit, imprecise-hit in c_NoteColorHitImprecise, missed in c_NoteColorMiss (see
+// ColorForNote). Judged notes get a glow halo so the pass/fail moment pops.
 //
-// Before drawing, each lane's notes are walked in time order enforcing
-// c_MinNoteGapPx of on-screen breathing room between consecutive ones: when
-// one note's release and the next note's onset land close enough together
-// to look touching (or, rarely, overlapping) on screen, the earlier note's
-// trailing edge (its release end, drawn as the top of its bar - see
-// DrawNoteBar) is pulled in to make room. The later note's leading edge
-// (its onset, where its glyph sits) is never touched, so a note's glyph
-// always marks its true onset time regardless of what its neighbor did.
+// Before drawing, each lane's notes are walked in time order enforcing c_MinNoteGapPx between
+// consecutive ones: when one note's release and the next's onset land close enough to look
+// touching, the earlier note's trailing edge is pulled in. The later note's glyph (its onset) is
+// never touched, so a glyph always marks its true onset time.
 void NoteLaneGdiRenderer::DrawNotes(HDC hdc, RECT laneRect, const NoteLaneScene& scene)
 {
     double columnWidth =
@@ -751,11 +705,8 @@ void NoteLaneGdiRenderer::DrawNotes(HDC hdc, RECT laneRect, const NoteLaneScene&
     }
 }
 
-// Draws the in-progress lock-in confetti burst: each piece falls under
-// simple gravity from its spawn position with a bit of horizontal drift,
-// tumbling (a cheap width-scaling trick standing in for a spin, since GDI
-// has no easy per-primitive rotation here) and fading out over its last
-// stretch of life.
+// Draws the in-progress lock-in confetti burst: each piece falls under gravity from its spawn
+// position with horizontal drift, tumbling (a width-scaling stand-in for a spin) and fading out.
 void NoteLaneGdiRenderer::DrawConfetti(HDC hdc, double elapsedSeconds, double t)
 {
     constexpr double c_GravityPxPerSec2 = 420.0;
@@ -774,20 +725,16 @@ void NoteLaneGdiRenderer::DrawConfetti(HDC hdc, double elapsedSeconds, double t)
     }
 }
 
-// Draws the in-progress notes-exploding burst: each spark flies straight
-// outward from wherever its note was, under exponential drag rather than
-// gravity - decelerating to a stop rather than falling - fading out
-// linearly over its short, fixed lifetime.
+// Draws the in-progress notes-exploding burst: each spark flies outward from its note under
+// exponential drag (decelerating to a stop, not falling), fading linearly over its lifetime.
 void NoteLaneGdiRenderer::DrawExplosion(HDC hdc, double elapsedSeconds, double t)
 {
     constexpr int c_ParticleRadiusPx = 3;
 
     BYTE fadeAlpha = static_cast<BYTE>(ClampChannel(static_cast<int>(255 * (1.0 - t))));
 
-    // Closed-form position under v(t) = v0*exp(-k*t): integrates to
-    // x0 + (v0/k)*(1 - exp(-k*t)), asymptotically settling instead of
-    // ever reversing or overshooting like a naive per-frame velocity
-    // decay would.
+    // Closed-form position under v(t) = v0*exp(-k*t): x0 + (v0/k)*(1 - exp(-k*t)), which settles
+    // asymptotically instead of overshooting like a per-frame velocity decay would.
     double factor = (1.0 - std::exp(-c_ExplosionDragPerSec * elapsedSeconds)) / c_ExplosionDragPerSec;
 
     for (const ExplosionParticle& particle : m_explosion)
@@ -798,15 +745,9 @@ void NoteLaneGdiRenderer::DrawExplosion(HDC hdc, double elapsedSeconds, double t
     }
 }
 
-// Expanding judgement ripples (green for a hit, red for a pre-lock-in
-// miss): grow outward at each ripple's own fixed speed from that lane's
-// judge-line position, fading out continuously as they grow so the fade
-// actually reads before the ring is gone, rather than staying near-opaque
-// until it's clipped off the edge of the lane. The fade (and removal) is
-// measured against the farthest single edge of the rect the ring has to
-// cross (not the farthest corner, which is much further away along the
-// diagonal and would leave the ring looking fully opaque for most of its
-// life, fading only once it's already well past the visible lane).
+// Expanding judgement ripples (green hit, red pre-lock-in miss): grow outward from the lane's
+// judge line at each ripple's fixed speed, fading as they grow. The fade and removal are measured
+// against the farthest edge (not corner) of the lane rect, so the fade reads before the ring is gone.
 void NoteLaneGdiRenderer::DrawRipples(HDC hdc, RECT laneRect)
 {
     int lineY = LineY(laneRect);
@@ -834,8 +775,6 @@ void NoteLaneGdiRenderer::DrawRipples(HDC hdc, RECT laneRect)
     }
 }
 
-// Returns baseFont unchanged once growUntilMs has passed - see the header's
-// own comment.
 HFONT NoteLaneGdiRenderer::FontForGrowPulse(HFONT baseFont, int basePointSize, DWORD growUntilMs, HFONT& growFontSlot,
                                              DWORD now)
 {
@@ -856,20 +795,11 @@ HFONT NoteLaneGdiRenderer::FontForGrowPulse(HFONT baseFont, int basePointSize, D
     return growFontSlot ? growFontSlot : baseFont;
 }
 
-// HUD: a translucent rounded panel with bold, drop-shadowed status text so
-// it stays readable over the busy, colorful background beneath it.
-// scoreText (right-aligned) gets first claim on the panel's width - status
-// text (left-aligned) has its own rect shrunk to end before it starts (and
-// ellipsizes via DT_END_ELLIPSIS if it still doesn't fit), so the two can
-// never overlap regardless of how long either one is. multiplierText/
-// bankText (the current streak multiplier and the whole-song bank's
-// not-yet-paid-out amount) read as a small sub-row just under the panel,
-// right-aligned as a pair to match scoreText above them - both hide
-// entirely while empty (bank at 0, multiplier at the base x1 rate - see
-// NoteLaneModel::BuildScene). Every one of the three values grows to 2x
-// size for about a second right as it changes - see
-// FontForGrowPulse/OnHudValueChanged - and DrawScorePopups (called last) is
-// what a bank wipe additionally gets on top of that.
+// HUD: a translucent rounded panel with bold, drop-shadowed status text. scoreText (right-aligned)
+// gets first claim on the width; statusText (left-aligned) shrinks to end before it and ellipsizes
+// if needed, so the two can't overlap. multiplierText/bankText read as a right-aligned sub-row
+// under the panel, both hidden while empty. Each of the three values grows to 2x briefly when it
+// changes (FontForGrowPulse); a bank wipe additionally gets DrawScorePopups on top.
 void NoteLaneGdiRenderer::DrawHud(HDC hdc, RECT laneRect, const std::wstring& statusText, const std::wstring& scoreText,
                                    const std::wstring& bankText, const std::wstring& multiplierText)
 {
@@ -927,8 +857,7 @@ void NoteLaneGdiRenderer::DrawHud(HDC hdc, RECT laneRect, const std::wstring& st
 
     SelectObject(hdc, oldFont);
 
-    // Bank + multiplier sub-row - bank on the far right (mirrors where the
-    // old single pending-score readout sat), multiplier just to its left.
+    // Bank + multiplier sub-row - bank on the far right, multiplier just to its left.
     RECT bankRect{std::max(textRect.left, scoreRect.right - 90), panelRect.bottom + 2, scoreRect.right,
                   panelRect.bottom + 20};
     RECT multiplierRect{std::max(textRect.left, bankRect.left - 46), panelRect.bottom + 2, bankRect.left - 6,
@@ -951,9 +880,7 @@ void NoteLaneGdiRenderer::DrawHud(HDC hdc, RECT laneRect, const std::wstring& st
         DrawAlphaText(hdc, bankRect, bankText, bankFont, c_ScorePopupBankedColor, c_ScoreFlags, alpha);
     }
 
-    // A brief red glow around the whole panel when a streak trip just wiped
-    // the bank - drawn last so it sits on top of the panel/text as a
-    // pulsing border rather than covering either.
+    // A brief red border glow around the panel when a streak trip wiped the bank - drawn last.
     if (now < m_scoreFlashUntilMs)
     {
         double remainingT = static_cast<double>(m_scoreFlashUntilMs - now) / c_ScoreFlashDurationMs;
@@ -966,9 +893,8 @@ void NoteLaneGdiRenderer::DrawHud(HDC hdc, RECT laneRect, const std::wstring& st
     DrawScorePopups(hdc, panelRect);
 }
 
-// Drops any expired entry from m_scorePopups, then draws whatever's left -
-// see ScorePopup's own comment. Stacked by index (rather than overlapping)
-// on the rare frame more than one is alive at once.
+// Drops expired m_scorePopups entries, then draws the rest, stacked by index if more than one is
+// alive.
 void NoteLaneGdiRenderer::DrawScorePopups(HDC hdc, RECT panelRect)
 {
     DWORD now = GetTickCount();
@@ -987,8 +913,7 @@ void NoteLaneGdiRenderer::DrawScorePopups(HDC hdc, RECT panelRect)
         std::wstring text = L"-" + std::to_wstring(popup.amount);
         COLORREF color = c_NoteColorMiss;
 
-        // Sinks and shakes as it fades - a decaying wobble, like the points
-        // are crumbling away rather than cleanly departing.
+        // Sinks and shakes with a decaying wobble as it fades.
         int yOffset = static_cast<int>(c_ScorePopupSinkPx * t);
         int xOffset = static_cast<int>(c_ScorePopupShakePx * std::sin(t * 30.0) * (1.0 - t));
 
@@ -1001,23 +926,11 @@ void NoteLaneGdiRenderer::DrawScorePopups(HDC hdc, RECT panelRect)
     }
 }
 
-// The hits meter panel: a translucent rounded track, same visual language
-// as DrawHud's panel, with a colored fill anchored to the bottom that grows
-// upward as scene.hitsMeterProgress climbs toward 1. Drawn only while
-// scene.showHitsMeter is true - stays visible for a Pass clip's entire
-// post-lock-in run too now, held at its full 1.0 value (see
-// NoteLaneScene::hitsMeterProgress) rather than vanishing the instant it
-// locks in; scene.hitsMeterPulsing is what tells this apart from an
-// ordinary progress value and, while it's true, brightens the fill and
-// flashes a bright ring around the whole panel on the beat, so the held-full
-// bar still visibly breathes with the music instead of looking static - the
-// ring carries most of that (an alpha swing reads much more clearly than
-// the fill's own brightness shift alone). A DontFail clip's own meter (never
-// pulsing -
-// hitsMeterPulsing is always false for it) means "up towards the end of
-// this loop of the clip" instead (see NoteLaneScene::hitsMeterProgress).
-// Draw() additionally spawns AppendHitsMeterExplosion/AppendHitsMeterConfetti's
-// burst on the frame either mode locks in, on top of whatever this draws.
+// The hits meter panel: a translucent rounded track (same language as DrawHud's panel) with a
+// bottom-anchored colored fill that grows as scene.hitsMeterProgress climbs toward 1. Drawn only
+// while scene.showHitsMeter. While scene.hitsMeterPulsing (a Pass clip held full after lock-in),
+// the fill brightens and a bright ring flashes around the panel on the beat, so the bar breathes
+// with the music. Draw() spawns the lock-in bursts on top separately.
 void NoteLaneGdiRenderer::DrawHitsMeter(HDC hdc, RECT hitsMeterRect, const NoteLaneScene& scene, double beatPulse)
 {
     if (!scene.showHitsMeter || hitsMeterRect.right <= hitsMeterRect.left ||
@@ -1050,8 +963,7 @@ void NoteLaneGdiRenderer::DrawHitsMeter(HDC hdc, RECT hitsMeterRect, const NoteL
     COLORREF fillColor = scene.primaryClip ? scene.primaryClip->color : c_StreakColor;
     if (scene.hitsMeterPulsing)
     {
-        // Same "breathe brighter right on the beat" treatment as the
-        // playfield background/rails (see Draw()'s own beatPulse comment).
+        // Same "breathe brighter on the beat" treatment as the playfield background/rails.
         fillColor = Lighten(fillColor, static_cast<int>(beatPulse * 70));
     }
     RECT fillRect{innerRect.left, innerRect.bottom - fillHeight, innerRect.right, innerRect.bottom};
@@ -1059,11 +971,8 @@ void NoteLaneGdiRenderer::DrawHitsMeter(HDC hdc, RECT hitsMeterRect, const NoteL
 
     if (scene.hitsMeterPulsing)
     {
-        // The fill's own brightness shift above reads as fairly subtle on a
-        // solid-colored bar - this bright ring right around the whole panel
-        // is what actually makes the beat land visually: alpha (not just
-        // RGB) swinging from ~0 to near-opaque and back every beat, same
-        // decay curve as beatPulse itself (see Draw()'s own comment).
+        // A bright ring around the panel, alpha swinging from ~0 to near-opaque each beat - this
+        // carries the beat more than the fill's subtle brightness shift does.
         RECT glowRect = hitsMeterRect;
         InflateRect(&glowRect, 2, 2);
         BYTE glowAlpha = static_cast<BYTE>(ClampChannel(static_cast<int>(215 * beatPulse)));
@@ -1076,11 +985,8 @@ void NoteLaneGdiRenderer::ToggleDebugOverlay()
     m_debugOverlayEnabled = !m_debugOverlayEnabled;
 }
 
-// Small panel below the status HUD showing NoteLaneModel's own
-// previous/current/next instance chain by clip name - only ever drawn
-// while m_debugOverlayEnabled (see ToggleDebugOverlay), purely a
-// debugging aid for that chain's own behavior (loop-repeat prediction,
-// promotion, retirement into previous).
+// Small panel below the status HUD showing NoteLaneModel's previous/current/next instance chain by
+// clip name - a debugging aid, drawn only while m_debugOverlayEnabled.
 void NoteLaneGdiRenderer::DrawDebugOverlay(HDC hdc, RECT laneRect, const NoteLaneScene& scene)
 {
     RECT panelRect{laneRect.left + 8, laneRect.top + 50, laneRect.right - 8, laneRect.top + 104};
@@ -1109,10 +1015,8 @@ void NoteLaneGdiRenderer::DrawDebugOverlay(HDC hdc, RECT laneRect, const NoteLan
     SelectObject(hdc, oldFont);
 }
 
-// The instant a track locks in, burst a confetti celebration across the
-// full width of the lane. Positions/velocities/colors are all generated
-// here from PseudoRandom() (same stable-scatter trick DrawSparkles uses)
-// and simulated purely from elapsed time in DrawConfetti.
+// Bursts a confetti celebration across the full width of the lane when a track locks in.
+// Positions/velocities/colors are generated from PseudoRandom() and simulated in DrawConfetti.
 void NoteLaneGdiRenderer::SpawnConfetti(RECT laneRect)
 {
     m_confetti.clear();
@@ -1158,10 +1062,7 @@ void NoteLaneGdiRenderer::AppendHitsMeterConfetti(RECT hitsMeterRect)
     }
 }
 
-// Bursts each of scene.explodingNotes that's actually on screen right now
-// apart into a handful of sparks flying outward from its own position,
-// instead of a generic confetti celebration or just vanishing with no
-// visual treatment at all.
+// Bursts each on-screen scene.explodingNotes into a handful of sparks flying outward from its position.
 void NoteLaneGdiRenderer::SpawnExplosion(RECT laneRect, const NoteLaneScene& scene)
 {
     m_explosion.clear();
@@ -1187,14 +1088,9 @@ void NoteLaneGdiRenderer::SpawnExplosion(RECT laneRect, const NoteLaneScene& sce
     m_explosionStartMs = GetTickCount();
 }
 
-// Adds a burst of sparks flying outward from hitsMeterRect's own center
-// into m_explosion, on top of whatever SpawnExplosion just put there -
-// meant to be called right after it, on the same justLockedIn frame, so
-// both bursts animate and clear together on SpawnExplosion's own timer
-// (m_explosionStartMs) with no extra state of their own. particleSeed
-// starts well clear of SpawnExplosion's own seed range (bounded by
-// c_ExplosionParticlesPerNote times however many exploding notes there are)
-// so the two bursts don't happen to scatter in an identical pattern.
+// Adds a spark burst from hitsMeterRect's center into m_explosion, on top of SpawnExplosion's
+// notes, so both animate and clear together on its timer. particleSeed starts clear of
+// SpawnExplosion's range so the two bursts don't scatter identically.
 void NoteLaneGdiRenderer::AppendHitsMeterExplosion(RECT hitsMeterRect, COLORREF color)
 {
     if (hitsMeterRect.right <= hitsMeterRect.left || hitsMeterRect.bottom <= hitsMeterRect.top)
@@ -1214,10 +1110,8 @@ void NoteLaneGdiRenderer::AppendHitsMeterExplosion(RECT hitsMeterRect, COLORREF 
     }
 }
 
-// Flashes a brief hit/miss indicator at the judge line for one lane's
-// column, and spawns an expanding judgement ripple: green for a precise hit,
-// yellow for an imprecise-but-still-correct one (always, even while
-// passing), red for a miss while not yet/no longer passing only.
+// Flashes a hit/miss indicator at the judge line for one lane and spawns an expanding ripple:
+// green for a precise hit, yellow for an imprecise one, red for a miss only while not passing.
 void NoteLaneGdiRenderer::OnJudgement(JudgementResult result, int lane, bool passing, bool precise)
 {
     if (lane < 0 || lane >= c_LaneCount)
@@ -1240,14 +1134,9 @@ void NoteLaneGdiRenderer::OnJudgement(JudgementResult result, int lane, bool pas
     }
 }
 
-// Starts the given field's grow-pulse (see FontForGrowPulse/DrawHud) for
-// every field. Additionally, for Bank specifically: newValue == 0 dropping
-// from a nonzero m_lastBankValue means a streak trip just wiped it (see
-// GameSession::HudChangeEvent's own comment) - spawns the "sad" points-lost
-// flourish (a sinking popup plus a brief red glow on the HUD panel - see
-// ScorePopup/DrawScorePopups) for that specifically, not for an ordinary
-// per-hit increase (which would fire on nearly every note - too busy for a
-// flourish, the grow-pulse alone already shows it moving).
+// Starts the given field's grow-pulse. For Bank, newValue == 0 dropping from a nonzero
+// m_lastBankValue means a streak trip wiped it - additionally spawns the points-lost flourish (a
+// sinking popup plus a brief red panel glow), not fired for an ordinary per-hit increase.
 void NoteLaneGdiRenderer::OnHudValueChanged(GameSession::HudField field, int newValue)
 {
     DWORD now = GetTickCount();
@@ -1275,14 +1164,12 @@ void NoteLaneGdiRenderer::OnHudValueChanged(GameSession::HudField field, int new
 // scene, plus the hits meter panel beside it.
 void NoteLaneGdiRenderer::Draw(HDC hdc, RECT laneRect, RECT hitsMeterRect, const NoteLaneScene& scene)
 {
-    // A percussive pulse value that's brightest right on the beat and
-    // decays before the next one.
+    // A percussive pulse: brightest on the beat, decaying before the next one. Drives the
+    // background/rail/receptor/hits-meter "breathe" effects throughout this method.
     double beatPhase = scene.clockRunning ? (scene.nowBeat - std::floor(scene.nowBeat)) : 0.0;
     double beatPulse = scene.clockRunning ? std::exp(-beatPhase * 6.0) : 0.0;
 
-    // Background: a vertical gradient that breathes brighter right on the
-    // beat, so part of the scene is always moving with the music even
-    // where nothing is actively being judged.
+    // Background: a vertical gradient that breathes brighter on the beat.
     COLORREF bgTop = Lighten(c_BgTop, static_cast<int>(beatPulse * 22));
     COLORREF bgBottom = Lighten(c_BgBottom, static_cast<int>(beatPulse * 14));
     FillVerticalGradient(hdc, laneRect, bgTop, bgBottom);
@@ -1312,17 +1199,9 @@ void NoteLaneGdiRenderer::Draw(HDC hdc, RECT laneRect, RECT hitsMeterRect, const
     }
     if (scene.justLockedIn)
     {
-        // Pass mode: the hits meter is about to settle into its held-full,
-        // pulsing state (see DrawHitsMeter/NoteLaneScene::hitsMeterPulsing)
-        // rather than vanishing - give it a burst of its own right as that
-        // happens anyway, on top of, not instead of, SpawnConfetti's
-        // playfield-wide one above; passing is a one-way latch there, so
-        // this is its one and only lock-in for the whole section. DontFail
-        // mode: the meter was already staying visible all along, tracking
-        // clip progress for the whole section (see NoteLaneScene::
-        // showHitsMeter), so this is purely a "nice job" flourish - it still
-        // gets its own small spark burst every time it locks in, since that
-        // can happen many times over one section's run.
+        // Give the hits meter its own burst on top of SpawnConfetti's playfield-wide one - a
+        // confetti burst for Pass (its one lock-in for the section) or a small spark burst for
+        // DontFail (which can lock in many times).
         if (scene.hitsMeterIsDontFail)
         {
             AppendHitsMeterExplosion(hitsMeterRect, c_NoteColorHit);
@@ -1333,11 +1212,8 @@ void NoteLaneGdiRenderer::Draw(HDC hdc, RECT laneRect, RECT hitsMeterRect, const
         }
     }
 
-    // A newly-spawned note's top edge extends above the lane by its own
-    // duration (only its bottom edge is checked for visibility in
-    // DrawNotes), so without clipping it draws onto whatever's above the
-    // lane. Scoped to just DrawNotes so it doesn't also clip the confetti
-    // burst, which deliberately spawns above the lane and falls in.
+    // A newly-spawned note's top edge extends above the lane, so clip DrawNotes to laneRect.
+    // Scoped so it doesn't also clip the confetti burst, which spawns above the lane and falls in.
     int savedClipState = SaveDC(hdc);
     IntersectClipRect(hdc, laneRect.left, laneRect.top, laneRect.right, laneRect.bottom);
     DrawNotes(hdc, laneRect, scene);

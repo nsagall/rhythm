@@ -13,21 +13,17 @@
 #include "Settings.h"
 #include "SongLibrary.h"
 
-// Which of the app's two screens is currently showing - they share the same
-// window/back buffer but nothing else, so exactly one of them is ever drawn
-// or fed keyboard/mouse input at a time.
+// Which of the app's two screens is currently showing. They share the window/back buffer but
+// nothing else; exactly one is drawn and fed input at a time.
 enum class UiScreen
 {
-    SongSelect, // a list of every song found under Content\, chosen by click or keyboard
-    Playing,    // the note lane, exactly as before
+    SongSelect, // A list of every song found under Content\, chosen by click or keyboard.
+    Playing,    // The note lane.
 };
 
-// Owns the app's single window: on startup (and whenever asked) scrapes the
-// Content folder for playable songs and shows them as a list; choosing one
-// (by click, or by arrow-key highlight + any other key) loads and starts
-// it, switching to the note lane. Once that song finishes, playback keeps
-// going (whatever locked-in clips are still looping) but the window goes
-// back to the song list. No global state - everything lives here as members.
+// Owns the app's single window: scrapes the Content folder for playable songs and shows them as a
+// list; choosing one loads and starts it, switching to the note lane. When the song finishes,
+// playback keeps going but the window returns to the song list. No global state.
 class MainWindow
 {
 public:
@@ -50,11 +46,8 @@ private:
     // Creates the refresh button and the note lane, then does the initial song scan.
     void OnCreate(HWND hwnd);
 
-    // Repositions the refresh button and the note lane rect to fit the
-    // current client area, and recomputes the song list's rect - shared by
-    // OnCreate (initial layout) and OnSize (every resize), so there's one
-    // source of truth for where everything goes instead of two copies of
-    // the same arithmetic.
+    // Repositions the refresh button, note lane rect, and song list rect to fit the current client
+    // area. Shared by OnCreate and OnSize.
     void Layout();
 
     // Re-runs Layout() for the new client size.
@@ -67,133 +60,78 @@ private:
     // BeginCapture() for the Assign Inputs button.
     void OnCommand(HWND hwnd, int controlId);
 
-    // While capturing an input assignment (m_captureLane != -1), every key
-    // is owned by HandleCaptureKeyDown instead - see its own comment.
-    // Otherwise, on the song list: Up/Down moves the highlight, any other
-    // key (besides a pure modifier or Left/Right) chooses the highlighted
-    // song. While playing: Space toggles pause; whichever lane
-    // m_laneBindings resolves the key to (its default key, or a custom
-    // binding - see LaneBindings::LaneForKey) registers a press on a
-    // non-repeated key-down, but does nothing at all while paused (see
-    // TogglePause).
+    // While capturing an input assignment, every key goes to HandleCaptureKeyDown. Otherwise, on
+    // the song list: Up/Down moves the highlight, any other key chooses the highlighted song. While
+    // playing: Space toggles pause; a lane m_laneBindings resolves the key to registers a press on
+    // a non-repeated key-down (nothing while paused).
     void OnKeyDown(WPARAM key, LPARAM flags);
 
-    // Registers a release on key-up for whichever lane m_laneBindings
-    // resolves the key to. Only meaningful while playing; a no-op during
-    // capture (key-up mid-capture carries no meaning - only the next
-    // key-down/MIDI note-on commits a binding).
+    // Registers a release for whichever lane m_laneBindings resolves the key to. Only meaningful
+    // while playing; a no-op during capture.
     void OnKeyUp(WPARAM key, LPARAM flags);
 
-    // Routes one physical key-down to the input-assignment capture flow
-    // instead of normal gameplay: Escape cancels the remaining (not yet
-    // captured) lanes via CancelCapture(); a reserved key (Escape/Space/D,
-    // or any lane's own hardcoded default - see LaneBindings::IsDefaultKey)
-    // is rejected with a re-prompt instead of being bound, since none of
-    // those could ever actually reach OnKeyDown's own lane-matching once
-    // bound (Escape/Space/D are handled earlier, unconditionally, and a
-    // default key is already every lane's own fallback); any other key
-    // commits as this lane's new custom binding via
-    // LaneBindings::SetCustom, then AdvanceCapture() moves on.
+    // Routes one key-down to the input-assignment capture flow: Escape cancels the remaining lanes;
+    // a reserved key (Escape/Space/D, or any lane's default) is rejected with a re-prompt; any
+    // other key commits as this lane's custom binding, then AdvanceCapture() moves on.
     void HandleCaptureKeyDown(int vkCode);
 
-    // Routes one live MIDI note-on/note-off (unpacked from an MM_MIM_DATA
-    // message - see HandleMessage) the same way OnKeyDown/OnKeyUp handle a
-    // physical key: during capture, a note-on commits this lane's new
-    // custom MIDI binding (note-off is ignored - only the down edge
-    // matters for capture); otherwise, only while Playing, a note-on/
-    // note-off resolved via LaneBindings::LaneForMidiNote registers a press/
-    // release exactly like a keyboard lane would. A note-on below
-    // c_MinMidiPressVelocity (MainWindow.cpp) is dropped entirely first -
-    // neither a press nor a release - to filter out a sensitive
-    // controller's accidental light taps.
+    // Routes one live MIDI note-on/note-off the way OnKeyDown/OnKeyUp handle a key: during capture
+    // a note-on commits this lane's custom MIDI binding (note-off ignored); otherwise, while
+    // Playing, a note resolved via LaneBindings::LaneForMidiNote registers a press/release. A
+    // note-on below c_MinMidiPressVelocity is dropped entirely, to filter accidental light taps.
     void OnMidiData(WPARAM wParam, LPARAM lParam);
 
-    // Routes one gamepad button transition (as polled once per frame by
-    // OnTimer via m_gamepadInput.Poll() - there's no window message for
-    // this, unlike keyboard/MIDI) the same way OnMidiData handles a MIDI
-    // note-on/note-off: during capture, a press commits this lane's new
-    // custom Gamepad binding (a release is ignored - only the down edge
-    // matters for capture); otherwise, only while Playing, a press/release
-    // resolved via LaneBindings::LaneForGamepadButton registers a press/
-    // release exactly like a keyboard or MIDI lane would.
+    // Routes one gamepad button transition (polled once per frame by OnTimer) the way OnMidiData
+    // handles a MIDI note: during capture a press commits this lane's custom Gamepad binding
+    // (release ignored); otherwise, while Playing, a press/release resolved via
+    // LaneBindings::LaneForGamepadButton registers one.
     void OnGamepadButton(WORD button, bool pressed);
 
-    // On the song list, clicking a row chooses that song immediately. A
-    // no-op entirely while capturing (m_captureLane != -1) - a click can't
-    // supply an input binding, and letting one through to ChooseSong would
-    // leave the capture prompt dangling while a song starts underneath it.
+    // On the song list, clicking a row chooses that song. A no-op while capturing, since a click
+    // can't supply a binding.
     void OnLButtonDown(LPARAM lParam);
 
-    // Pauses the game the moment this window is deactivated (Alt-Tab,
-    // clicking another window, ...) - WM_ACTIVATE with WA_INACTIVE, not
-    // WM_KILLFOCUS, since the latter also fires when keyboard focus merely
-    // moves to a child control (e.g. the refresh button) without the window
-    // itself losing the user's attention. Only while Playing; a no-op
-    // otherwise, and never un-pauses on its own - regaining focus doesn't
-    // resume, only Space does (see TogglePause).
+    // Pauses the game the moment this window is deactivated - WM_ACTIVATE with WA_INACTIVE, not
+    // WM_KILLFOCUS (which also fires when focus moves to a child control). Only while Playing;
+    // never un-pauses on its own (only Space does).
     void OnActivate(WPARAM wParam);
 
-    // Toggles GameSession::Pause()/Resume() and repaints so the HUD's
-    // "Paused" text (or its absence) shows immediately. Only while Playing;
-    // a no-op on the song list.
+    // Toggles GameSession::Pause()/Resume() and repaints so the HUD's "Paused" text updates
+    // immediately. Only while Playing.
     void TogglePause();
 
-    // Starts the "Assign Inputs" capture flow from the Song Select screen:
-    // sets m_captureLane to 0 (the first lane to prompt for) and disables
-    // the Assign/Refresh buttons for the run's duration, so neither a
-    // second capture nor a song-list refresh can interleave with one
-    // already in progress.
+    // Starts the "Assign Inputs" capture flow: sets m_captureLane to 0 and disables the
+    // Assign/Refresh buttons for the run, so nothing can interleave with one in progress.
     void BeginCapture();
 
-    // Moves capture to the next lane, or - once every lane has been
-    // prompted - ends the run: resets m_captureLane to -1 and re-enables
-    // the Assign/Refresh buttons.
+    // Moves capture to the next lane, or - once every lane is prompted - ends the run: resets
+    // m_captureLane to -1 and re-enables the Assign/Refresh buttons.
     void AdvanceCapture();
 
-    // Cancels the remaining (not yet captured) lanes on Escape. Lanes
-    // already committed this run stay committed - each one is saved to
-    // m_laneBindings/Settings immediately as it's captured (see
-    // HandleCaptureKeyDown/OnMidiData), not batched until the whole run
-    // finishes - so canceling partway through keeps whatever was already
-    // assigned.
+    // Cancels the remaining lanes on Escape. Lanes committed this run stay committed - each is
+    // saved as it's captured, not batched.
     void CancelCapture();
 
-    // Draws the "press an input for lane N" prompt (naming the lane by its
-    // 1-based index, not its default key) plus any rejection message from a
-    // reserved-key attempt, on the Song Select screen while
-    // m_captureLane != -1. Drawn from OnPaint right after DrawEasyModeToggle, using the same
-    // CreateFontW/DrawTextW idiom as DrawSongList's own hint line.
+    // Draws the "press an input for lane N" prompt (naming the lane by 1-based index) plus any
+    // reserved-key rejection message, on Song Select while m_captureLane != -1.
     void DrawCapturePrompt(HDC hdc);
 
-    // Sends a lane press to the game session, then drains and reflects any
-    // judgement it produced (see DrainJudgements) - or, if this lane has no
-    // note to press right now at all, shows the same miss feedback directly,
-    // since GameSession::OnPress itself would otherwise just silently
-    // ignore the tap (there being no judgement for DrainJudgements to find).
+    // Sends a lane press to the game session, then drains and reflects any judgement (see
+    // DrainJudgements). If this lane has no note to press, shows the miss feedback directly, since
+    // GameSession::OnPress would otherwise silently ignore the tap.
     void RegisterPress(int lane);
 
-    // Sends a lane release to the game session, then drains and reflects
-    // any judgement it produced (see DrainJudgements).
+    // Sends a lane release to the game session, then drains and reflects any judgement.
     void RegisterRelease(int lane);
 
-    // Forwards every judgement, HUD-value-change, and SFX-cue event
-    // GameSession has recorded since the last call (see
-    // GameSession::ConsumeJudgementEvents/ConsumeHudChangeEvents/
-    // ConsumeSfxEvents) - judgements and HUD changes go to the note lane for
-    // their own visual feedback, SFX cues play directly through
-    // m_audioEngine (GameSession itself knows nothing about AudioEngine's
-    // one-shot API - see AudioEngine::PlaySfx). Regardless of whether an
-    // event came from an explicit key press/release (RegisterPress/
-    // RegisterRelease) or from one of Update()'s own timeout/banking/
-    // auto-accrual checks, all get exactly the same treatment as their
-    // explicit counterparts.
+    // Forwards every judgement/HUD-change/SFX-cue event GameSession recorded since the last call:
+    // judgements and HUD changes go to the note lane, SFX cues play through m_audioEngine. Events
+    // from Update()'s own checks get the same treatment as explicit press/release ones.
     void DrainJudgements();
 
-    // Polls m_gamepadInput and routes every button transition it reports to
-    // OnGamepadButton, advances the game session, drains and reflects any
-    // judgement it produced, and - once a song completes while it's the
-    // visible screen - switches back to the song list (playback itself is
-    // left running untouched).
+    // Polls m_gamepadInput and routes each transition to OnGamepadButton, advances the game
+    // session, drains judgements, and - once a song completes while this is the visible screen -
+    // switches back to the song list (playback left running).
     void OnTimer(WPARAM timerId);
 
     // Stops the session/animation/audio engine and quits the message loop.
@@ -202,67 +140,49 @@ private:
     // Repaints the background and whichever screen is current.
     void OnPaint(HWND hwnd);
 
-    // Says "yes, I painted it" without actually erasing - the whole client
-    // area is repainted every frame via the back buffer in OnPaint anyway,
-    // so letting the default handler also erase it first would just be an
-    // extra, visible flash before that repaint lands.
+    // Says "yes, I painted it" without erasing - OnPaint repaints the whole client area via the
+    // back buffer every frame, so a default erase would just flash first.
     void OnEraseBkgnd();
 
-    // (Re)creates the off-screen back buffer to match the given size, if it
-    // doesn't already match - everything is drawn into this buffer and then
-    // blitted to the screen in one copy, instead of each individual GDI
-    // call landing on screen separately, which is what was causing flicker.
+    // (Re)creates the off-screen back buffer to match the given size. Everything is drawn into it
+    // and blitted to the screen in one copy, to avoid flicker.
     void EnsureBackBuffer(HDC referenceHdc, int width, int height);
 
-    // Custom-paints the refresh button (WS_style BS_OWNERDRAW) as a
-    // rounded, colored, bevelled button matching NoteLane's visual language
-    // instead of a stock Win32 button.
+    // Custom-paints the refresh button (BS_OWNERDRAW) as a rounded, bevelled button matching
+    // NoteLane's visual language.
     void OnDrawItem(LPARAM lParam);
 
-    // Re-scrapes Content\ for songs, keeping the currently-highlighted
-    // song's chart selected if it's still found (or falling back to the
-    // last-played chart from Settings, or index 0), then repaints. Charts
-    // that fail validation are always left out of the list either way -
-    // reportValidationErrors (default false, for the initial scan at
-    // startup) only controls whether a dialog then reports every one of
-    // them; the explicit refresh button passes true.
+    // Re-scrapes Content\ for songs, keeping the highlighted song selected if still found (else the
+    // last-played chart, else index 0), then repaints.
+    //   reportValidationErrors - if true (the refresh button), a dialog reports every chart that
+    //                            failed validation; if false (the startup scan), they're silently omitted.
     void RescanSongs(bool reportValidationErrors = false);
 
-    // Loads and starts the given song and switches to the Playing screen -
-    // shows an error dialog instead if the chart fails to load.
+    // Loads and starts the song at index and switches to the Playing screen - shows an error
+    // dialog instead if the chart fails to load.
     void ChooseSong(int index);
 
-    // Bails out of the current song (Esc while Playing) and returns to the
-    // song list, stopping the session outright rather than leaving a
-    // finished clip's loop running. No-op outside the Playing screen.
+    // Bails out of the current song (Esc while Playing) and returns to the song list, stopping the
+    // session outright. No-op outside the Playing screen.
     void QuitToSongSelect();
 
-    // Called from OnTimer the instant a song naturally finishes (GamePhase::
-    // Complete). Reads GameSession::CurrentScore(), sets m_lastResultText so
-    // the song list shows it, and - if the score earns a spot in the just-
-    // finished song's high score list (Settings::HighScoreQualifies) -
-    // records it immediately (Settings::InsertHighScore/SaveHighScores,
-    // under a fixed placeholder - no initials prompt) and refreshes
-    // m_songBestScores for the song that was just played. Not called for
-    // QuitToSongSelect's own early-out (Esc mid-song never scores).
+    // Called from OnTimer when a song naturally finishes. Sets m_lastResultText for the song list
+    // and, if the score earns a high-score spot, records it immediately (under a fixed placeholder,
+    // no initials prompt) and refreshes m_songBestScores. Not called for QuitToSongSelect.
     void HandleSongComplete();
 
-    // Paints the song list: a title row per scraped song (showing that
-    // song's best score, if any), the currently-highlighted one picked out
-    // from the rest.
+    // Paints the song list: a title row per song (with its best score, if any), the highlighted
+    // one picked out.
     void DrawSongList(HDC hdc);
 
-    // Draws m_lastResultText (the score from the song that was just played,
-    // if any) in the gap between the header row and the song list.
+    // Draws m_lastResultText in the gap between the header row and the song list.
     void DrawLastResult(HDC hdc);
 
     // Returns the song list row index under the given client-space point, or -1 if none.
     int HitTestSongList(POINT pt) const;
 
-    // Custom-paints the Easy Mode toggle switch on the song-select header
-    // row - a rounded track (colored by state) with a circular knob, no
-    // native control, matching how the song list itself is hand-drawn
-    // rather than built from stock Win32 controls.
+    // Custom-paints the Easy Mode toggle switch on the song-select header row - a rounded track
+    // with a circular knob, hand-drawn like the song list rather than a native control.
     void DrawEasyModeToggle(HDC hdc);
 
     HWND m_hwnd = nullptr;
@@ -281,50 +201,37 @@ private:
     int m_selectedSongIndex = -1;
     RECT m_songListRect{};
 
-    // Parallel to m_songs: each song's current best score (from its high
-    // score list's own #1 entry), or -1 if it has none yet. Rebuilt whenever
-    // m_songs itself is (see RescanSongs) rather than re-read from Settings
-    // every paint, and patched in place by HandleSongComplete when a run
-    // just set a new best - DrawSongList reads this, never Settings directly.
+    // Parallel to m_songs: each song's best score (its high-score list's #1), or -1 if none.
+    // Rebuilt with m_songs (see RescanSongs), patched in place by HandleSongComplete. DrawSongList
+    // reads this, never Settings directly.
     std::vector<int> m_songBestScores;
 
-    // The chart path/title GameSession is currently playing (or most
-    // recently played) - captured by ChooseSong, since m_selectedSongIndex
-    // could in principle drift before HandleSongComplete reads it back
-    // (RescanSongs never runs mid-song today, but this doesn't rely on that).
+    // The chart path/title GameSession is playing (or last played) - captured by ChooseSong, since
+    // m_selectedSongIndex could drift before HandleSongComplete reads it back.
     std::wstring m_playingChartPath;
     std::wstring m_playingSongTitle;
 
-    // Set by HandleSongComplete once a song finishes, shown by
-    // DrawLastResult until the next song is chosen (ChooseSong clears it).
+    // Set by HandleSongComplete, shown by DrawLastResult until the next song is chosen.
     std::wstring m_lastResultText;
 
-    // Easy Mode toggle: loaded from Settings on startup, flipped by
-    // clicking m_easyModeToggleRect (SongSelect screen only), saved back to
-    // Settings on every change, and passed to GameSession::LoadChart
-    // whenever a song is chosen.
+    // Easy Mode toggle: loaded from Settings on startup, flipped by clicking m_easyModeToggleRect,
+    // saved on every change, passed to GameSession::LoadChart when a song is chosen.
     bool m_easyMode = false;
     RECT m_easyModeToggleRect{};
 
-    // Which lane (0..c_LaneCount-1) is currently awaiting an input for the
-    // "Assign Inputs" flow, or -1 when not capturing at all - see
-    // BeginCapture/AdvanceCapture/CancelCapture. Only ever non-(-1) on the
-    // SongSelect screen.
+    // Which lane is currently awaiting an input for the "Assign Inputs" flow, or -1 when not
+    // capturing. Only ever non-(-1) on the SongSelect screen.
     int m_captureLane = -1;
 
-    // Set by HandleCaptureKeyDown when a reserved key is pressed during
-    // capture, shown by DrawCapturePrompt, cleared the next time a lane's
-    // prompt is (re)shown for a fresh attempt.
+    // Set by HandleCaptureKeyDown when a reserved key is pressed during capture, shown by
+    // DrawCapturePrompt, cleared when a lane's prompt is next (re)shown.
     std::wstring m_captureRejectionMessage;
 
     AudioEngine m_audioEngine;
 
-    // One-shot HUD cues (see GameSession::SfxCue/DrainJudgements) - loaded
-    // once in OnCreate from Content/sfx/, alongside every chart's own
-    // stems. Invalid (IsValid() false) if the corresponding .wav wasn't
-    // found or wasn't a supported format - AudioEngine::PlaySfx on an
-    // invalid handle is already a harmless no-op, so a missing sound file
-    // just means silence for that cue rather than a crash or a load error.
+    // One-shot HUD cues, loaded once in OnCreate from Content/sfx/. Invalid if the .wav is missing
+    // or unsupported - PlaySfx on an invalid handle is a harmless no-op, so a missing file just
+    // means silence.
     SfxHandle m_sfxMultiplierUp;
     SfxHandle m_sfxStreakBroken;
 
@@ -332,19 +239,15 @@ private:
     NoteLane m_noteLane;
     Settings m_settings;
 
-    // Custom per-lane input bindings (keyboard or live MIDI note), on top of
-    // c_LaneDefaultKeys - see LaneBindings.h. Loaded from m_settings in
-    // OnCreate, mutated (and persisted) by HandleCaptureKeyDown/OnMidiData
-    // via LaneBindings::SetCustom.
+    // Custom per-lane input bindings on top of c_LaneDefaultKeys. Loaded from m_settings in
+    // OnCreate, mutated and persisted by HandleCaptureKeyDown/OnMidiData.
     LaneBindings m_laneBindings;
 
-    // Opens every connected MIDI input device on startup and delivers their
-    // note events as MM_MIM_DATA window messages - see MidiInputManager.h
-    // and OnMidiData.
+    // Opens every connected MIDI input device on startup, delivering note events as MM_MIM_DATA
+    // window messages (see OnMidiData).
     MidiInputManager m_midiInput;
 
-    // Polled once per frame in OnTimer for Xbox controller button
-    // transitions, since - unlike keyboard/MIDI - there's no window message
-    // for those. See GamepadInputManager.h and OnGamepadButton.
+    // Polled once per frame in OnTimer for Xbox controller button transitions (no window message
+    // for those). See OnGamepadButton.
     GamepadInputManager m_gamepadInput;
 };

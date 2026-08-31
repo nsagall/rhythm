@@ -8,10 +8,8 @@
 namespace
 {
 
-// Returns the path to editor_settings.ini under %APPDATA%\Rhythm, creating
-// the folder if needed. Same %APPDATA%\Rhythm directory the game's own
-// Settings class uses, but a distinct file, so the two never step on each
-// other's keys.
+// Returns the path to editor_settings.ini under %APPDATA%\Rhythm, creating the folder if needed. A
+// distinct file from the game's settings.ini in the same directory.
 std::wstring GetSettingsFilePath()
 {
     wchar_t appDataDir[MAX_PATH] = L"";

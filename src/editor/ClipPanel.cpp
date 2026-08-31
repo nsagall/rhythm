@@ -47,12 +47,8 @@ bool FileExistsOnDisk(const std::wstring& path)
     return attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY);
 }
 
-// Turns a filename stem into a plausible display name - "drum_intro" ->
-// "Drum Intro" - matching the convention already used throughout
-// hand-authored Content/ charts. Only ever uppercases a word's own first
-// letter (never forces the rest of a word to lowercase), so an
-// intentional acronym like "hH" survives as "HH" rather than getting
-// mangled into "Hh".
+// Turns a filename stem into a plausible display name ("drum_intro" -> "Drum Intro"). Only
+// uppercases each word's first letter, never lowercasing the rest, so an acronym like "hH" stays "HH".
 std::wstring PrettifyDisplayName(const std::wstring& base)
 {
     std::wstring result = base;
@@ -229,11 +225,8 @@ void ClipPanel::DrawList(EditorDocument& doc)
         ImGui::PopID();
     }
 
-    // Delete key removes the selected clip without needing to reach for the
-    // Delete button above - only while this list itself has focus (i.e. the
-    // user just clicked a clip here), and never while a text field
-    // elsewhere wants the keystroke. Goes through RequestDelete, so a clip
-    // still in use by a block gets the same confirmation modal the button does.
+    // Delete key removes the selected clip - only while this list has focus, never while a text
+    // field wants the keystroke. Goes through RequestDelete, so a clip in use gets the same modal.
     if (m_selectedClipId >= 0 && ImGui::IsWindowFocused() && !ImGui::GetIO().WantTextInput &&
         ImGui::IsKeyPressed(ImGuiKey_Delete, false))
     {

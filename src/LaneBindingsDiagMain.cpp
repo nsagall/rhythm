@@ -6,12 +6,9 @@
 #include "MidiInputManager.h"
 #include "Settings.h"
 
-// Standalone diagnostic (not part of the normal build): verifies
-// LaneBindings' matching/conflict-clearing/persistence logic and
-// MidiInputManager::Unpack's byte extraction, entirely headless - no window,
-// no audio engine, no MIDI device needed. Exercises the exact code path the
-// "Assign Inputs" capture flow (MainWindow.cpp) drives, without needing to
-// actually run the windowed app or produce any sound.
+// Standalone diagnostic: verifies LaneBindings' matching/conflict-clearing/persistence and
+// MidiInputManager::Unpack's byte extraction, headless - no window, audio, or MIDI device.
+// Exercises the same code path the "Assign Inputs" capture flow drives.
 
 namespace
 {

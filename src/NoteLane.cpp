@@ -8,9 +8,8 @@ constexpr UINT_PTR c_FrameTimerId = 400;
 constexpr UINT c_FrameIntervalMs = 16;
 } // namespace
 
-// Defaults to the GDI renderer - the only concrete INoteLaneRenderer this
-// codebase has today. Only this constructor needs to know that; everything
-// else in this class talks to m_renderer purely through the interface.
+// Defaults to the GDI renderer, the only concrete INoteLaneRenderer today. Only this constructor
+// knows the concrete type; the rest of the class uses m_renderer through the interface.
 NoteLane::NoteLane() : m_renderer(std::make_unique<NoteLaneGdiRenderer>())
 {
 }
@@ -46,11 +45,7 @@ bool NoteLane::OnTimer(WPARAM timerId)
     {
         return false;
     }
-    // The hits meter panel sits outside m_laneRect (see MainWindow::Layout),
-    // so both rects need to stay invalidated every animating frame, not
-    // just the lane itself - otherwise its fill/burst would only actually
-    // reach the screen whenever something else happened to invalidate the
-    // whole client area.
+    // The hits meter panel sits outside m_laneRect, so invalidate both rects every animating frame.
     RECT dirtyRect{};
     UnionRect(&dirtyRect, &m_laneRect, &m_hitsMeterRect);
     InvalidateRect(m_hwnd, &dirtyRect, FALSE);

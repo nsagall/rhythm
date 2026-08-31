@@ -6,12 +6,10 @@
 
 #include "NoteLaneRenderer.h"
 
-// GDI implementation of INoteLaneRenderer: layout math (beats/lanes ->
-// pixels), every actual drawing call, resource caching (brushes/pens/a
-// scratch alpha-blend buffer/the HUD font), and every continuous
-// animation/particle system (confetti, explosion sparks, judgement
-// ripples, press/release flash, background sparkles) - none of which
-// NoteLaneModel or NoteLane know anything about.
+// GDI implementation of INoteLaneRenderer: layout math (beats/lanes -> pixels), every drawing call,
+// resource caching (brushes/pens/scratch alpha-blend buffer/HUD font), and every continuous
+// animation/particle system (confetti, explosion sparks, judgement ripples, press/release flash,
+// background sparkles).
 class NoteLaneGdiRenderer : public INoteLaneRenderer
 {
 public:
@@ -23,11 +21,8 @@ public:
     void ToggleDebugOverlay() override;
 
 private:
-    // One piece of confetti spawned when a track locks in: falls from its
-    // starting position under simple gravity with a bit of horizontal
-    // drift, fading out over its fixed lifetime. Positions/colors are
-    // generated once at spawn time and simulated purely from elapsed time
-    // in DrawConfetti.
+    // One piece of confetti spawned when a track locks in: falls under gravity with horizontal
+    // drift, fading over a fixed lifetime. Simulated purely from elapsed time in DrawConfetti.
     struct ConfettiPiece
     {
         double x = 0.0;
@@ -38,11 +33,8 @@ private:
         COLORREF color = 0;
     };
 
-    // One spark from the notes-exploding burst spawned when a note in
-    // scene.explodingNotes reacts to a lock-in/handoff: flies straight
-    // outward (with drag, so it decelerates rather than flying off
-    // forever) from wherever that note was, fading out over its fixed
-    // lifetime.
+    // One spark from the burst spawned when a note in scene.explodingNotes reacts to a
+    // lock-in/handoff: flies outward with drag from where that note was, fading over a fixed lifetime.
     struct ExplosionParticle
     {
         double x = 0.0;
@@ -65,25 +57,18 @@ private:
         double fadeRate = 1.0;
     };
 
-    // A "-N" popup spawned by OnHudValueChanged the instant the bank drops
-    // to exactly 0 from a nonzero value (a streak trip wiping it - see
-    // GameSession::HudChangeEvent): sinks and shakes while fading, reading
-    // as the points crumbling away. Like JudgementRipple, carries no
-    // baked-in pixel position - DrawScorePopups resolves it against the HUD
-    // panel rect at draw time, purely as a function of elapsed time since
-    // startMs, so it stays correct across a window resize mid-animation.
+    // A "-N" popup spawned when the bank drops to 0 from nonzero (a streak trip): sinks and shakes
+    // while fading. Carries no baked-in pixel position - DrawScorePopups resolves it against the
+    // HUD panel rect at draw time, so it survives a window resize mid-animation.
     struct ScorePopup
     {
         DWORD startMs = 0;
         int amount = 0;
     };
 
-    // Alpha-blends a filled shape over whatever is already at its bounds,
-    // by capturing that region into the renderer's scratch buffer first,
-    // drawing the shape solid on top of the copy, then blending the
-    // scratch rect back - GDI has no real per-primitive transparency, so
-    // this fakes it. scratchDc must already be at least bounds-sized (see
-    // EnsureScratchBuffer).
+    // Fakes per-primitive transparency (GDI has none): captures the region under its bounds into
+    // the scratch buffer, draws the shape solid on the copy, then blends the scratch rect back.
+    // scratchDc must already be at least bounds-sized (see EnsureScratchBuffer).
     class AlphaShape
     {
     public:
@@ -102,10 +87,8 @@ private:
         HDC m_memHdc = nullptr;
     };
 
-    // Pixel-space layout, recomputed from laneRect on every call rather
-    // than cached - cheap arithmetic, and it keeps every drawing method
-    // stateless with respect to layout instead of threading extra fields
-    // through the object between Draw() calls.
+    // Pixel-space layout, recomputed from laneRect each call rather than cached, so every drawing
+    // method stays layout-stateless.
     double PixelsPerBeat(RECT laneRect) const;
     int LineY(RECT laneRect) const;
     int LaneCenterX(RECT laneRect, int lane) const;
@@ -119,11 +102,8 @@ private:
 
     HBRUSH CachedSolidBrush(COLORREF color);
     HPEN CachedSolidPen(int width, COLORREF color);
-    // Returns a scratch compatible DC at least width x height, shared by
-    // every AlphaShape use (grown, never shrunk) - safe since AlphaShape
-    // instances are always fully used up (constructed, drawn into,
-    // blended) one at a time before the next is created; Draw() never
-    // nests two of them.
+    // Returns a scratch compatible DC at least width x height, shared by every AlphaShape (grown,
+    // never shrunk) - safe because AlphaShapes are used one at a time, never nested.
     HDC EnsureScratchBuffer(HDC referenceHdc, int width, int height);
 
     void DrawAlphaCircle(HDC hdc, int cx, int cy, int radius, COLORREF color, BYTE alpha);
@@ -158,28 +138,19 @@ private:
     void DrawRipples(HDC hdc, RECT laneRect);
     void DrawHud(HDC hdc, RECT laneRect, const std::wstring& statusText, const std::wstring& scoreText,
                  const std::wstring& bankText, const std::wstring& multiplierText);
-    // Returns baseFont unchanged once growUntilMs has passed; otherwise
-    // (re)creates growFontSlot at a point size interpolated from
-    // basePointSize*2 (right when OnHudValueChanged triggered it) down to
-    // basePointSize (as growUntilMs is reached) and returns that instead -
-    // see c_HudGrowDurationMs. growFontSlot is a specific field's own cached
-    // temporary font (m_totalGrowFont/m_bankGrowFont/m_multiplierGrowFont),
-    // recreated on essentially every animating frame since the interpolated
-    // size is different each time - cheap, and only happens during each
-    // value's own brief ~1s window.
+    // Returns baseFont once growUntilMs has passed; otherwise (re)creates growFontSlot at a size
+    // interpolated from basePointSize*2 down to basePointSize as growUntilMs approaches, and
+    // returns that. growFontSlot is a per-HUD-value cached temporary font, recreated each frame
+    // during that value's brief grow window.
     HFONT FontForGrowPulse(HFONT baseFont, int basePointSize, DWORD growUntilMs, HFONT& growFontSlot, DWORD now);
-    // Drops any expired entry from m_scorePopups, then draws whatever's
-    // left anchored under panelRect (the HUD panel's own rect) - called
-    // once per Draw() from DrawHud, after the panel/text themselves, so
-    // popups float over top of everything else in the panel.
+    // Drops expired m_scorePopups entries, then draws the rest anchored under panelRect. Called
+    // from DrawHud after the panel/text, so popups float on top.
     void DrawScorePopups(HDC hdc, RECT panelRect);
     // Only called when m_debugOverlayEnabled - see ToggleDebugOverlay.
     void DrawDebugOverlay(HDC hdc, RECT laneRect, const NoteLaneScene& scene);
-    // The "hits meter" panel beside the playfield - a bottom-anchored fill
-    // tracking scene.hitsMeterProgress. Draws nothing while
-    // scene.showHitsMeter is false. beatPulse (see Draw()'s own comment) -
-    // brightens the fill gently on the beat while scene.hitsMeterPulsing is
-    // true (a locked-in Pass section holding its bar full).
+    // The "hits meter" panel beside the playfield - a bottom-anchored fill tracking
+    // scene.hitsMeterProgress. Draws nothing while scene.showHitsMeter is false. beatPulse
+    // brightens the fill on the beat while scene.hitsMeterPulsing is true.
     void DrawHitsMeter(HDC hdc, RECT hitsMeterRect, const NoteLaneScene& scene, double beatPulse);
 
     // Spawns a lock-in confetti burst across laneRect's width.
@@ -187,20 +158,12 @@ private:
     // Spawns an explosion burst for each of scene's exploding notes that's
     // actually within laneRect right now.
     void SpawnExplosion(RECT laneRect, const NoteLaneScene& scene);
-    // Adds a burst of sparks at hitsMeterRect's own center into the same
-    // m_explosion vector (and sharing its timer) that SpawnExplosion just
-    // populated - called alongside it, only on scene.justLockedIn for a
-    // DontFail clip (see NoteLaneScene::hitsMeterIsDontFail), so the hits
-    // meter's disappearance gets its own little celebration instead of just
-    // vanishing the instant showHitsMeter flips false.
+    // Adds a spark burst at hitsMeterRect's center into m_explosion (sharing its timer). Called
+    // alongside SpawnExplosion, only on scene.justLockedIn for a DontFail clip.
     void AppendHitsMeterExplosion(RECT hitsMeterRect, COLORREF color);
-    // Adds a small confetti burst scattered across hitsMeterRect's own
-    // width into the same m_confetti vector (and sharing its timer) that
-    // SpawnConfetti just populated - called alongside it, only on
-    // scene.justLockedIn for a Pass clip (see NoteLaneScene::
-    // hitsMeterIsDontFail), since that's the meter's one and only
-    // disappearance for the whole section (passing is a one-way latch),
-    // unlike DontFail's own AppendHitsMeterExplosion above.
+    // Adds a small confetti burst across hitsMeterRect's width into m_confetti (sharing its timer).
+    // Called alongside SpawnConfetti, only on scene.justLockedIn for a Pass clip - its one lock-in
+    // for the section.
     void AppendHitsMeterConfetti(RECT hitsMeterRect);
 
     std::unordered_map<COLORREF, HBRUSH> m_brushCache;
@@ -225,23 +188,16 @@ private:
     DWORD m_flashUntilMs[c_LaneCount] = {};
     std::vector<JudgementRipple> m_ripples;
 
-    // See OnHudValueChanged/DrawScorePopups. m_scoreFlashUntilMs drives the
-    // HUD panel's own brief red glow on a bank wipe, separate from the
-    // popup's own lifetime - m_scorePopups itself has no cap, since in
-    // practice at most one is ever alive at once (a wipe is comparatively
-    // rare, unlike the old per-hit Banked event this replaces).
+    // See OnHudValueChanged/DrawScorePopups. m_scoreFlashUntilMs drives the HUD panel's brief red
+    // glow on a bank wipe. m_scorePopups is uncapped - at most one is ever alive at once.
     std::vector<ScorePopup> m_scorePopups;
     DWORD m_scoreFlashUntilMs = 0;
 
-    // Bank's own value as of the last OnHudValueChanged(Bank, ...) call -
-    // lets that call tell an ordinary increase apart from the drop-to-0 that
-    // means a streak trip just wiped it (see ScorePopup's own comment),
-    // without GameSession needing to describe *why* the value changed.
+    // Bank's value as of the last OnHudValueChanged(Bank, ...) call - lets that call tell an
+    // ordinary increase apart from a streak-trip drop to 0.
     int m_lastBankValue = 0;
 
-    // See FontForGrowPulse. One growUntilMs deadline + one cached temporary
-    // font per HUD value (GameSession::HudField), set by OnHudValueChanged
-    // and consumed by DrawHud.
+    // See FontForGrowPulse. One grow deadline + one cached temporary font per HUD value.
     DWORD m_totalGrowUntilMs = 0;
     DWORD m_bankGrowUntilMs = 0;
     DWORD m_multiplierGrowUntilMs = 0;

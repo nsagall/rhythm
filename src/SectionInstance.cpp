@@ -2,9 +2,6 @@
 
 #include <cmath>
 
-// Binds this instance to sectionIndex and mode; every other field starts at
-// its own "nothing has happened yet" default, except m_passing itself -
-// DontFail mode starts already passing (see the header's own comment).
 SectionInstance::SectionInstance(int sectionIndex, LearnMode mode)
     : m_sectionIndex(sectionIndex), m_mode(mode), m_passing(mode == LearnMode::DontFail)
 {
@@ -146,8 +143,7 @@ SectionInstance::MissResult SectionInstance::RegisterMiss(bool easyMode, StreakT
 
     if (wasPassing)
     {
-        // Only reachable in DontFail mode - Pass mode already returned
-        // above when m_passing was true.
+        // Only reachable in DontFail mode - Pass mode already returned above.
         m_passing = false;
         result.justEnteredFailState = true;
     }

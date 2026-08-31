@@ -5,21 +5,13 @@
 #include "ChartClip.h"
 #include "LaneConfig.h"
 
-// Not part of the real build - a shared header the standalone *DiagMain.cpp
-// files (see CLAUDE.md's "Diagnostics instead of a test suite") #include
-// instead of each hand-copying their own private mirror of GameSession's
-// private FindLaneNote (not directly callable from a diagnostic, since it's
-// private to GameSession.cpp). Eight separate copies of this ~15-line
-// helper had drifted apart in parameter order, and one of them
-// (EasyModeGraceDiagMain.cpp's own DurationForLaneNote) had silently
-// dropped the originBeat subtraction entirely - proof this copy-paste risk
-// is real, not theoretical, even in test-only code.
+// Not part of the real build - a shared header the standalone *DiagMain.cpp files #include instead
+// of each hand-copying a mirror of GameSession's private FindLaneNote.
 namespace DiagTestHelpers
 {
 
-// Returns the lane note whose phase-within-span matches absoluteStartBeat's
-// phase (measured relative to originBeat), or nullptr if none does -
-// mirrors GameSession::FindLaneNote's real logic exactly.
+// Returns the lane note whose phase-within-span matches absoluteStartBeat's phase (relative to
+// originBeat), or nullptr - mirrors GameSession::FindLaneNote.
 inline const LaneNote* FindLaneNote(const ChartClip& clip, int lane, double originBeat, double absoluteStartBeat)
 {
     double span = clip.SpanBeats();
@@ -38,8 +30,8 @@ inline const LaneNote* FindLaneNote(const ChartClip& clip, int lane, double orig
     return nullptr;
 }
 
-// The matching note's own durationBeats, or 0.0 if none matches - what
-// most diagnostics actually want, to plan when to auto-release a held key.
+// The matching note's durationBeats, or 0.0 if none matches - used to plan when to auto-release a
+// held key.
 inline double DurationForLaneNote(const ChartClip& clip, int lane, double originBeat, double absoluteStartBeat)
 {
     const LaneNote* note = FindLaneNote(clip, lane, originBeat, absoluteStartBeat);

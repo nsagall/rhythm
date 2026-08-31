@@ -5,20 +5,15 @@
 #include <string>
 #include <vector>
 
-// Runtime-tunable backing store for every color in Colors.h (ClipColor::/
-// GameColors::) - those live as mutable `inline COLORREF` globals rather
-// than `constexpr` specifically so this file's LoadFromIni can overwrite
-// them in place before anything draws with them, and so ColorEditor.exe
-// (src/coloreditor/) can edit + persist the same values the game itself
-// reads, with no separate copy to keep in sync.
+// Runtime-tunable backing store for every color in Colors.h. Those are mutable `inline COLORREF`
+// globals so LoadFromIni can overwrite them in place before anything draws, and ColorEditor.exe can
+// edit and persist the same values the game reads.
 namespace Colors
 {
 
-// One named, editable color - section/name are how both Colors.ini and
-// ColorEditor identify it; value points straight at the live global
-// (ClipColor::c_Neutral, GameColors::c_BgTop, ...) the game actually draws
-// with. section/name are plain ASCII string literals owned by
-// AllEntries()'s static table, so they outlive any caller.
+// One named, editable color. section/name identify it in Colors.ini and ColorEditor; value points
+// at the live global the game draws with. section/name are ASCII literals owned by AllEntries()'s
+// static table.
 struct Entry
 {
     const char* section;
@@ -26,26 +21,20 @@ struct Entry
     COLORREF* value;
 };
 
-// Every tunable color, in a fixed display/save order - built once, shared
-// by LoadFromIni/SaveToIni and by ColorEditor's own UI, so the two can
-// never disagree about what's editable.
+// Every tunable color, in a fixed display/save order - shared by LoadFromIni/SaveToIni and
+// ColorEditor's UI.
 const std::vector<Entry>& AllEntries();
 
-// Colors.ini lives next to Content/ (see c_ContentRoot in MainWindow.cpp),
-// relative to the process's working directory - not under %APPDATA% like
-// Settings, since this is authoring-time tuning data meant to be checked
-// into the repo and shared, not a per-player preference. Both Rhythm.exe
-// and ColorEditor.exe must be run from the repo root for this path to
-// resolve, same convention as "Content/...".
+// Colors.ini lives next to Content/, relative to the working directory - not under %APPDATA% like
+// Settings, since this is authoring-time tuning data meant to be checked in. Both executables must
+// be run from the repo root.
 std::wstring ConfigFilePath();
 
-// Overwrites each entry whose key is present in Colors.ini; an entry with
-// no saved key (or no file at all) is left at Colors.h's compiled-in
+// Overwrites each entry whose key is present in Colors.ini; others stay at Colors.h's compiled-in
 // value. Safe to call unconditionally at startup.
 void LoadFromIni();
 
-// Writes every entry's current value to Colors.ini, creating the file if
-// needed. Called by ColorEditor's Save button.
+// Writes every entry's current value to Colors.ini, creating the file if needed.
 void SaveToIni();
 
 } // namespace Colors

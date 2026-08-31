@@ -36,15 +36,10 @@ bool EditorApp::Initialize(HWND hwnd)
 {
     m_hwnd = hwnd;
 
-    // Establish an STA COM apartment before AudioEngine::Initialize() runs.
-    // IFileOpenDialog/IFileSaveDialog (FileDialogs.cpp) require STA to
-    // behave correctly. AudioEngine::Initialize() makes its own
-    // CoInitializeEx(COINIT_MULTITHREADED) attempt internally, but already
-    // tolerates finding COM in a different apartment mode - it treats
-    // RPC_E_CHANGED_MODE as non-fatal and correctly avoids
-    // CoUninitialize()-ing a mode it didn't establish (see
-    // AudioEngine.cpp), so this ordering is safe; XAudio2 itself doesn't
-    // care which apartment it's created from.
+    // Establish an STA COM apartment before AudioEngine::Initialize(), since the file dialogs
+    // require STA. AudioEngine::Initialize()'s own COM init tolerates finding a different apartment
+    // mode (treats RPC_E_CHANGED_MODE as non-fatal), and XAudio2 doesn't care which apartment it's
+    // created from.
     HRESULT comHr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     m_comInitialized = SUCCEEDED(comHr);
 
@@ -92,10 +87,8 @@ void EditorApp::RequestQuit()
 
 void EditorApp::Update()
 {
-    // WantTextInput guard applies to every shortcut below, New/Open/Exit
-    // included: while a text field has keyboard focus, a bare Ctrl+letter
-    // should never be stolen out from under normal typing/selection (e.g.
-    // Ctrl+A to select-all in a text box).
+    // WantTextInput guard on every shortcut below: while a text field has focus, a bare Ctrl+letter
+    // must not be stolen from normal typing/selection.
     ImGuiIO& earlyIo = ImGui::GetIO();
     if (!earlyIo.WantTextInput)
     {
@@ -122,9 +115,8 @@ void EditorApp::Update()
         m_blockPlayer.Update(ImGui::GetIO().DeltaTime);
 
         ImGuiIO& io = ImGui::GetIO();
-        // WantTextInput guard: while a text field has keyboard focus, let
-        // ImGui's own per-widget text-undo handle Ctrl+Z instead of jumping
-        // to a full document-level undo out from under an in-progress edit.
+        // WantTextInput guard: while a text field has focus, let ImGui's per-widget text-undo
+        // handle Ctrl+Z instead of a document-level undo.
         if (!io.WantTextInput && io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Z, false))
         {
             DoUndo();
@@ -133,10 +125,8 @@ void EditorApp::Update()
         {
             DoRedo();
         }
-        // Spacebar: the universal transport convention (DAWs, video
-        // editors, chart tools) for toggling play/pause - WantTextInput
-        // guard so typing a literal space into a text field never doubles
-        // as a transport command.
+        // Spacebar toggles play/pause (the universal transport convention) - WantTextInput guard so
+        // a literal space in a text field isn't also a transport command.
         if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Space, false))
         {
             if (m_blockPlayer.IsPlaying())
@@ -154,12 +144,8 @@ void EditorApp::Update()
             m_observedVersion = m_doc.docVersion;
             m_lastEditTimeMs = GetTickCount64();
         }
-        // Debounced: only re-validate (and rebuild the block schedule,
-        // which is what keeps every block's displayed timing - e.g. a
-        // clip's hits_required changing - in sync automatically) ~300ms
-        // after the last edit. Short enough to feel immediate once the
-        // user pauses, long enough that typing never triggers file I/O
-        // mid-keystroke.
+        // Debounced: only re-validate and rebuild the block schedule ~300ms after the last edit -
+        // long enough that typing never triggers file I/O mid-keystroke.
         if (m_observedVersion != m_lastValidatedVersion && GetTickCount64() - m_lastEditTimeMs > 300)
         {
             EditorChartIO::ValidateDocument(m_doc, m_currentErrors);
@@ -186,22 +172,10 @@ void EditorApp::Update()
         m_leftColumnWidth = contentWidth * 0.4f;
     }
 
-    // Every pane size below is clamped into a *local* copy for this frame's
-    // layout only - never written back into the m_* members (SaveLayoutSettings'
-    // source of truth) except where a splitter is actually being dragged
-    // right now (see draggedThisFrame below). io.DisplaySize can be too
-    // small to fit the preferred sizes for a single transient frame without
-    // the window itself really having shrunk to that size - not just an
-    // intentional resize, but also the few frames Windows reports a small,
-    // not-yet-settled client rect while a minimize/restore animation is
-    // still playing (EditorMain.cpp's IsIconic guard only covers the
-    // steady-state minimized case, not that animated transition, and
-    // there's no reliable way to catch every such transient from this side
-    // instead). Clamping only a local copy means a transient frame renders
-    // a correctly-fitted-but-temporary layout without corrupting what's
-    // remembered - the preferred sizes are exactly what's still in m_* the
-    // moment io.DisplaySize is too, with no manual drag needed to recover
-    // them, and SaveLayoutSettings never sees the transient value at all.
+    // Pane sizes are clamped into local copies for this frame only, never written back to the m_*
+    // members except where a splitter is actually being dragged (see draggedThisFrame). This keeps
+    // a transient too-small io.DisplaySize (e.g. mid-minimize-animation) from corrupting the
+    // remembered sizes; they recover on their own once io.DisplaySize settles.
     float timelineHeight = m_timelineHeight;
     float bottomHeight = m_bottomHeight;
     float leftColumnWidth = m_leftColumnWidth;
@@ -285,10 +259,8 @@ void EditorApp::Update()
 
     bool draggedThisFrame = false;
 
-    // Left/right column boundary: left column is the stored value, right
-    // column absorbs the change as a remainder. Deltas are applied on top
-    // of this frame's (possibly clamped) displayed position, since that's
-    // where the user visually grabbed the splitter from.
+    // Left/right column boundary: left column is stored, right absorbs the change. Deltas apply on
+    // this frame's displayed position, where the user grabbed the splitter.
     float leftRightDelta = DrawPaneSplitter("##SplitLeftRight", ImVec2(leftColumnWidth, contentY),
                                              ImVec2(c_SplitterThickness, upperHeight), false);
     if (leftRightDelta != 0.0f)
@@ -307,9 +279,7 @@ void EditorApp::Update()
         draggedThisFrame = true;
     }
 
-    // Upper row/Timeline boundary: upperHeight is itself a remainder
-    // (contentHeight minus timeline and bottom), so dragging this one only
-    // needs to move m_timelineHeight - upperHeight absorbs the change.
+    // Upper row/Timeline boundary: upperHeight is a remainder, so this only moves m_timelineHeight.
     float upperTimelineDelta = DrawPaneSplitter("##SplitUpperTimeline", ImVec2(0.0f, timelineY - c_SplitterThickness),
                                                  ImVec2(contentWidth, c_SplitterThickness), true);
     if (upperTimelineDelta != 0.0f)
@@ -445,10 +415,8 @@ void EditorApp::DrawBlockPropertiesWindow(float x, float y, float w, float h)
     ImGui::Separator();
     if (m_hasDocument)
     {
-        // BlockPropertiesPanel only ever shows/edits the primary selection
-        // below - call that out explicitly when more blocks than that are
-        // highlighted, so it's clear Delete/Copy on the timeline act on the
-        // whole group even though the fields shown here are just the one.
+        // BlockPropertiesPanel only edits the primary selection - note when more blocks are
+        // highlighted, so it's clear Delete/Copy on the timeline act on the whole group.
         size_t selectedCount = m_blockTimeline.MultiSelectedBlockIds().size();
         if (selectedCount > 1)
         {
@@ -675,16 +643,9 @@ void EditorApp::RebuildBlockSchedule()
     {
         return;
     }
-    // BlockPlayer::RebuildSchedule leaves the previous schedule in place on
-    // failure (see its own doc comment). It re-validates internally too
-    // (EditorChartIO::ValidateDocument), so if m_currentErrors is already
-    // non-empty its own errors would just be a duplicate of the same
-    // failure - skip it and keep the text-level errors already showing.
-    // Only when text-level validation passed does this add anything new:
-    // the audio-dependent checks ValidateDocument itself can't run
-    // (ClipFitsOneLoop, ChartClip::ValidateArrangementAlignment) - both
-    // "the real game would refuse to load this chart" checks, surfaced
-    // here so the editor catches them before a save ever reaches that far.
+    // Skip if text-level validation already failed - RebuildSchedule re-validates internally and
+    // would just report the same errors. When it passed, this adds the audio-dependent checks
+    // ValidateDocument can't run (ClipFitsOneLoop, ValidateArrangementAlignment).
     if (!m_currentErrors.empty())
     {
         return;
@@ -784,14 +745,9 @@ void EditorApp::DoSave()
         return;
     }
 
-    // Force a fresh check right now rather than trusting whatever the
-    // debounced live-edit pass last found (Update()'s own 300ms debounce) -
-    // saving within that window of the last keystroke could otherwise slip
-    // past a check that hadn't caught up yet. This is also the only path
-    // that catches the audio-dependent checks EditorChartIO::SaveDocument's
-    // own ValidateDocument call can't run on its own (ClipFitsOneLoop,
-    // ChartClip::ValidateArrangementAlignment) - see RebuildBlockSchedule's
-    // own comment.
+    // Force a fresh check rather than trusting the debounced pass, which might not have caught up
+    // to a keystroke seconds ago. Also the path (via RebuildBlockSchedule) that catches the
+    // audio-dependent checks SaveDocument's own ValidateDocument can't run.
     EditorChartIO::ValidateDocument(m_doc, m_currentErrors);
     m_lastValidatedVersion = m_doc.docVersion;
     RebuildBlockSchedule();
@@ -825,11 +781,8 @@ void EditorApp::DoSaveAs()
         return;
     }
 
-    // Same forced fresh check DoSave does, and for the same reason - see
-    // its own comment. The clips' own content isn't changing here (just
-    // where the chart file lives), so validating against the
-    // still-current folderPath's stems before SaveDocumentAs's own copy
-    // is exactly as meaningful as validating after.
+    // Force a fresh validate, like DoSave. Clip content isn't changing here (just the file
+    // location), so validating against the current folderPath's stems before the copy is fine.
     EditorChartIO::ValidateDocument(m_doc, m_currentErrors);
     m_lastValidatedVersion = m_doc.docVersion;
     RebuildBlockSchedule();

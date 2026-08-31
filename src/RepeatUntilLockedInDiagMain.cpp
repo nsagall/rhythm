@@ -7,17 +7,12 @@
 #include "DiagTestHelpers.h"
 #include "GameSession.h"
 
-// Standalone diagnostic (not part of the normal build): verifies "a learn
-// clip that isn't locked in by the time it would otherwise end repeats
-// instead of advancing (or stopping)". Drives section 0 of a real chart,
-// pressing NOTHING at all for the first two loop-boundary crossings -
-// confirming PendingAdvanceAtSeconds() pushes back by a full loop each
-// time (never actually reaching Update()'s advance) while
-// CurrentSectionIndex() stays put and PreviewClip()/
-// PreviewFirstOnsetBeatForLane() report nothing to preview - then starts
-// playing perfectly, confirming IsPassing() flips true mid-loop, the
-// preview immediately starts reflecting the real next clip, and the
-// section eventually advances at the next loop boundary after that.
+// Standalone diagnostic: verifies "a learn clip not locked in by the time it would end repeats
+// instead of advancing". Drives section 0 of a real chart, pressing nothing for the first two loop
+// boundaries - confirming PendingAdvanceAtSeconds() pushes back a full loop each time while the
+// section index stays put and nothing is previewed - then plays perfectly, confirming IsPassing()
+// flips true mid-loop, the preview starts reflecting the real next clip, and the section then
+// advances at the next loop boundary.
 
 namespace
 {

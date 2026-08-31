@@ -7,21 +7,13 @@
 // Entry point: creates the main window and runs the message loop until it closes.
 int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow)
 {
-    // Overwrites Colors.h's compiled-in defaults with whatever Colors.ini
-    // (edited via ColorEditor.exe) has saved - must happen before
-    // MainWindow::Create, which reads GameColors::c_WindowBgColor/
-    // c_FieldBgColor to create GDI brushes immediately.
+    // Overwrites Colors.h's compiled-in defaults with Colors.ini's saved values - must run before
+    // MainWindow::Create, which reads them to create GDI brushes immediately.
     Colors::LoadFromIni();
 
-    // Windows' default timer resolution (~15.6ms) is what SetTimer's ~16ms
-    // frame timer (NoteLane's redraw tick, which also drives GameSession::
-    // Update()) actually gets rounded/coalesced against - at that
-    // resolution, ticks can slip or double up under any system load,
-    // delaying miss-timeout detection and the audio-drift resync in
-    // GameSession::Update() by more than the nominal frame interval. Raising
-    // it to 1ms for this process's lifetime makes that timer - and message
-    // dispatch generally - noticeably more regular. Matched by timeEndPeriod
-    // on the way out, since this setting is process-wide, not per-timer.
+    // Windows' default ~15.6ms timer resolution rounds/coalesces SetTimer's ~16ms frame timer, so
+    // ticks slip or double up under load, delaying miss-timeout detection and audio-drift resync.
+    // Raise it to 1ms for the process's lifetime; matched by timeEndPeriod on the way out.
     timeBeginPeriod(1);
 
     MainWindow window;

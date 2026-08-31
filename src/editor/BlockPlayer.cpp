@@ -92,19 +92,13 @@ bool BlockPlayer::RebuildSchedule(const EditorDocument& doc, std::vector<std::ws
         return false;
     }
 
-    // Validate and mutate (ExpandLaneNotesToFillClip) on the *local* song
-    // first, matching doc.clips by position (ValidateDocument preserves
-    // that order) - not yet on m_song, so a validation failure below can
-    // still return false leaving m_song/m_schedule exactly as they were
-    // (see this function's own header comment on why that matters). The
-    // per-clip results are kept in these two position-indexed vectors only
-    // long enough to hand off to the pointer-keyed maps below, once
-    // m_song.clips has its own final, stable addresses.
+    // Validate and expand on the local song first (not m_song), matching doc.clips by position, so
+    // a failure below leaves m_song/m_schedule untouched. These position-indexed vectors hand off
+    // to the pointer-keyed maps below once m_song.clips has its final addresses.
     std::vector<double> durationsByPosition(song.Clips().size(), 0.0);
     std::vector<StemHandle> handlesByPosition(song.Clips().size());
-    // Captured before ExpandLaneNotesToFillClip (below) can widen any clip's
-    // spanBeats to its real audio length - see GameSession::LoadChart's own
-    // identical comment and ChartClip::ClipAlignmentInfo's for why.
+    // Captured before ExpandLaneNotesToFillClip can widen any clip's spanBeats - see
+    // GameSession::LoadChart.
     std::unordered_map<const ChartClip*, ChartClip::ClipAlignmentInfo> clipAlignmentInfo;
     for (size_t i = 0; i < song.Clips().size() && i < doc.clips.size(); ++i)
     {
@@ -117,10 +111,8 @@ bool BlockPlayer::RebuildSchedule(const EditorDocument& doc, std::vector<std::ws
         clipAlignmentInfo[&clip] = {clip.SpanBeats(), duration};
         if (clip.HasMidi())
         {
-            // Mirrors GameSession::LoadChart's own rejection check - a
-            // chart that fails this would refuse to even load in the real
-            // game, so the editor shouldn't produce a schedule for it
-            // either.
+            // Mirrors GameSession::LoadChart's rejection check - a chart failing this wouldn't
+            // load in the real game.
             if (!clip.ClipFitsOneLoop(duration, song.Bpm()))
             {
                 outErrors.clear();
@@ -134,9 +126,7 @@ bool BlockPlayer::RebuildSchedule(const EditorDocument& doc, std::vector<std::ws
         }
     }
 
-    // Same whole-chart bar-alignment invariant GameSession::LoadChart
-    // checks, needed here too since the editor can build a schedule for a
-    // chart the real game would refuse to even load.
+    // The same whole-chart bar-alignment invariant GameSession::LoadChart checks.
     if (!ChartClip::ValidateArrangementAlignment(song, clipAlignmentInfo, outErrors))
     {
         return false;
@@ -144,11 +134,7 @@ bool BlockPlayer::RebuildSchedule(const EditorDocument& doc, std::vector<std::ws
 
     m_song = std::move(song);
 
-    // Now build the pointer-keyed maps everything else uses, from
-    // m_song.clips' own final addresses - not from the pre-move `song`
-    // (which would in fact still be safe, since moving a std::vector never
-    // reallocates its buffer, but reading straight from m_song avoids
-    // needing to lean on that at all).
+    // Build the pointer-keyed maps everything else uses, from m_song.clips' final addresses.
     m_stemHandlesByClip.clear();
     std::unordered_map<const ChartClip*, double> stemDurationsByClip;
     for (size_t i = 0; i < m_song.Clips().size() && i < handlesByPosition.size(); ++i)
@@ -220,12 +206,9 @@ void BlockPlayer::SeekToBlockStart(int sectionIndex)
         }
     }
 
-    // No entry for this exact section - Background/Reset never get one
-    // (both are zero-duration, see BlockSchedule::Entry's own comment).
-    // Fall back to wherever the next real (Learn/Break) entry actually
-    // begins, which is exactly this section's own conceptual instant in
-    // time - shared with BlockTimeline::LayoutXToSeconds's own identical
-    // fallback for a marker click on the same kind of block.
+    // No entry for this section (Background/Reset are zero-duration) - fall back to where the next
+    // real entry begins, this section's conceptual instant. Shared with
+    // BlockTimeline::LayoutXToSeconds's marker-click fallback.
     SeekToSeconds(BlockSchedule::FirstEntrySecondsAtOrAfter(m_schedule, sectionIndex));
 }
 
@@ -278,12 +261,9 @@ void BlockPlayer::ApplyAudioForPosition()
         }
     }
 
-    // Start newly-active voices, phase-aligned to the current position -
-    // mirrors StartClipLoop's own absolute-wall-clock phase seek exactly
-    // (phase = fmod(position, stemDuration), independent of when this
-    // particular voice window happened to open). Already-active voices
-    // just get their volume kept in sync, for a Learn voice's own
-    // init_volume -> volume switch at its lock-in instant.
+    // Start newly-active voices phase-aligned to the current position (mirrors StartClipLoop);
+    // already-active voices just get their volume kept in sync, for a Learn voice's
+    // init_volume -> volume switch at lock-in.
     std::vector<const ChartClip*> newActive;
     newActive.reserve(result.activeVoices.size());
     for (const BlockSchedule::ActiveVoice& voice : result.activeVoices)
@@ -295,12 +275,8 @@ void BlockPlayer::ApplyAudioForPosition()
         if (!wasActive)
         {
             double stemDuration = m_audioEngine.GetStemDurationSeconds(stem);
-            // ChartClip::ComputeClipPhaseSeconds, matching GameSession's
-            // own real-game phase-seek exactly - see its doc comment for
-            // why this must use the clip's beat-based pattern length
-            // (spanBeats), not the audio file's own raw measured duration.
-            // voice.originSeconds (not 0) is this clip's own persistent
-            // phase reference - see BlockSchedule::VoiceWindow::originSeconds.
+            // ComputeClipPhaseSeconds, matching GameSession's phase-seek. voice.originSeconds (not
+            // 0) is this clip's persistent phase reference.
             double phase = voice.clip->ComputeClipPhaseSeconds(voice.originSeconds, m_positionSeconds, stemDuration,
                                                                 m_song.Bpm());
             m_audioEngine.StartLooping(stem, phase, static_cast<float>(voice.volume), 0);

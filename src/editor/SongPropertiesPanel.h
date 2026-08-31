@@ -5,34 +5,23 @@
 #include "BlockPlayer.h"
 #include "EditorDocument.h"
 
-// "3:45" - never plain seconds, so a long song doesn't read as an
-// implausible three-digit number. Shared with EditorApp's own "Estimated
-// length" readout in the bottom Preview panel, so the two stay worded
-// identically.
+// Formats seconds as "3:45" - never plain seconds. Shared with EditorApp's "Estimated length"
+// readout so the two stay worded identically.
 std::wstring FormatMinutesSeconds(double seconds);
 
-// Editor panel for the chart's song-level fields - the [song] block's own
-// values (title, tempo, time signature, default hit tolerances), as
-// opposed to per-clip overrides (ClipPanel's tolerance fields) or
-// per-block fields (BlockPropertiesPanel). Also surfaces the chart's
-// overall estimated length under perfect play (see Draw) - a computed,
-// not stored, song-level fact.
+// Editor panel for the [song] block's fields (title, tempo, time signature, default hit
+// tolerances), as opposed to per-clip or per-block fields. Also surfaces the chart's estimated
+// length under perfect play - computed, not stored.
 class SongPropertiesPanel
 {
 public:
-    // Draws the panel's content into whatever ImGui window the caller has
-    // already begun. Mutates doc directly (via MarkDirty) on any edit.
-    // player supplies the current BlockSchedule (via CurrentSchedule()) for
-    // the estimated-length readout - the same schedule/perfect-play
-    // assumption BlockTimeline's playhead and EditorApp's own "Estimated
-    // length" readout in the bottom Preview panel are built on (see
-    // BlockSchedule.h) - not const.
+    // Draws the panel into whatever ImGui window the caller has begun. Mutates doc on any edit.
+    // player supplies the current BlockSchedule (via CurrentSchedule()) for the estimated-length
+    // readout.
     void Draw(EditorDocument& doc, BlockPlayer& player);
 
-    // Forces the title edit buffer to re-sync from doc on the next Draw()
-    // call instead of showing stale staged text - call after anything that
-    // replaces doc's contents out from under this panel (New/Open, or
-    // undo/redo restoring a snapshot).
+    // Forces the title edit buffer to re-sync from doc on the next Draw() - call after anything
+    // that replaces doc's contents (New/Open, undo/redo).
     void NotifyDocumentReplaced()
     {
         m_titleSynced = false;

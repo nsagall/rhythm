@@ -120,10 +120,8 @@ int BlockPropertiesPanel::Draw(EditorDocument& doc, int selectedBlockId, BlockPl
     }
     else if (block->kind == SectionKind::Reset)
     {
-        // Not a validation problem - BlockSchedule::Build() never creates an
-        // Entry for Reset (see BlockSchedule.h's own comment on Entry): it
-        // stops everything and advances instantly, contributing zero
-        // elapsed time, so there's nothing to compute.
+        // Not a validation problem - Reset gets no BlockSchedule::Entry (it advances instantly,
+        // contributing zero elapsed time), so there's nothing to compute.
         ImGui::TextDisabled("Reset has no duration of its own - it stops everything instantly\nand advances immediately to the next block.");
     }
     else if (block->kind == SectionKind::Background)

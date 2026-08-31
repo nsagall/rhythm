@@ -7,26 +7,14 @@
 #include "DiagTestHelpers.h"
 #include "GameSession.h"
 
-// Standalone diagnostic (not part of the normal build): verifies easy
-// mode's 2-miss grace period (SectionInstance::c_EasyGraceMisses), which
-// IntroOutroDiagMain.cpp's perfect auto-player can't exercise (it never
-// mistimes or skips a press). Drives GameSession headlessly through the
-// first 3 Learn sections of a chart in easy mode, deliberately skipping
-// presses to script misses:
-//   - Learn instance 0: skip 2 notes in a row - expect the streak never
-//     drops to 0 (both fully forgiven - exercises the full grace budget,
-//     not just its first use).
-//   - Learn instance 1: skip 5 notes in a row (2 forgiven + 3 real) -
-//     expect the streak DOES drop to 0 (the real misses aren't forgiven),
-//     and the clip's stem actually stops after the 3rd real miss (proving
-//     the forgiven misses don't count toward the 3-consecutive-miss
-//     threshold either - if they did, the stem would stop earlier).
-//   - Learn instance 2: skip 2 notes again - expect they're forgiven too,
-//     proving the grace period refreshes every new section
-//     (BeginSection resets it).
-// Otherwise plays perfectly (same auto-press timing as IntroOutroDiagMain),
-// including through any remaining sections after instance 2, so the chart
-// reaches Complete instead of stalling.
+// Standalone diagnostic: verifies easy mode's 2-miss grace period
+// (SectionInstance::c_EasyGraceMisses). Drives GameSession headlessly through the first 3 Learn
+// sections in easy mode, skipping presses to script misses:
+//   - Instance 0: skip 2 in a row - the streak never drops to 0 (both forgiven).
+//   - Instance 1: skip 5 in a row (2 forgiven + 3 real) - the streak drops to 0 and the stem stops
+//     after the 3rd real miss (forgiven misses don't count toward the 3-miss threshold).
+//   - Instance 2: skip 2 again - forgiven too, proving the grace budget refreshes per section.
+// Otherwise plays perfectly, so the chart reaches Complete.
 
 namespace
 {

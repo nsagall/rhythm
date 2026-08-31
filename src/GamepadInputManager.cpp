@@ -1,6 +1,5 @@
 #include "GamepadInputManager.h"
 
-// See the header's own comment.
 std::vector<GamepadInputManager::ButtonEvent> GamepadInputManager::Poll()
 {
     std::vector<ButtonEvent> events;

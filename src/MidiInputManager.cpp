@@ -5,9 +5,6 @@ MidiInputManager::~MidiInputManager()
     CloseAll();
 }
 
-// Opens and starts every currently-connected MIDI input device, targeting
-// hwnd for CALLBACK_WINDOW delivery. A device that fails to open is skipped,
-// not fatal - see the header's own comment.
 void MidiInputManager::OpenAll(HWND hwnd)
 {
     UINT deviceCount = midiInGetNumDevs();
@@ -30,7 +27,6 @@ void MidiInputManager::OpenAll(HWND hwnd)
     }
 }
 
-// Stops and closes every device opened by OpenAll.
 void MidiInputManager::CloseAll()
 {
     for (HMIDIIN device : m_devices)
@@ -42,7 +38,6 @@ void MidiInputManager::CloseAll()
     m_devices.clear();
 }
 
-// Unpacks an MM_MIM_DATA message's lParam into its 3 MIDI bytes.
 MidiInputManager::ShortMessage MidiInputManager::Unpack(LPARAM lParam)
 {
     DWORD packed = static_cast<DWORD>(lParam);

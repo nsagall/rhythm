@@ -1,8 +1,6 @@
-// wWinMain entry point for RhythmEditor.exe: registers the window class,
-// creates a DirectX11 device/swapchain (Dear ImGui's DX11 backend needs
-// one to render into - there's no other rendering happening in this
-// window), wires up the Win32+DX11 ImGui backends, and runs the message
-// loop, handing every frame to EditorApp::Update() to draw the actual UI.
+// wWinMain entry point for RhythmEditor.exe: registers the window class, creates a DX11
+// device/swapchain for ImGui's DX11 backend, wires up the Win32+DX11 ImGui backends, and runs the
+// message loop, handing every frame to EditorApp::Update().
 #include <d3d11.h>
 #include <windows.h>
 
@@ -25,19 +23,12 @@ ID3D11RenderTargetView* g_mainRenderTargetView = nullptr;
 EditorApp* g_app = nullptr;
 bool g_destroyRequested = false;
 
-// Separate from EditorApp's own EditorSettings member - EditorSettings
-// holds no state of its own (every call re-opens the ini file), so a
-// second instance here is safe; this one exists purely because window
-// placement has to be loaded before EditorApp is even constructed (it
-// sizes/positions the window before CreateDeviceD3D touches it), and
-// saved from WndProc, which has no access to EditorApp's members either.
+// Separate from EditorApp's EditorSettings member (EditorSettings is stateless), because window
+// placement must be loaded before EditorApp is constructed and saved from WndProc.
 EditorSettings g_windowSettings;
-// True from WM_ENTERSIZEMOVE to WM_EXITSIZEMOVE - an interactive
-// drag-move/drag-resize is in progress. WM_SIZE fires once per pixel
-// during that drag; gating the maximize/restore save on !g_inSizeMove
-// keeps that case from writing the ini file dozens of times a second,
-// while WM_EXITSIZEMOVE itself still saves once when the drag ends (see
-// WndProc).
+// True from WM_ENTERSIZEMOVE to WM_EXITSIZEMOVE. WM_SIZE fires once per pixel during a drag, so
+// gating the maximize/restore save on !g_inSizeMove avoids writing the ini dozens of times a
+// second; WM_EXITSIZEMOVE saves once when the drag ends.
 bool g_inSizeMove = false;
 
 void SaveCurrentWindowPlacement(HWND hwnd)
@@ -50,9 +41,8 @@ void SaveCurrentWindowPlacement(HWND hwnd)
     }
 }
 
-// A saved placement can be stale (a monitor that's since been unplugged,
-// a resolution change) - reject it rather than create a window the user
-// can't see or reach, and fall back to the normal default instead.
+// A saved placement can be stale (an unplugged monitor, a resolution change) - reject it rather
+// than create a window the user can't reach, and fall back to the default.
 bool IsPlacementOnScreen(const RECT& rect)
 {
     RECT virtualScreen;
@@ -161,11 +151,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
                                              DXGI_FORMAT_UNKNOWN, 0);
                 CreateRenderTarget();
             }
-            // Only maximize/restore here - not every intermediate size
-            // during an interactive drag (WM_EXITSIZEMOVE below covers
-            // that once, when the drag ends) - and never while minimized,
-            // which isn't a placement worth persisting (see
-            // EditorSettings::LoadWindowPlacement's own comment).
+            // Only maximize/restore here - not every intermediate drag size (WM_EXITSIZEMOVE covers
+            // that), and never while minimized.
             if (!g_inSizeMove && (wParam == SIZE_MAXIMIZED || wParam == SIZE_RESTORED))
             {
                 SaveCurrentWindowPlacement(hWnd);
@@ -184,18 +171,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
                 g_app->RequestQuit();
                 if (!g_app->WantsToQuit())
                 {
-                    // Dirty document - the unsaved-changes modal is now
-                    // showing; stay open until it's resolved (see the main
-                    // loop's own WantsToQuit() poll for how the window
-                    // eventually closes once it is).
+                    // Dirty document - the unsaved-changes modal is showing; stay open until it's
+                    // resolved (the main loop's WantsToQuit() poll closes the window then).
                     return 0;
                 }
             }
             break;
         case WM_DESTROY:
-            // Final safety net - covers a plain Alt+F4/close-button exit
-            // that never went through an interactive move/resize at all,
-            // so WM_EXITSIZEMOVE never fired this session.
+            // Final safety net - covers an exit that never went through an interactive
+            // move/resize, so WM_EXITSIZEMOVE never fired.
             SaveCurrentWindowPlacement(hWnd);
             PostQuitMessage(0);
             return 0;
@@ -220,11 +204,9 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int nCmdShow)
     HWND hwnd = CreateWindowExW(0, wc.lpszClassName, L"RhythmEditor", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT,
                                  CW_USEDEFAULT, 1440, 900, nullptr, nullptr, hInstance, nullptr);
 
-    // Restore the last session's size/position/maximized state, if any and
-    // still on-screen, before CreateDeviceD3D reads the window's client
-    // rect for the swap chain (its BufferDesc.Width/Height of 0 means
-    // "match the window") - applying it any later would show a default-
-    // sized window for one frame, then visibly jump.
+    // Restore the last session's placement (if on-screen) before CreateDeviceD3D reads the client
+    // rect for the swap chain - applying it later would show a default-sized window for one frame,
+    // then jump.
     WINDOWPLACEMENT savedPlacement = {};
     bool hasSavedPlacement =
         g_windowSettings.LoadWindowPlacement(savedPlacement) && IsPlacementOnScreen(savedPlacement.rcNormalPosition);
@@ -279,20 +261,10 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int nCmdShow)
             break;
         }
 
-        // While minimized, GetClientRect (which ImGui_ImplWin32_NewFrame
-        // uses for io.DisplaySize every frame) reports a small placeholder
-        // rect rather than the real window size - historically around
-        // 160x28, the taskbar-icon-sized rect Windows substitutes for a
-        // minimized window's client area. Letting a frame through with that
-        // as io.DisplaySize would have EditorApp::Update()'s pane-splitter
-        // clamping logic shrink every persisted pane size down to fit it -
-        // permanently, since nothing ever grows them back except a manual
-        // drag, and the next splitter drag would even write the shrunken
-        // sizes to disk. WM_SIZE already skips the swapchain resize for the
-        // same SIZE_MINIMIZED quirk (see WndProc); skip the whole frame
-        // here for the same reason, and because there's nothing to usefully
-        // draw to an invisible window anyway. A short sleep keeps this from
-        // busy-spinning a CPU core the entire time the window is minimized.
+        // While minimized, GetClientRect reports a tiny placeholder rect. A frame with that as
+        // io.DisplaySize would have EditorApp::Update()'s pane-splitter clamping permanently shrink
+        // every persisted pane size. Skip the frame entirely (there's nothing to draw anyway); the
+        // sleep keeps this from busy-spinning.
         if (IsIconic(hwnd))
         {
             Sleep(10);

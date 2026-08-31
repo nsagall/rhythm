@@ -7,21 +7,11 @@
 #include "DiagTestHelpers.h"
 #include "GameSession.h"
 
-// Standalone diagnostic (not part of the normal build): verifies the
-// still-current parts of the "always advance" timing model after learn
-// sections gained the ability to repeat until locked in (see
-// RepeatUntilLockedInDiagMain.cpp for that behavior specifically - this
-// file no longer covers it, since a never-pressed learn section now
-// repeats forever instead of ever advancing). Plays every learn section
-// perfectly (so none of them need to repeat), and specifically watches:
-//   - A learn section (section 0, kick Snare): locks in and advances
-//     within a single loop when played well, exactly as ever - the
-//     "advance only once locked in" gate is a no-op for a player who's
-//     already locking in comfortably within the first loop.
-//   - A break section (the first [break] in Cool Boy.chart, "break"):
-//     advances strictly on its own loop_count schedule regardless of the
-//     player - break was never affected by today's learn-specific change,
-//     and still can't be judged/interacted with at all.
+// Standalone diagnostic: verifies the "always advance" timing model for a player who locks in
+// comfortably. Plays every learn section perfectly (so none repeat), and watches:
+//   - A learn section (section 0): locks in and advances within a single loop.
+//   - A break section (the first [break] in Cool Boy.chart): advances strictly on its loop_count
+//     schedule regardless of the player, and can't be judged.
 
 namespace
 {

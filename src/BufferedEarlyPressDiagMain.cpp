@@ -6,38 +6,19 @@
 #include "AudioEngine.h"
 #include "GameSession.h"
 
-// Standalone diagnostic (not part of the normal build): verifies the fix for
-// "the very first note of a section is much harder to hit than every other
-// note." That note's onset coincides exactly with the section's own start
-// instant (see ChartClip::NextOnsetAfter), so before this fix,
-// IsLaneJudgeable(lane) was false for any press landing before that instant
-// - even one well within the note's own start tolerance - silently
-// discarding the early half of its window (see GameSession::
-// TryBufferEarlyPress's own comment for the full story).
+// Standalone diagnostic: verifies TryBufferEarlyPress makes the early half of a section's first
+// note's tolerance window reachable. That note's onset lands exactly at the section start, so
+// IsLaneJudgeable is false for any press before it.
 //
-// Drives multilane_test.chart's count-in and, for every lane whose very
-// first note sits at beat 0 of the pattern (so its onset lands exactly at
-// the count-in's end), presses it partway through the *early* half of its
-// start tolerance - deliberately while IsLaneJudgeable(lane) is still false
-// - via TryBufferEarlyPress instead of OnPress, exactly as MainWindow now
-// does. One such lane (fastTapLane) is released immediately too, still
-// before the section begins - a real note has positive duration, so
-// releasing before its own onset is always premature relative to its real
-// end (onset + duration necessarily falls after the transition); this
-// exercises the buffered-release path (see OnRelease) and confirms it
-// produces a clean, definitive Miss instead of leaving a phantom stuck
-// hold - the exact regression risk buffering a press-without-its-release
-// would otherwise create. Another lane (holdThroughLane) is held through
-// the transition and released normally afterward, once its real duration is
-// known - the mainline case this fix targets. Confirms: (1) IsLaneJudgeable
-// was genuinely false at press time for every buffered lane (so this only
-// ever exercises the new early path, not a lucky race), (2)
-// TryBufferEarlyPress reports success for all of them, (3) holdThroughLane
-// is judged Hit once the section actually begins (proving the early half of
-// its tolerance window - unreachable before this fix - now works),
-// (4) fastTapLane is judged Miss (proving a genuinely too-early release
-// still resolves definitively), and (5) no lane is left stuck "held"
-// afterward.
+// Drives multilane_test.chart's count-in and, for every lane whose first note is at beat 0,
+// presses partway through the early half of tolerance (while IsLaneJudgeable is still false) via
+// TryBufferEarlyPress. fastTapLane is also released immediately (before the section begins),
+// exercising the buffered-release path. holdThroughLane is held through the transition and
+// released normally.
+//
+// Confirms: IsLaneJudgeable was false at press time for every buffered lane; TryBufferEarlyPress
+// succeeded for all; holdThroughLane is judged Hit once the section begins; fastTapLane is judged
+// Miss; no lane is left stuck "held".
 
 int main(int argc, char** argv)
 {
@@ -139,8 +120,8 @@ int main(int argc, char** argv)
                 }
                 double onsetSeconds = onsetBeat * secondsPerBeat;
                 double toleranceSeconds = clip.StartToleranceMs() / 1000.0;
-                // Deliberately in the *early* half of the tolerance window -
-                // the exact half this bug used to make unreachable.
+                // Deliberately in the early half of the tolerance window - the half only
+                // TryBufferEarlyPress can reach.
                 double target = onsetSeconds - toleranceSeconds * 0.5;
                 if (session.Clock().ElapsedSeconds() < target)
                 {

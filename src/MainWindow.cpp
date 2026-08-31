@@ -27,9 +27,7 @@ namespace
 constexpr wchar_t c_WindowClassName[] = L"RhythmWindowClass";
 constexpr wchar_t c_WindowTitle[] = L"Rhythm";
 
-// Where the song library is scraped from, relative to the process's
-// working directory - matches the convention the diag-mains already use
-// for "Content/..." paths.
+// Where the song library is scraped from, relative to the working directory.
 constexpr wchar_t c_ContentRoot[] = L"Content";
 
 constexpr int c_ControlHeight = 24;
@@ -51,11 +49,8 @@ constexpr int c_ToggleKnobRadius = 8;
 constexpr int c_AssignButtonWidth = 130;
 constexpr int c_AssignButtonGap = 15;
 
-// The lane (while playing) and the song list (while selecting) both sit
-// below this same header row, filling the available space: each grows/
-// shrinks with the window but is clamped to a sane range so it never
-// becomes an unusably tiny sliver or an absurdly wide single column, and
-// stays horizontally centered in whatever room is left over.
+// The lane and the song list both sit below the header row, filling the available space, clamped
+// to a sane size range and horizontally centered.
 constexpr int c_ToolbarHeight = 46;
 constexpr int c_LaneMargin = 20;
 constexpr int c_LaneMinWidth = 200;
@@ -64,12 +59,8 @@ constexpr int c_LaneMinHeight = 320;
 constexpr int c_SongListMaxWidth = 560;
 constexpr int c_SongRowHeight = 46;
 
-// The hits meter panel sits to the lane's right as its own small, separate
-// widget - fixed-size (unlike the lane itself) since it only ever shows a
-// single fill bar, no need to grow with the window. A wide gap and a
-// height shorter than the lane's own (vertically centered - see Layout())
-// keep it reading as clearly detached from the playfield rather than an
-// extra column welded onto it.
+// The hits meter panel sits to the lane's right as its own fixed-size widget (it only shows one
+// fill bar). A wide gap and a shorter, vertically-centered height keep it reading as detached.
 constexpr int c_HitsMeterWidth = 16;
 constexpr int c_HitsMeterGap = 34;
 constexpr double c_HitsMeterHeightFraction = 0.5;
@@ -83,17 +74,12 @@ constexpr int c_MinClientHeight = c_ToolbarHeight + c_LaneMargin + c_LaneMinHeig
 constexpr int IDC_BUTTON_REFRESH = 110;
 constexpr int IDC_BUTTON_ASSIGN = 111;
 
-// Minimum MIDI velocity (0-127) a note-on must carry to count as a real
-// press, in gameplay or during input capture alike - a sensitive
-// pad/keyboard controller can send genuine note-on messages for a barely-
-// there touch, and those shouldn't register as a lane hit (or get captured
-// as a binding) any more than an accidental brush of a key would. Below
-// this, OnMidiData drops the message entirely rather than treating it as
-// either a press or a release.
+// Minimum MIDI note-on velocity (0-127) that counts as a real press, in gameplay and capture
+// alike. A sensitive controller sends genuine note-ons for a barely-there touch; below this,
+// OnMidiData drops the message entirely.
 constexpr BYTE c_MinMidiPressVelocity = 20;
 
-// Returns value formatted with thousands separators (e.g. 12345 -> "12,345") -
-// scores read a lot more easily this way than as a bare digit run.
+// Returns value formatted with thousands separators (12345 -> "12,345").
 std::wstring FormatScoreWithCommas(int value)
 {
     std::wstring digits = std::to_wstring(value);
@@ -113,19 +99,15 @@ std::wstring FormatScoreWithCommas(int value)
     return result;
 }
 
-// Returns the stable key a song's high score list is saved under: its
-// content folder's own name (e.g. "Content\MySong\MySong.chart" -> "MySong") -
-// see SongLibrary's own comment on one folder per song. More stable across
-// machines/working directories than the full chartPath itself, which is all
-// Settings::LoadLastChartPath otherwise keys off of.
+// Returns the key a song's high score list is saved under: its content folder's name
+// ("Content\MySong\MySong.chart" -> "MySong"). More stable across machines than the full chartPath.
 std::wstring SongKeyForChartPath(const std::wstring& chartPath)
 {
     return std::filesystem::path(chartPath).parent_path().filename().wstring();
 }
 
-// Custom-paints one owner-drawn button: a rounded, bevelled fill in
-// baseColor (darkened while pressed for tactile feedback) with bold dark
-// text, matching NoteLane's bar/glyph bevel language.
+// Custom-paints one owner-drawn button: a rounded bevelled fill in baseColor (darkened while
+// pressed) with bold dark text, matching NoteLane's bevel language.
 void DrawGameButton(const DRAWITEMSTRUCT& item, COLORREF baseColor, const wchar_t* label)
 {
     HDC hdc = item.hDC;
@@ -176,12 +158,10 @@ void DrawGameButton(const DRAWITEMSTRUCT& item, COLORREF baseColor, const wchar_
 
 } // namespace
 
-// Binds the game session to this window's audio engine.
 MainWindow::MainWindow() : m_gameSession(m_audioEngine)
 {
 }
 
-// Registers the window class and creates/shows the window.
 bool MainWindow::Create(HINSTANCE hInstance, int nCmdShow)
 {
     m_windowBrush = CreateSolidBrush(c_WindowBgColor);
@@ -223,7 +203,6 @@ bool MainWindow::Create(HINSTANCE hInstance, int nCmdShow)
     return true;
 }
 
-// Runs the standard Win32 message loop until the window closes.
 int MainWindow::RunMessageLoop()
 {
     MSG msg = {};
@@ -235,7 +214,6 @@ int MainWindow::RunMessageLoop()
     return static_cast<int>(msg.wParam);
 }
 
-// Win32-mandated free-function thunk: recovers the MainWindow instance via GWLP_USERDATA and forwards to HandleMessage.
 LRESULT CALLBACK MainWindow::WindowProcStatic(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
     MainWindow* self = nullptr;
@@ -258,7 +236,6 @@ LRESULT CALLBACK MainWindow::WindowProcStatic(HWND hwnd, UINT message, WPARAM wP
     return DefWindowProcW(hwnd, message, wParam, lParam);
 }
 
-// Dispatches a window message to the matching On* handler.
 LRESULT MainWindow::HandleMessage(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
     switch (message)
@@ -309,9 +286,8 @@ LRESULT MainWindow::HandleMessage(HWND hwnd, UINT message, WPARAM wParam, LPARAM
     return DefWindowProcW(hwnd, message, wParam, lParam);
 }
 
-// Creates the refresh/Assign Inputs buttons and the note lane, loads saved
-// lane bindings and opens any connected MIDI devices, then does the initial
-// song scan.
+// Creates the buttons and note lane, loads saved lane bindings, opens connected MIDI devices, then
+// does the initial song scan.
 void MainWindow::OnCreate(HWND hwnd)
 {
     m_hwnd = hwnd;
@@ -342,15 +318,12 @@ void MainWindow::OnCreate(HWND hwnd)
     }
     else
     {
-        // Missing/unsupported files are a silent no-op (see the header's
-        // own comment) - these are optional flourishes, not required
-        // content the way a chart's own stems are.
+        // A missing/unsupported file is a silent no-op - these cues are optional flourishes.
         m_sfxMultiplierUp = m_audioEngine.LoadSfx(std::wstring(c_ContentRoot) + L"\\sfx\\multiplier_up.wav");
         m_sfxStreakBroken = m_audioEngine.LoadSfx(std::wstring(c_ContentRoot) + L"\\sfx\\streak_broken.wav");
     }
 
-    // Zero connected MIDI devices is the normal case (keyboard-only play) -
-    // no failure dialog, matching AudioEngine's own soft-failure style above.
+    // Zero connected MIDI devices is normal (keyboard-only play) - no failure dialog.
     m_midiInput.OpenAll(hwnd);
 
     RescanSongs();
@@ -358,11 +331,8 @@ void MainWindow::OnCreate(HWND hwnd)
     SetFocus(hwnd);
 }
 
-// Repositions the refresh and Assign Inputs buttons, and recomputes both the
-// song list rect and the note lane rect, to fit the current client area. Both the list and
-// the lane are centered, clamped-width columns below the same header row -
-// only one is ever visible at a time, but Layout() keeps both current so
-// switching screens never needs a re-layout of its own.
+// Repositions the buttons and recomputes both the song list rect and the note lane rect for the
+// current client area. Only one is visible at a time, but Layout() keeps both current.
 void MainWindow::Layout()
 {
     RECT client{};
@@ -388,17 +358,12 @@ void MainWindow::Layout()
     int listWidth = std::min(std::max(width - 2 * c_LaneMargin, c_LaneMinWidth), c_SongListMaxWidth);
     int listLeft = (width - listWidth) / 2;
     int listTop = c_ToolbarHeight + c_LaneMargin;
-    // Leaves room below the list for DrawSongList's hint line, which is
-    // drawn just under this rect's bottom edge - without this, a short
-    // window clips the hint against (or past) the actual window edge.
+    // Leaves room below the list for DrawSongList's hint line, drawn just under this rect's bottom.
     int listBottom = std::max(listTop + c_LaneMinHeight, height - c_LaneMargin - c_HintAreaHeight);
     m_songListRect = RECT{listLeft, listTop, listLeft + listWidth, listBottom};
 
-    // The lane and the hits meter beside it are laid out as one combined,
-    // centered unit - the lane itself still clamps to the same
-    // min/max width it always has, just computed against the width left
-    // over once the meter's own fixed footprint is reserved, so the pair
-    // together stays centered instead of the lane alone.
+    // The lane and the hits meter beside it are laid out as one centered unit: the lane clamps to
+    // its usual min/max width, computed against the width left over after the meter's footprint.
     int hitsMeterFootprint = c_HitsMeterGap + c_HitsMeterWidth;
     int laneAvailableWidth = width - 2 * c_LaneMargin - hitsMeterFootprint;
     int laneWidth = std::min(std::max(laneAvailableWidth, c_LaneMinWidth), c_LaneMaxWidth);
@@ -419,16 +384,13 @@ void MainWindow::Layout()
     InvalidateRect(m_hwnd, nullptr, TRUE);
 }
 
-// Re-runs Layout() for the new client size.
 void MainWindow::OnSize()
 {
     Layout();
 }
 
-// Keeps the window from being resized smaller than the lane/list can fit
-// in. ptMinTrackSize is a whole-window size (including the title bar and
-// borders), so the desired minimum client area has to be grown by however
-// much chrome this window style adds before being reported.
+// Keeps the window from being resized smaller than the lane/list can fit in. ptMinTrackSize is a
+// whole-window size, so grow the desired minimum client area by this style's chrome first.
 void MainWindow::OnGetMinMaxInfo(LPARAM lParam)
 {
     RECT rect{0, 0, c_MinClientWidth, c_MinClientHeight};
@@ -439,8 +401,6 @@ void MainWindow::OnGetMinMaxInfo(LPARAM lParam)
     info.ptMinTrackSize.y = rect.bottom - rect.top;
 }
 
-// Routes a WM_COMMAND control ID to the refresh handler, or to
-// BeginCapture() for the Assign Inputs button.
 void MainWindow::OnCommand(HWND hwnd, int controlId)
 {
     if (controlId == IDC_BUTTON_REFRESH)
@@ -456,13 +416,6 @@ void MainWindow::OnCommand(HWND hwnd, int controlId)
     }
 }
 
-// While capturing an input assignment, every key goes to
-// HandleCaptureKeyDown instead. Otherwise, on the song list: Up/Down moves
-// the highlight, any other key (besides a pure modifier or Left/Right,
-// neither of which mean anything for a single vertical list) chooses the
-// highlighted song. While playing: registers a press on a non-repeated
-// key-down for whichever lane m_laneBindings resolves the key to (its
-// default key, or a custom binding).
 void MainWindow::OnKeyDown(WPARAM key, LPARAM flags)
 {
     bool isAutoRepeat = (flags & (1 << 30)) != 0;
@@ -481,8 +434,7 @@ void MainWindow::OnKeyDown(WPARAM key, LPARAM flags)
     {
         if (static_cast<int>(key) == VK_ESCAPE)
         {
-            // Checked before the empty-list early-return below, so Escape
-            // still quits even when there's nothing to select.
+            // Before the empty-list early-return below, so Escape quits even with nothing to select.
             DestroyWindow(m_hwnd);
             return;
         }
@@ -546,13 +498,9 @@ void MainWindow::OnKeyDown(WPARAM key, LPARAM flags)
     }
 }
 
-// Registers a release on key-up for whichever lane m_laneBindings resolves
-// the key to (its default key, or a custom binding).
 void MainWindow::OnKeyUp(WPARAM key, LPARAM /*flags*/)
 {
-    // WM_KEYUP never carries synthetic auto-repeat events (Windows only
-    // auto-repeats WM_KEYDOWN), so every key-up handled here is a real
-    // physical release - no debouncing needed.
+    // WM_KEYUP never auto-repeats, so every key-up here is a real release - no debouncing needed.
     int lane = m_laneBindings.LaneForKey(static_cast<int>(key));
     if (lane != -1)
     {
@@ -560,7 +508,6 @@ void MainWindow::OnKeyUp(WPARAM key, LPARAM /*flags*/)
     }
 }
 
-// See the header's own comment.
 void MainWindow::HandleCaptureKeyDown(int vkCode)
 {
     if (vkCode == VK_ESCAPE)
@@ -580,10 +527,8 @@ void MainWindow::HandleCaptureKeyDown(int vkCode)
     AdvanceCapture();
 }
 
-// See the header's own comment. wParam (the HMIDIIN handle the event came
-// from) is deliberately unused - lane matching only cares about the note
-// number, not which device sent it (see MidiInputManager's own comment on
-// "any input device").
+// wParam (the source HMIDIIN handle) is unused - lane matching only cares about the note number,
+// not which device sent it.
 void MainWindow::OnMidiData(WPARAM /*wParam*/, LPARAM lParam)
 {
     MidiInputManager::ShortMessage message = MidiInputManager::Unpack(lParam);
@@ -636,7 +581,6 @@ void MainWindow::OnMidiData(WPARAM /*wParam*/, LPARAM lParam)
     }
 }
 
-// See the header's own comment.
 void MainWindow::OnGamepadButton(WORD button, bool pressed)
 {
     if (m_captureLane != -1)
@@ -684,7 +628,6 @@ void MainWindow::OnActivate(WPARAM wParam)
     InvalidateRect(m_hwnd, nullptr, FALSE);
 }
 
-// See the header comment.
 void MainWindow::TogglePause()
 {
     if (m_screen != UiScreen::Playing)
@@ -702,12 +645,11 @@ void MainWindow::TogglePause()
     InvalidateRect(m_hwnd, nullptr, FALSE);
 }
 
-// See the header's own comment.
 void MainWindow::BeginCapture()
 {
     if (m_screen != UiScreen::SongSelect)
     {
-        return; // the Assign button is hidden outside SongSelect - defensive only
+        return; // the Assign button is hidden outside SongSelect - defensive
     }
 
     m_captureLane = 0;
@@ -717,7 +659,6 @@ void MainWindow::BeginCapture()
     InvalidateRect(m_hwnd, nullptr, FALSE);
 }
 
-// See the header's own comment.
 void MainWindow::AdvanceCapture()
 {
     ++m_captureLane;
@@ -731,7 +672,6 @@ void MainWindow::AdvanceCapture()
     InvalidateRect(m_hwnd, nullptr, FALSE);
 }
 
-// See the header's own comment.
 void MainWindow::CancelCapture()
 {
     m_captureLane = -1;
@@ -768,19 +708,10 @@ void MainWindow::OnLButtonDown(LPARAM lParam)
     }
 }
 
-// Sends a lane press to the game session and reflects any judgement in the
-// note lane - or, if this lane has no note to press right now at all (no
-// chart loaded, count-in/intro/solo playing, or this clip simply never uses
-// this lane), shows the same miss feedback directly, since OnPress itself
-// would otherwise just silently ignore the tap. In between those two cases,
-// TryBufferEarlyPress handles a press that's early only because the section
-// owning its note hasn't begun yet - see its own comment.
 void MainWindow::RegisterPress(int lane)
 {
-    // Must run before IsLaneJudgeable - a press landing right on the
-    // count-in's own boundary needs the phase to have already flipped to
-    // Learning, or IsLaneJudgeable rejects it outright regardless of
-    // tolerance (see CatchUpCountIn's own comment).
+    // Before IsLaneJudgeable - a press on the count-in's boundary needs the phase already flipped
+    // to Learning, or IsLaneJudgeable rejects it regardless of tolerance (see CatchUpCountIn).
     m_gameSession.CatchUpCountIn();
     if (!m_gameSession.IsLaneJudgeable(lane))
     {
@@ -802,7 +733,6 @@ void MainWindow::RegisterRelease(int lane)
     DrainJudgements();
 }
 
-// See the header's own comment.
 void MainWindow::DrainJudgements()
 {
     for (const GameSession::JudgementEvent& event : m_gameSession.ConsumeJudgementEvents())
@@ -819,10 +749,6 @@ void MainWindow::DrainJudgements()
     }
 }
 
-// Advances the game session and reflects any judgement in the note lane.
-// Once a song completes while it's the visible screen, switches back to the
-// song list - playback itself (whatever's still looping) is left running
-// untouched, exactly as it already would without this UI on top of it.
 void MainWindow::OnTimer(WPARAM timerId)
 {
     for (const GamepadInputManager::ButtonEvent& event : m_gamepadInput.Poll())
@@ -845,7 +771,6 @@ void MainWindow::OnTimer(WPARAM timerId)
     m_noteLane.OnTimer(timerId);
 }
 
-// See the header's own comment.
 void MainWindow::HandleSongComplete()
 {
     int score = m_gameSession.CurrentScore();
@@ -876,9 +801,6 @@ void MainWindow::HandleSongComplete()
     }
 }
 
-// Bails out of the current song (Esc while Playing) and returns to the song
-// list - same screen switch as a natural completion, but also stops the
-// session outright rather than leaving a finished clip's loop running.
 void MainWindow::QuitToSongSelect()
 {
     if (m_screen != UiScreen::Playing)
@@ -893,7 +815,6 @@ void MainWindow::QuitToSongSelect()
     InvalidateRect(m_hwnd, nullptr, TRUE);
 }
 
-// Stops the session/animation/audio engine and quits the message loop.
 void MainWindow::OnDestroy()
 {
     m_gameSession.Stop();
@@ -910,7 +831,6 @@ void MainWindow::OnDestroy()
     PostQuitMessage(0);
 }
 
-// (Re)creates the off-screen back buffer to match the given size, if it doesn't already match.
 void MainWindow::EnsureBackBuffer(HDC referenceHdc, int width, int height)
 {
     if (m_backBufferBitmap && width == m_backBufferWidth && height == m_backBufferHeight)
@@ -929,10 +849,8 @@ void MainWindow::EnsureBackBuffer(HDC referenceHdc, int width, int height)
     m_backBufferHeight = height;
 }
 
-// Repaints the background and whichever screen is current into the
-// off-screen back buffer, then blits the finished frame to the screen in
-// one copy - the window only ever shows a fully-drawn frame, never one
-// caught mid-draw.
+// Repaints the background and current screen into the back buffer, then blits the finished frame
+// to the screen in one copy, so the window never shows a frame caught mid-draw.
 void MainWindow::OnPaint(HWND hwnd)
 {
     PAINTSTRUCT ps;
@@ -964,8 +882,6 @@ void MainWindow::OnPaint(HWND hwnd)
     EndPaint(hwnd, &ps);
 }
 
-// See declaration - deliberately does not erase; OnPaint's back buffer
-// already repaints the entire client area every time.
 void MainWindow::OnEraseBkgnd()
 {
 }
@@ -984,9 +900,6 @@ void MainWindow::OnDrawItem(LPARAM lParam)
     }
 }
 
-// Re-scrapes Content\ for songs, keeping the currently-highlighted song
-// selected if it's still found, otherwise falling back to the last-played
-// chart from Settings, otherwise index 0.
 void MainWindow::RescanSongs(bool reportValidationErrors)
 {
     std::wstring preferredPath;
@@ -1040,8 +953,6 @@ void MainWindow::RescanSongs(bool reportValidationErrors)
     }
 }
 
-// Loads and starts the given song and switches to the Playing screen -
-// shows an error dialog instead if the chart fails to load.
 void MainWindow::ChooseSong(int index)
 {
     if (index < 0 || index >= static_cast<int>(m_songs.size()))
@@ -1065,13 +976,11 @@ void MainWindow::ChooseSong(int index)
     m_screen = UiScreen::Playing;
     ShowWindow(m_hButtonRefresh, SW_HIDE);
     ShowWindow(m_hButtonAssign, SW_HIDE);
-    SetFocus(m_hwnd); // a native control would otherwise keep keyboard focus and steal lane keystrokes
+    SetFocus(m_hwnd); // else a native control keeps keyboard focus and steals lane keystrokes
     InvalidateRect(m_hwnd, nullptr, TRUE);
 }
 
-// Paints the song list: a header, one row per scraped song (the
-// currently-highlighted one picked out from the rest), and a hint about how
-// to choose one.
+// Paints the song list: a header, one row per song (the highlighted one picked out), and a hint.
 void MainWindow::DrawSongList(HDC hdc)
 {
     RECT rect = m_songListRect;
@@ -1161,11 +1070,8 @@ void MainWindow::DrawSongList(HDC hdc)
     SelectObject(hdc, oldFont);
 }
 
-// See the header's own comment. Drawn in the gap between the header row and
-// the song list, so it never competes with either for space. Suppressed
-// while the capture-assignment overlay prompt is up (m_captureLane != -1) -
-// it spills downward from the same header-row starting point (see
-// DrawCapturePrompt) and would otherwise land right on top of this text.
+// Drawn in the gap between the header row and the song list. Suppressed while the capture-assignment
+// overlay is up, since that spills down from the same point and would overlap this text.
 void MainWindow::DrawLastResult(HDC hdc)
 {
     if (m_lastResultText.empty() || m_captureLane != -1)
@@ -1185,9 +1091,8 @@ void MainWindow::DrawLastResult(HDC hdc)
     SelectObject(hdc, oldFont);
 }
 
-// Custom-paints the Easy Mode toggle: a label plus a rounded track with a
-// circular knob, positioned left (off) or right (on) - no native control,
-// matching the song list's own hand-drawn/hand-hit-tested style.
+// Custom-paints the Easy Mode toggle: a label plus a rounded track with a circular knob, positioned
+// left (off) or right (on).
 void MainWindow::DrawEasyModeToggle(HDC hdc)
 {
     RECT rect = m_easyModeToggleRect;
@@ -1231,7 +1136,6 @@ void MainWindow::DrawEasyModeToggle(HDC hdc)
     SelectObject(hdc, oldFont);
 }
 
-// See the header's own comment.
 void MainWindow::DrawCapturePrompt(HDC hdc)
 {
     if (m_captureLane == -1)
@@ -1250,10 +1154,8 @@ void MainWindow::DrawCapturePrompt(HDC hdc)
         text += L"\r\n" + m_captureRejectionMessage;
     }
 
-    // Deliberately tall enough to spill over the song list's own top rows -
-    // input is fully blocked while capturing (OnLButtonDown/OnKeyDown both
-    // guard on m_captureLane), so overlapping them briefly is harmless and
-    // keeps this from needing its own dedicated layout real estate.
+    // Tall enough to spill over the song list's top rows - input is blocked while capturing, so
+    // overlapping them is harmless and saves this needing its own layout space.
     int promptTop = c_RowTop + c_ControlHeight + 10;
     RECT rect{c_RowLeft, promptTop, m_songListRect.right, promptTop + 60};
     HFONT oldFont = (HFONT)SelectObject(hdc, promptFont);

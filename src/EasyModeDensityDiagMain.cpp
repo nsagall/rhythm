@@ -6,24 +6,15 @@
 #include "AudioEngine.h"
 #include "GameSession.h"
 
-// Standalone diagnostic (not part of the normal build): loads a handful of
-// real Content/ charts twice each - once with easyMode=false, once with
-// easyMode=true - through the real GameSession::LoadChart, and for every
-// judged (hasMidi) clip prints each lane's note count and a compact
-// {beat:lane} list before vs. after ApplyEasyModeTransform. Lets the
-// density-thinning rules (GameSession.cpp's ApplyEasyModeTransform) be
-// eyeballed directly against real content: a dense/syncopated clip should
-// visibly thin while keeping irregular (non-grid) gaps, and an
-// already-sparse clip (per tools/SongGenerator.cpp's own hand-authored
-// "chart stays sparse" convention) should come out with an identical note
-// list before and after.
+// Standalone diagnostic: loads real Content/ charts twice each (easyMode false and true) and, for
+// every judged clip, prints each lane's note count and a compact {beat:lane} list before vs. after
+// ApplyEasyModeTransform. Lets the density-thinning rules be eyeballed against real content: a
+// dense clip should thin while keeping irregular gaps, an already-sparse clip should be identical.
 
 namespace
 {
 
-// One clip's {beat,lane} pairs across all 4 lanes, merged and sorted by
-// beat - mirrors the compact dump format used when this diagnostic's
-// design was worked out against real SongGenerator.cpp chart tables.
+// One clip's {beat,lane} pairs across all lanes, merged and sorted by beat.
 struct FlatNote
 {
     double beat;

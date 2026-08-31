@@ -8,23 +8,15 @@
 #include "GameSession.h"
 #include "NoteLaneModel.h"
 
-// Standalone diagnostic (not part of the normal build): verifies the
-// DontFail hits-meter/note-glow visual changes -
-//   1. A DontFail clip's own ClipPlaythrough::passing never goes true (so its
-//      notes never draw the green "passing" glow - see NoteLaneModel::
-//      UpdateClipInstances's own comment).
-//   2. scene.showHitsMeter stays true for the whole DontFail section,
-//      passing or failing.
-//   3. scene.hitsMeterProgress tracks live progress through the clip's
-//      current loop while passing, freezes the instant a miss drops back
-//      to failing, jumps to the live value again the instant it locks back
-//      in, and resets to 0 if a whole loop elapses while still failing.
+// Standalone diagnostic: verifies the DontFail hits-meter/note-glow behavior -
+//   1. A DontFail clip's ClipPlaythrough::passing never goes true (no green "passing" glow).
+//   2. scene.showHitsMeter stays true for the whole DontFail section, passing or failing.
+//   3. scene.hitsMeterProgress tracks live progress through the clip's current loop while passing,
+//      freezes when a miss drops to failing, jumps to the live value on re-lock-in, and resets to
+//      0 if a whole loop elapses while failing.
 //
-// Drives "A Real Good Time" for real (real wall-clock time, exactly like
-// RepeatUntilLockedInDiagMain/ScoringDiagMain), playing every note
-// perfectly through the intro sections up to the "Drums" clip (the first
-// learn_mode=dontfail clip in that chart), then deliberately withholds
-// presses at chosen points to exercise fail/recover/loop-reset.
+// Drives "A Real Good Time" in real wall-clock time, playing perfectly to the "Drums" clip (the
+// first learn_mode=dontfail clip), then withholds presses to exercise fail/recover/loop-reset.
 
 namespace
 {

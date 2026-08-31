@@ -7,16 +7,11 @@
 #include "DiagTestHelpers.h"
 #include "GameSession.h"
 
-// Standalone diagnostic (not part of the normal build): reproduces "fail a
-// loop, then judging breaks" against a real chart (default Melodius, target
-// clip "bass"). Plays every earlier learn section perfectly (to actually
-// reach the target section for real, phase-aligned exactly like live play),
-// then for the target section specifically: deliberately presses only every
-// other note correctly during the first loop (skipping the rest entirely,
-// guaranteeing no lock-in), forcing a repeat - then switches to playing
-// perfectly from the second loop onward, watching closely for any
-// judgement/streak/hold anomaly. Build with -DRHYTHM_DEBUG_JUDGEMENTS to
-// also see every judgement GameSession itself records internally.
+// Standalone diagnostic: reproduces "fail a loop, then judging breaks" against a real chart
+// (default Melodius, target clip "bass"). Plays every earlier learn section perfectly to reach the
+// target, then presses only every other note during the target's first loop (forcing a repeat),
+// then plays perfectly from the second loop on, watching for any judgement/streak/hold anomaly.
+// Build with -DRHYTHM_DEBUG_JUDGEMENTS for GameSession's internal judgements too.
 
 namespace
 {

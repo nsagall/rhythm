@@ -6,31 +6,23 @@
 #include <array>
 #include <vector>
 
-// Thin wrapper over XInput: unlike keyboard/MIDI, Windows delivers no
-// per-event message for a gamepad button, so this is polled once per frame
-// (MainWindow::OnTimer, the same 16ms tick NoteLane already animates on)
-// instead of reacting to a window message - see Poll(). Checks every
-// XUSER_MAX_COUNT (4) controller slot each call, so - matching
-// MidiInputManager's "any input device" story - there's no device picker UI;
-// whichever slot a controller happens to be connected in just works.
+// Thin wrapper over XInput. Windows delivers no per-event message for a gamepad button, so this is
+// polled once per frame (MainWindow::OnTimer's 16ms tick) - see Poll(). Checks every
+// XUSER_MAX_COUNT slot each call; no device picker, whichever slot a controller is in just works.
 class GamepadInputManager
 {
 public:
-    // One button transition since the previous Poll() call: which single
-    // XINPUT_GAMEPAD_* bit changed, and whether it went down (true, a press)
-    // or up (false, a release).
+    // One button transition since the previous Poll(): which XINPUT_GAMEPAD_* bit changed, and
+    // whether it went down (true) or up (false).
     struct ButtonEvent
     {
         WORD button = 0;
         bool pressed = false;
     };
 
-    // Reads every controller slot's current XINPUT_STATE and diffs it
-    // against what that slot reported last call, returning one ButtonEvent
-    // per bit that changed - call exactly once per frame. A slot with no
-    // controller connected reads as all-buttons-up, so unplugging a
-    // controller mid-press still reports the release rather than leaving a
-    // lane stuck down.
+    // Reads every controller slot's XINPUT_STATE and diffs it against last call, returning one
+    // ButtonEvent per changed bit. Call once per frame. A slot with no controller reads as
+    // all-buttons-up, so unplugging mid-press still reports the release.
     std::vector<ButtonEvent> Poll();
 
 private:

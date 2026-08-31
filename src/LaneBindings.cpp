@@ -7,10 +7,7 @@
 namespace
 {
 
-// Serializes binding as ""/"K:<code>"/"M:<code>"/"G:<code>" - see
-// LaneBindings.h's own comment on the persisted format. Kept private to this
-// file; Settings itself never needs to know this shape, only that it
-// round-trips.
+// Serializes binding as ""/"K:<code>"/"M:<code>"/"G:<code>".
 std::wstring SerializeBinding(const InputBinding& binding)
 {
     if (binding.kind == InputKind::Keyboard)
@@ -28,9 +25,8 @@ std::wstring SerializeBinding(const InputBinding& binding)
     return L"";
 }
 
-// Inverse of SerializeBinding - a string that doesn't match either prefix
-// (including empty, or anything corrupted) parses as InputKind::None, same
-// as "never saved" - there's no invalid-but-distinguishable state to report.
+// Inverse of SerializeBinding. Anything unrecognized (empty or corrupted) parses as
+// InputKind::None, same as "never saved".
 InputBinding DeserializeBinding(const std::wstring& serialized)
 {
     if (serialized.size() > 2 && serialized[1] == L':')
@@ -53,8 +49,7 @@ InputBinding DeserializeBinding(const std::wstring& serialized)
         }
         catch (const std::exception&)
         {
-            // A hand-edited or corrupted settings.ini falls back to "no
-            // custom binding" rather than crashing on startup.
+            // A corrupted settings.ini falls back to "no custom binding".
         }
     }
     return InputBinding{};
@@ -62,7 +57,6 @@ InputBinding DeserializeBinding(const std::wstring& serialized)
 
 } // namespace
 
-// Loads every lane's saved custom binding from settings.
 void LaneBindings::Load(Settings& settings)
 {
     for (int lane = 0; lane < c_LaneCount; ++lane)
@@ -71,7 +65,6 @@ void LaneBindings::Load(Settings& settings)
     }
 }
 
-// Whichever lane has vkCode as its default, or as its custom Keyboard binding.
 int LaneBindings::LaneForKey(int vkCode) const
 {
     for (int lane = 0; lane < c_LaneCount; ++lane)
@@ -91,7 +84,6 @@ int LaneBindings::LaneForKey(int vkCode) const
     return -1;
 }
 
-// Whichever lane has note as its custom MidiNote binding.
 int LaneBindings::LaneForMidiNote(int note) const
 {
     for (int lane = 0; lane < c_LaneCount; ++lane)
@@ -104,7 +96,6 @@ int LaneBindings::LaneForMidiNote(int note) const
     return -1;
 }
 
-// Whichever lane has button as its custom Gamepad binding.
 int LaneBindings::LaneForGamepadButton(int button) const
 {
     for (int lane = 0; lane < c_LaneCount; ++lane)
@@ -134,9 +125,6 @@ InputBinding LaneBindings::GetCustom(int lane) const
     return m_custom[lane];
 }
 
-// Clears binding's (kind, code) from any other lane that already has it as
-// its own custom binding (so no physical input maps to two lanes at once),
-// then sets and persists it on lane.
 void LaneBindings::SetCustom(int lane, InputBinding binding, Settings& settings)
 {
     for (int other = 0; other < c_LaneCount; ++other)

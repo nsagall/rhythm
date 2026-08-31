@@ -10,10 +10,8 @@
 namespace
 {
 
-// Narrow by design - the point is to see as much of the song's structure
-// at once as possible; a block only needs to be wide enough to read its
-// label and to be a comfortable click/drag target, not to be visually
-// proportioned like a duration bar.
+// Narrow by design - a block only needs to be wide enough to read its label and be a comfortable
+// click/drag target, not proportioned like a duration bar.
 constexpr float c_PixelsPerSecond = 22.0f;
 constexpr float c_MinLearnBreakWidthPx = 34.0f;
 constexpr float c_DefaultLearnBreakWidthPx = 56.0f; // used when no schedule/entry is available yet
@@ -25,10 +23,8 @@ constexpr float c_LabelFontScale = 1.2f;       // "a little larger" than the def
 
 const char* c_KindNames[] = {"Learn", "Break", "Reset", "Background"};
 
-// The default ImGui font (no bundled bold weight) has no true bold variant
-// to switch to, so bold is faked the standard bitmap-font way: draw the
-// text twice, offset by a single pixel, so the strokes double up and read
-// noticeably heavier without needing a second font asset.
+// The default ImGui font has no bold variant, so bold is faked by drawing the text twice, offset
+// one pixel, so the strokes double up.
 void DrawBoldText(ImDrawList* drawList, ImVec2 pos, ImU32 color, const char* text)
 {
     ImFont* font = ImGui::GetFont();
@@ -37,10 +33,8 @@ void DrawBoldText(ImDrawList* drawList, ImVec2 pos, ImU32 color, const char* tex
     drawList->AddText(font, fontSize, ImVec2(pos.x + 1.0f, pos.y), color, text);
 }
 
-// isDontFailLearn is only ever true for a Learn block whose clip declared
-// learn_mode = dontfail (see ChartClip.h's LearnMode) - darkening it a
-// little is enough to tell it apart from a Pass Learn block at a glance,
-// without needing a legend or crowding the block's own label.
+// isDontFailLearn is true only for a Learn block whose clip declared learn_mode = dontfail -
+// darkening it a little tells it apart from a Pass Learn block at a glance.
 ImVec4 BlockKindColor(SectionKind kind, bool isDontFailLearn)
 {
     ImVec4 color;
@@ -100,11 +94,8 @@ void BlockTimeline::Draw(EditorDocument& doc, BlockPlayer& player)
     ImGui::SetCursorScreenPos(ImVec2(origin.x, origin.y + c_BlockHeight));
     ImGui::Dummy(ImVec2(std::max(totalWidth, 1.0f), 1.0f));
 
-    // Delete/Copy/Paste act on the current (possibly multi-block) selection
-    // without needing to reach for BlockPropertiesPanel's own buttons -
-    // only while this scroll region itself has focus (i.e. the user just
-    // clicked a block here), and never while a text field elsewhere wants
-    // the keystroke.
+    // Delete/Copy/Paste act on the current selection - only while this scroll region has focus,
+    // and never while a text field wants the keystroke.
     ImGuiIO& io = ImGui::GetIO();
     if (ImGui::IsWindowFocused() && !io.WantTextInput)
     {
@@ -275,11 +266,8 @@ void BlockTimeline::PruneStaleSelection(const EditorDocument& doc)
 
 size_t BlockTimeline::InsertPositionAfterSelection(const EditorDocument& doc) const
 {
-    // Default to end-of-vector (append) - overwritten below only for each
-    // block that's actually selected, so a stale or absent selection falls
-    // back to plain append with no special-casing. Never breaks out early:
-    // the last (highest-index) match wins, so a multi-block selection
-    // inserts after its own last member regardless of click order.
+    // Default to append; the loop overwrites with (last selected index + 1), so a multi-block
+    // selection inserts after its highest-index member and an absent selection falls back to append.
     size_t insertPos = doc.blocks.size();
     for (size_t i = 0; i < doc.blocks.size(); ++i)
     {
@@ -408,11 +396,9 @@ void BlockTimeline::DrawBlockRow(EditorDocument& doc, const std::vector<BlockLay
             HandleBlockClick(doc, block.id);
         }
 
-        // Right-click: if the block isn't already part of the current
-        // multi-selection, collapse to just it first (so "Delete" in the
-        // menu below never surprises the user by deleting an unrelated
-        // selection) - otherwise leave the existing multi-selection intact,
-        // matching standard file-manager right-click behavior.
+        // Right-click on a block outside the current selection collapses to just it first, so the
+        // menu's "Delete" doesn't act on an unrelated selection. A right-click inside it leaves the
+        // selection intact (standard file-manager behavior).
         if (ImGui::IsItemClicked(ImGuiMouseButton_Right) && m_multiSelectedBlockIds.count(block.id) == 0)
         {
             m_selectedBlockId = block.id;
@@ -621,30 +607,17 @@ double BlockTimeline::LayoutXToSeconds(float x, const std::vector<BlockLayout>& 
             {
                 frac = 1.0f;
             }
-            // Maps into the block's first loop pass only - loop 2+ of a
-            // multi-loop block isn't individually reachable by clicking
-            // its (single, fixed-width) rendered span, same tradeoff
-            // BlockPlayer::SeekToBlockStart makes by always landing on
-            // sectionStartSeconds rather than a specific pass. Pass 1's own
-            // real duration - not necessarily the full loopSeconds the
-            // block's width represents - calls BlockSchedule::
-            // ComputeFirstPassSeconds, the same function Seek() itself uses
-            // (see SeekResult::loopIndex's comment): the real, phase-seeked
-            // audio voice can wrap sooner than a full loopSeconds after
-            // audioStartSeconds, so the right edge of the block (frac ==
-            // 1.0) must map to that real, possibly-earlier wrap instant, not
-            // to audioStartSeconds + loopSeconds - or a click near the right
-            // edge could land past this entry's own end, in whatever the
-            // next entry happens to be.
+            // Maps into the block's first loop pass only (loop 2+ isn't individually reachable by
+            // clicking its fixed-width span). Uses ComputeFirstPassSeconds, like Seek() itself, so
+            // the right edge maps to the real (possibly-earlier) wrap instant rather than
+            // audioStartSeconds + loopSeconds, keeping a right-edge click inside this entry.
             double firstPassSeconds = BlockSchedule::ComputeFirstPassSeconds(
                 block.entry->audioStartSeconds, block.entry->originSeconds, block.entry->loopSeconds);
             return block.entry->audioStartSeconds + static_cast<double>(frac) * firstPassSeconds;
         }
 
-        // Background/Reset marker - zero real duration, so there's no
-        // "position within it" to map; land on wherever this block's own
-        // instant actually falls, shared with BlockPlayer::SeekToBlockStart's
-        // own fallback for the same case.
+        // Background/Reset marker - zero duration, so land on where this block's instant falls
+        // (shared with BlockPlayer::SeekToBlockStart's fallback).
         return BlockSchedule::FirstEntrySecondsAtOrAfter(schedule, static_cast<int>(i));
     }
 

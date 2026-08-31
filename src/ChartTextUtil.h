@@ -2,10 +2,8 @@
 
 #include <string>
 
-// Tiny, pure wide-string helpers shared by the real chart parser
-// (src/ChartSong.cpp) and the editor's own chart I/O
-// (src/editor/EditorChartIO.cpp) - previously two independent, hand-copied
-// implementations, kept in sync only by a comment promising they would be.
+// Pure wide-string helpers shared by the chart parser (ChartSong.cpp) and the editor's chart I/O
+// (editor/EditorChartIO.cpp).
 namespace ChartTextUtil
 {
 

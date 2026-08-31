@@ -6,17 +6,13 @@
 
 #include "EditorDocument.h"
 
-// Clip library UI: a list of the document's clips on the left, an
-// inspector for the selected one on the right. Owns its own selection and
-// modal-flow state; DrawList/DrawInspector below share that state, so this
-// stays a single panel class rather than two independent ones.
+// Clip library UI: a list of the document's clips on the left, an inspector for the selected one on
+// the right. Owns its own selection and modal-flow state.
 class ClipPanel
 {
 public:
-    // Draws the panel's content into whatever ImGui window/child region the
-    // caller has already begun. owner is the editor's HWND, used for
-    // native Import Wav/Import Midi file pickers. Mutates doc directly
-    // (via MarkDirty) on any edit - not const.
+    // Draws the panel into whatever ImGui window/child the caller has begun. owner is the editor's
+    // HWND, for native Import Wav/Midi file pickers. Mutates doc on any edit.
     void Draw(EditorDocument& doc, HWND owner);
 
     int SelectedClipId() const
@@ -24,21 +20,15 @@ public:
         return m_selectedClipId;
     }
 
-    // Lets EditorApp mirror the block timeline's selection here - called
-    // every frame the primary block selection changes, so picking a block
-    // also shows/edits its clip without an extra click. clipId may be -1
-    // (a Reset block, or any block with no clip assigned yet), which
-    // clears this panel's selection the same way clicking empty space
-    // would.
+    // Lets EditorApp mirror the block timeline's selection here, so picking a block also shows its
+    // clip. clipId may be -1 (a Reset block, or one with no clip yet), which clears the selection.
     void SetSelectedClipId(int clipId)
     {
         m_selectedClipId = clipId;
     }
 
-    // Forces the Name/Display Name edit buffers to re-sync from doc on the
-    // next Draw() call instead of showing stale staged text - call after
-    // anything that replaces doc's contents out from under this panel
-    // (undo/redo restoring a snapshot).
+    // Forces the Name/Display Name edit buffers to re-sync from doc on the next Draw() - call after
+    // anything that replaces doc's contents (undo/redo).
     void NotifyDocumentReplaced()
     {
         m_scratchForClipId = -1;
@@ -57,20 +47,15 @@ private:
     void CreateNewClip(EditorDocument& doc);
     void DuplicateSelected(EditorDocument& doc);
     void RequestDelete(EditorDocument& doc, int clipId);
-    // Scans doc.folderPath for .wav/.mid files not already used by any
-    // existing clip (matched by base filename against EditorClip::name)
-    // and creates a new clip per unmatched .wav - paired with its .mid if
-    // one exists alongside it, wav-only otherwise. A .mid with no matching
-    // .wav is skipped (a clip always needs audio). Sets m_lastDetectSummary
-    // for DrawList to show a one-line result.
+    // Scans doc.folderPath for .wav/.mid files not already used by a clip (matched by base filename
+    // against EditorClip::name) and creates one clip per unmatched .wav, paired with its .mid if
+    // present. A .mid with no matching .wav is skipped. Sets m_lastDetectSummary.
     void DetectClips(EditorDocument& doc);
 
     int m_selectedClipId = -1;
 
-    // Which clip's fields the scratch text buffers below currently reflect
-    // (-1 = none loaded yet) - buffers are only re-synced from the document
-    // when this stops matching m_selectedClipId, so in-progress typing is
-    // never clobbered by re-reading the (unchanged) source value mid-edit.
+    // Which clip the scratch text buffers below reflect (-1 = none). Buffers only re-sync from the
+    // document when this stops matching m_selectedClipId, so in-progress typing isn't clobbered.
     int m_scratchForClipId = -1;
     char m_nameBuf[256] = {};
     char m_displayNameBuf[256] = {};
@@ -94,8 +79,7 @@ private:
 
     std::wstring m_lastMidiImportError;
 
-    // One-line result of the most recent Detect click (e.g. "Found 3 new
-    // clip(s)."), shown under the toolbar until the next Detect - empty
-    // means nothing to show.
+    // One-line result of the most recent Detect click, shown under the toolbar until the next
+    // Detect. Empty means nothing to show.
     std::wstring m_lastDetectSummary;
 };

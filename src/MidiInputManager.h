@@ -5,32 +5,22 @@
 
 #include <vector>
 
-// Thin wrapper over winmm's midiIn* API: opens every currently-connected MIDI
-// input device and starts it delivering note events as ordinary window
-// messages (CALLBACK_WINDOW, not CALLBACK_FUNCTION) - so a note-on/note-off
-// arrives as an MM_MIM_DATA message on the target window's own message
-// queue, handled on the same thread as WM_KEYDOWN and everything else,
-// instead of on a driver-owned callback thread that would need its own
-// synchronization against the game's state. No device enumeration/picker UI
-// - "any input device" means every device that happens to be connected gets
-// opened and listened to at once; a note number match is what actually
-// resolves which lane (if any) it means (see LaneBindings::LaneForMidiNote).
+// Thin wrapper over winmm's midiIn* API: opens every connected MIDI input device with
+// CALLBACK_WINDOW, so note events arrive as MM_MIM_DATA messages on the target window's own message
+// queue (handled on the same thread as WM_KEYDOWN), not a driver callback thread. No device picker
+// - every connected device is opened at once; a note-number match resolves which lane (if any) it
+// means (see LaneBindings::LaneForMidiNote).
 class MidiInputManager
 {
 public:
-    // Defensively closes anything still open, in case a caller forgets.
+    // Defensively closes anything still open.
     ~MidiInputManager();
 
-    // Opens and starts every currently-connected MIDI input device,
-    // targeting hwnd for its MM_MIM_DATA messages. A device that fails to
-    // open (e.g. claimed by another app) is silently skipped rather than
-    // failing the whole call - matches AudioEngine::Initialize's own
-    // soft-failure style, since having zero MIDI devices is the normal case
-    // and shouldn't block anything keyboard-only still works fine.
+    // Opens and starts every connected MIDI input device, targeting hwnd for its MM_MIM_DATA
+    // messages. A device that fails to open is silently skipped - zero MIDI devices is normal.
     void OpenAll(HWND hwnd);
 
-    // Stops and closes every device opened by OpenAll. Idempotent - a no-op
-    // if nothing is open.
+    // Stops and closes every device opened by OpenAll. Idempotent.
     void CloseAll();
 
     // One unpacked MIDI channel-voice short message.
@@ -41,10 +31,8 @@ public:
         BYTE data2 = 0;  // velocity for note-on/note-off
     };
 
-    // Unpacks an MM_MIM_DATA message's lParam - the 3 MIDI bytes are packed
-    // little-endian into the low 3 bytes of a 32-bit value, exactly like the
-    // dwParam1 the CALLBACK_FUNCTION form would have delivered. Narrows to
-    // the low 32 bits first since LPARAM is 64-bit on this project's build.
+    // Unpacks an MM_MIM_DATA message's lParam - the 3 MIDI bytes are packed little-endian into the
+    // low 3 bytes. Narrows to the low 32 bits first, since LPARAM is 64-bit here.
     static ShortMessage Unpack(LPARAM lParam);
 
 private:

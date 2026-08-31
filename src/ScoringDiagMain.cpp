@@ -7,38 +7,23 @@
 #include "DiagTestHelpers.h"
 #include "GameSession.h"
 
-// Standalone diagnostic (not part of the normal build): verifies the new
-// bank/streak/multiplier scoring model (see GameSession::RegisterHit/
-// RegisterMiss/Update()'s own banking comment, StreakTracker) end to end
-// against section 0 of a real chart, in six phases:
+// Standalone diagnostic: verifies the bank/streak/multiplier scoring model end to end against
+// section 0 of a real chart, in six phases:
 //
-//   1. Play perfectly for a couple of hits - CurrentBank()/ScoringStreak()/
-//      CurrentMultiplier() must track the flat 10/5 precise/imprecise payout
-//      and MultiplierForStreak exactly after every real Hit.
-//   2. Deliberately let exactly ONE note time out (an isolated miss) - the
-//      core formula change from the old any-miss-wipes-the-pot model: bank
-//      and streak must both be completely UNCHANGED afterward, since only a
-//      3-in-a-row trip is allowed to wipe anything now.
-//   3. Resume playing perfectly for a couple more hits, then deliberately
-//      let exactly THREE notes time out in a row - the shared streak
-//      tracker must trip: bank drops to 0, streak drops to 0, multiplier
-//      drops to x1, and a StreakBroken SfxEvent is queued.
-//   4. Resume playing perfectly until the section locks in (IsPassing()).
-//   5. From the instant it locks in, press NOTHING for the rest of the
-//      section - Update()'s Pass-mode post-lock-in auto-accrual must be the
-//      section's sole scorer from here on: real Hit JudgementEvents keep
-//      arriving with no input, bank/streak keep climbing, and
-//      IsLaneJudgeable stays false throughout (a real press would no longer
-//      have anywhere to go).
-//   6. Once the section actually finishes (advances or the song completes),
-//      the payout must equal the bank at that instant times the multiplier
-//      at that instant, folded into CurrentScore(), with CurrentBank() back
-//      at 0 immediately after.
+//   1. Play perfectly for a couple of hits - bank/streak/multiplier track the flat 10/5 payout and
+//      MultiplierForStreak after every Hit.
+//   2. Let exactly ONE note time out - bank and streak must be unchanged (only a 3-in-a-row trip
+//      wipes anything).
+//   3. Play a couple more hits, then let THREE notes time out in a row - the streak trips: bank,
+//      streak, and multiplier reset and a StreakBroken SfxEvent is queued.
+//   4. Play perfectly until the section locks in (IsPassing()).
+//   5. From lock-in, press nothing - Update()'s Pass-mode auto-accrual is the sole scorer: Hit
+//      events keep arriving, bank/streak keep climbing, IsLaneJudgeable stays false.
+//   6. Once the section finishes, the payout equals bank * multiplier at that instant, folded into
+//      CurrentScore(), with CurrentBank() back at 0.
 //
-// Mirrors GameSession.cpp's own c_PrecisePoints/c_ImprecisePoints/
-// c_ImprecisionToleranceFraction/c_MultiplierTierStreaks constants (private to
-// that file) so this can compute the same closed-form expectation
-// independently, rather than importing GameSession's own internals.
+// Mirrors GameSession.cpp's private scoring constants so it can compute the same expectation
+// independently.
 
 namespace
 {
@@ -129,23 +114,15 @@ int main(int argc, char** argv)
     bool payoutObserved = false;
 
     DWORD startTick = GetTickCount();
-    // Tracks the section current as of the END of the previous iteration -
-    // captured before THIS iteration's Update() call runs, since Update()
-    // itself is what performs a section transition synchronously (so by the
-    // time CurrentSectionIndex() is read again afterward, the transition has
-    // already happened - reading "before" only after Update() would always
-    // see the post-transition value on both sides of a comparison).
+    // The section current as of the end of the previous iteration - Update() performs a transition
+    // synchronously, so reading "before" only after Update() would see the post-transition value.
     int sectionIndexBeforeUpdate = -1;
 
     while (session.Phase() != GamePhase::Complete && phase != TestPhase::Done)
     {
         int sectionIndexBeforeThisUpdate = sectionIndexBeforeUpdate;
-        // Snapshotted before Update() runs, for the same reason
-        // sectionIndexBeforeThisUpdate is - if this same Update() call both
-        // adds one last auto-accrual hit AND performs the section-finish
-        // payout, reading these afterward would already show the paid-out
-        // (bank==0, score-already-increased) state on both sides of the
-        // "what should the payout have been" comparison below.
+        // Snapshotted before Update(): one Update() call can both add a final auto-accrual hit and
+        // perform the payout, so reading these afterward would show the paid-out state.
         int bankBeforeThisUpdate = (phase == TestPhase::NoInputAfterLockIn) ? session.CurrentBank() : -1;
         int multiplierBeforeThisUpdate = (phase == TestPhase::NoInputAfterLockIn) ? session.CurrentMultiplier() : -1;
         int scoreBeforeThisUpdate = (phase == TestPhase::NoInputAfterLockIn) ? session.CurrentScore() : -1;
@@ -153,16 +130,10 @@ int main(int argc, char** argv)
         session.Update();
         sectionIndexBeforeUpdate = session.CurrentSectionIndex();
 
-        // Two lanes' holds can mature in the same Update() batch (e.g. a
-        // chord), producing more than one JudgementEvent per
-        // ConsumeJudgementEvents() call - by the time this loop sees the
-        // FIRST event, RegisterHit for every event in the batch has already
-        // run against the live session. So expectedBank/expectedStreak are
-        // accumulated across the whole batch first, and only checked against
-        // session.CurrentBank()/ScoringStreak() once, after the loop -
-        // checking mid-batch would spuriously "mismatch" on every event but
-        // the last one in a multi-event batch, without anything actually
-        // being wrong.
+        // A chord can produce several JudgementEvents in one ConsumeJudgementEvents() batch, all
+        // already registered against the session. Accumulate expectedBank/expectedStreak across
+        // the whole batch and check once after the loop - a mid-batch check would spuriously
+        // mismatch on every event but the last.
         bool sawHitThisBatch = false;
         for (const GameSession::JudgementEvent& event : session.ConsumeJudgementEvents())
         {

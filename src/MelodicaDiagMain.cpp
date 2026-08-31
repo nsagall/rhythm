@@ -7,19 +7,11 @@
 #include "DiagTestHelpers.h"
 #include "GameSession.h"
 
-// Standalone diagnostic (not part of the normal build): drives GameSession
-// headlessly through an entire chart's Learn sections in order (from the
-// count-in to GamePhase::Complete), auto-pressing every lane's note exactly
-// on time, and prints each Learn section's clip name, each lane's anchor
-// beat (and how far that lands into its own pattern - "how far into its own
-// pattern is this anchor"), and every press/release judgement. Pass a
-// second argv for a clip name to focus the per-press/release print lines on
-// (still plays the whole song either way) - useful for isolating a specific
-// clip's occurrence(s) when a chart reuses the same clip in multiple
-// sections. Build with -DRHYTHM_DEBUG_JUDGEMENTS (see
-// GameSession::RecordOnsetJudgement) to also see every judgement recorded
-// internally, including ones from Update()'s own timeout paths that never
-// go through an explicit press/release here.
+// Standalone diagnostic: drives GameSession headlessly through an entire chart's Learn sections
+// (count-in to GamePhase::Complete), auto-pressing every note on time, and prints each section's
+// clip name, each lane's anchor beat (and how far into its pattern it lands), and every judgement.
+// Pass a clip name as argv[1] to focus the per-press print lines on it. Build with
+// -DRHYTHM_DEBUG_JUDGEMENTS for GameSession's internal judgements too.
 
 namespace
 {
@@ -114,12 +106,8 @@ int main(int argc, char** argv)
                    PhaseName(phase), sectionIndex, static_cast<int>(kind), clip ? clip->Name().c_str() : L"-");
             if (clip && phase == GamePhase::Learning && kind == SectionKind::Learn)
             {
-                // sectionStartBeat approximates this clip's own origin (see
-                // GameSession::ClipVoice::originEstablished) - exact for a
-                // first-ever appearance (established at this same instant),
-                // and a live-clock read (not scheduledBeat-derived) so it's
-                // only ever a hair later than the true origin for a
-                // continuing/reused clip, which is fine for eyeballing here.
+                // A live-clock approximation of this clip's origin - exact for a first-ever
+                // appearance, a hair late for a reused clip, fine for eyeballing.
                 double sectionStartBeat = session.Clock().BeatPosition();
                 StemHandle stem = session.DebugStemHandle(session.Song().Sections()[sectionIndex].clipIndex);
                 printf("  spanBeats=%.4f sectionStartBeat=%.4f audioPhaseSeconds=%.4f (should be ~0 for a "

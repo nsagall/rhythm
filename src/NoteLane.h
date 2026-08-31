@@ -8,12 +8,9 @@
 #include "NoteLaneModel.h"
 #include "NoteLaneRenderer.h"
 
-// Owns the note lane's Win32 timer/repaint plumbing and wires
-// NoteLaneModel (game-rule logic - what's happening) to an
-// INoteLaneRenderer (visuals - how it looks), neither of which knows the
-// other exists. Swap m_renderer for a different INoteLaneRenderer
-// implementation to change the entire visual style with zero changes to
-// NoteLaneModel or this class.
+// Owns the note lane's Win32 timer/repaint plumbing and wires NoteLaneModel (game-rule logic) to
+// an INoteLaneRenderer (visuals), neither of which knows the other exists. Swap m_renderer to
+// change the entire visual style with zero changes to NoteLaneModel or this class.
 class NoteLane
 {
 public:
@@ -25,10 +22,8 @@ public:
     // Sets the screen-space rect the lane is drawn and animated within.
     void SetLaneRect(RECT rect);
 
-    // Sets the screen-space rect the hits meter panel (see
-    // NoteLaneScene::showHitsMeter) is drawn and animated within - separate
-    // from the lane rect itself, since MainWindow positions it beside the
-    // playfield rather than inside it.
+    // Sets the screen-space rect the hits meter panel is drawn within - separate from the lane
+    // rect, since MainWindow positions it beside the playfield.
     void SetHitsMeterRect(RECT rect);
 
     // Starts the redraw timer.
@@ -40,10 +35,7 @@ public:
     // Handles a WM_TIMER tick; returns true if it belonged to this lane.
     bool OnTimer(WPARAM timerId);
 
-    // Forwards a fresh press/release judgement to the renderer, for
-    // whatever transient visual feedback it wants to show. precise mirrors
-    // GameSession::JudgementEvent::precise - see INoteLaneRenderer::
-    // OnJudgement.
+    // Forwards a fresh press/release judgement to the renderer - see INoteLaneRenderer::OnJudgement.
     void ShowJudgement(JudgementResult result, int lane, bool passing, bool precise);
 
     // Forwards a HUD value change to the renderer - see
@@ -53,8 +45,7 @@ public:
     // Builds this frame's scene from session and renders it.
     void Draw(HDC hdc, const GameSession& session);
 
-    // Toggles the renderer's own previous/current/next clip-name debug
-    // overlay - see INoteLaneRenderer::ToggleDebugOverlay.
+    // Toggles the renderer's clip-name debug overlay - see INoteLaneRenderer::ToggleDebugOverlay.
     void ToggleDebugOverlay();
 
 private:

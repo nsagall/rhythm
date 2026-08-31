@@ -3,27 +3,17 @@
 #include "BlockPlayer.h"
 #include "EditorDocument.h"
 
-// The upper-right inspector for whichever block is currently selected in
-// BlockTimeline - shows/edits the same fields the old SectionPanel edited
-// inline per row (kind, clip, loop_count), plus a read-only readout of the
-// matching BlockSchedule::Entry's computed timing when one is available,
-// so loop_count/hits_required's effect on the schedule is directly
-// visible. Also owns the "Delete Block", "Duplicate Block", and "Seek
-// Here" actions for the current selection.
+// The upper-right inspector for the block selected in BlockTimeline - shows/edits kind, clip, and
+// loop_count, plus a read-only readout of the matching BlockSchedule::Entry's computed timing when
+// available. Also owns the "Delete Block", "Duplicate Block", and "Seek Here" actions.
 class BlockPropertiesPanel
 {
 public:
-    // selectedBlockId may not match any block in doc.blocks (nothing
-    // selected, or the selection was deleted elsewhere) - shows a
-    // placeholder in that case. player's schedule may not have an entry
-    // for this block yet (validation currently failing, or it's a
-    // Background/Reset block with no entry of its own - see
-    // BlockSchedule::Entry's own comment). Mutates doc directly (via
-    // MarkDirty) on edit, and player's playback position via "Seek Here" -
-    // not const. Returns the block id that should be selected after this
-    // frame: selectedBlockId unchanged in the common case, -1 if the
-    // selection was just deleted, or the new block's id if it was just
-    // duplicated - the caller should feed this straight back into
-    // BlockTimeline::SetSelectedBlockId.
+    // Draws the panel and returns the block id that should be selected after this frame.
+    //   doc            - the document; mutated on edit.
+    //   selectedBlockId - the currently selected block; may match nothing (shows a placeholder).
+    //   player         - its schedule may lack an entry for this block; mutated by "Seek Here".
+    // Returns selectedBlockId unchanged normally, -1 if the selection was just deleted, or the new
+    // id if it was just duplicated - feed straight back into BlockTimeline::SetSelectedBlockId.
     int Draw(EditorDocument& doc, int selectedBlockId, BlockPlayer& player);
 };

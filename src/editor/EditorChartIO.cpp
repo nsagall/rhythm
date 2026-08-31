@@ -13,11 +13,8 @@ namespace
 
 using ChartTextUtil::GetDirectory;
 
-// Formats a double as plain fixed-point text with trailing zeros (and a
-// bare trailing '.') trimmed off, e.g. 120.0 -> "120", 87.5 -> "87.5" -
-// deliberately never scientific notation, purely for readability of the
-// saved file (ChartSong::Load's TryParseStrictDouble would accept either
-// form).
+// Formats a double as fixed-point text with trailing zeros trimmed (120.0 -> "120", 87.5 ->
+// "87.5"). Never scientific notation, for readability of the saved file.
 std::wstring FormatDouble(double value)
 {
     wchar_t buf[64];
@@ -82,9 +79,7 @@ bool LoadIntoDocument(const std::wstring& chartFilePath, EditorDocument& outDoc,
         editorClip.id = doc.nextClipId++;
         editorClip.name = clip.Name();
         editorClip.displayName = clip.DisplayName();
-        // ChartSong::Load already guarantees the .wav exists (it's a hard
-        // load error otherwise), so a clip that made it into `song.Clips()`
-        // always has one.
+        // ChartSong::Load fails hard on a missing .wav, so any clip in song.Clips() has one.
         editorClip.hasWav = true;
         editorClip.hasMidi = clip.HasMidi();
         for (int lane = 0; lane < c_LaneCount; ++lane)
@@ -94,13 +89,9 @@ bool LoadIntoDocument(const std::wstring& chartFilePath, EditorDocument& outDoc,
         editorClip.spanBeats = clip.SpanBeats();
         editorClip.hitsRequired = clip.HitsRequired();
         editorClip.learnMode = clip.Mode();
-        // "Equals the song default" heuristic: ChartSong::Load assigns a
-        // non-overriding clip's tolerance from song.StartToleranceMs()
-        // verbatim, so an unset override is bit-identical to the song
-        // value here; an explicit override that happens to match the
-        // default numerically will display as inherited, a documented,
-        // functionally-harmless limitation (the resolved value is the same
-        // either way).
+        // "Equals the song default" heuristic: an unset override is bit-identical to the song value
+        // here, so an explicit override that happens to match displays as inherited - harmless,
+        // since the resolved value is the same either way.
         editorClip.startToleranceMs.isOverridden = (clip.StartToleranceMs() != song.StartToleranceMs());
         editorClip.startToleranceMs.value = clip.StartToleranceMs();
         editorClip.releaseToleranceMs.isOverridden = (clip.ReleaseToleranceMs() != song.ReleaseToleranceMs());
@@ -179,10 +170,8 @@ std::wstring SerializeToText(const EditorDocument& doc)
         if (block.kind != SectionKind::Reset)
         {
             const EditorClip* clip = FindClipById(doc, block.clipId);
-            // Left empty (rather than skipped) when no clip has been
-            // picked yet, so ValidateDocument surfaces the real
-            // "[kind] requires a non-empty 'clip'" error instead of a
-            // confusing generic parse failure.
+            // Emitted empty (not skipped) when no clip is picked, so ValidateDocument surfaces the
+            // real "[kind] requires a non-empty 'clip'" error rather than a generic parse failure.
             out += L"clip = " + (clip ? clip->name : std::wstring()) + L"\r\n";
             if (block.loopCount != 1)
             {

@@ -8,12 +8,9 @@
 
 #include "AudioEngine.h"
 
-// Standalone diagnostic (not part of the normal build): plays one stem at
-// two different volumes while capturing the actual rendered output via
-// WASAPI loopback, then compares peak levels - a definitive, objective
-// test of whether AudioEngine::SetVolume actually changes what comes out
-// of the speakers, independent of human hearing or GetVolume() readback
-// (which only proves the requested value was stored, not that it's audible).
+// Standalone diagnostic: plays one stem at two volumes while capturing the rendered output via
+// WASAPI loopback and compares peak levels - an objective test that AudioEngine::SetVolume changes
+// what comes out of the speakers, not just what GetVolume() reads back.
 
 namespace
 {

@@ -9,8 +9,7 @@ namespace Colors
 namespace
 {
 
-// section/name are ASCII-only by construction (see Entry's own comment) -
-// a plain byte-widen is exact, no codepage/UTF-8 decoding needed.
+// Widens an ASCII-only string byte-for-byte (no codepage/UTF-8 decoding needed).
 std::wstring WidenAscii(const char* s)
 {
     std::wstring out;
@@ -73,12 +72,8 @@ const std::vector<Entry>& AllEntries()
 
 std::wstring ConfigFilePath()
 {
-    // GetPrivateProfileStringW/WritePrivateProfileStringW silently treat a
-    // bare relative filename as relative to the *Windows* directory, not
-    // the process's working directory - so this resolves the intended
-    // "next to Content/" path explicitly rather than relying on a
-    // relative "Colors.ini" (which would quietly read/write %WINDIR%
-    // instead of the repo root).
+    // GetPrivateProfileStringW/WritePrivateProfileStringW resolve a bare relative filename against
+    // the Windows directory, not the working directory - so build an absolute path explicitly.
     wchar_t currentDir[MAX_PATH] = L"";
     GetCurrentDirectoryW(MAX_PATH, currentDir);
     return std::wstring(currentDir) + L"\\Colors.ini";

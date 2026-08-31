@@ -7,22 +7,14 @@
 namespace
 {
 
-// When true (the current setting), a section hands its dots off early to
-// the next clip's preview as soon as that clip's own notes are due to
-// appear - so the upcoming clip's notes scroll down from the top like any
-// other, instead of its entire c_BeatsAhead-deep window materializing at
-// once the instant it becomes current (confirmed real symptom: a note
-// landing near "now" at handoff read as already-past-the-judge-line,
-// since nothing had scrolled it into view first). False keeps a section's
-// dots/judging live for its whole duration, right up to the scheduled
-// advance, with no lead time for the next clip's own preview at all. See
-// nextClipShowing below.
+// When true, a section hands its dots off early to the next clip's preview as soon as that clip's
+// notes are due, so they scroll down from the top like any other instead of the whole
+// c_BeatsAhead-deep window materializing at once. False keeps a section's dots/judging live right
+// up to the scheduled advance, with no preview lead time. See nextClipShowing below.
 constexpr bool c_PreviewNextClipBeforeHandoff = true;
 
-// Returns value formatted with thousands separators (e.g. 12345 -> "12,345") -
-// matches MainWindow's own FormatScoreWithCommas (song-select's best-score
-// column); duplicated here rather than shared, since it's a few lines of
-// pure formatting and the two callers live in otherwise-unrelated files.
+// Returns value formatted with thousands separators (12345 -> "12,345"). Duplicated from
+// MainWindow's FormatScoreWithCommas rather than shared - a few lines of pure formatting.
 std::wstring FormatScoreWithCommas(int value)
 {
     std::wstring digits = std::to_wstring(value);
@@ -56,12 +48,9 @@ std::vector<SceneNote> NoteLaneModel::NotesInRange(int lane, double originBeat, 
     double localFromBeat = fromBeat - originBeat;
     double localToBeat = toBeat - originBeat;
     long long firstBar = static_cast<long long>(std::floor(localFromBeat / spanBeats)) - 1;
-    // Never tile a bar before the clip's own origin - bar 0 is this clip's
-    // first-ever repetition, so there's no earlier content to show. Without
-    // this clamp, a fromBeat landing just before originBeat (routine right
-    // when a fresh clip's live-judged pass starts, since it always looks
-    // c_BeatsBehind "now") synthesizes a phantom copy of a note near the
-    // *end* of the pattern, one spanBeats too early.
+    // Never tile a bar before the clip's origin - bar 0 is its first repetition. Without this,
+    // a fromBeat just before originBeat (routine, since the judged pass looks c_BeatsBehind "now")
+    // synthesizes a phantom copy of a note near the pattern's end, one spanBeats too early.
     if (firstBar < 0)
     {
         firstBar = 0;
@@ -74,14 +63,9 @@ std::vector<SceneNote> NoteLaneModel::NotesInRange(int lane, double originBeat, 
         {
             double absoluteStart = originBeat + bar * spanBeats + note.startBeat;
             double absoluteEnd = absoluteStart + note.durationBeats;
-            // toBeat is exclusive: for the live-judged pass it's the
-            // clip's own scheduled advance beat, always a whole-loop
-            // boundary from this clip's origin (ChartClip::
-            // ComputeLearnAdvanceSeconds/ComputeBreakAdvance) - so a note
-            // at local offset 0 has a bar-tiled candidate landing exactly
-            // on toBeat, representing a *next* repetition that never
-            // actually plays. An inclusive check here would draw that
-            // phantom note.
+            // toBeat is exclusive: for the judged pass it's the scheduled advance beat, a whole-loop
+            // boundary, so a note at local offset 0 tiles a candidate exactly on toBeat that
+            // represents a next repetition that never plays. An inclusive check would draw it.
             if (absoluteEnd >= fromBeat && absoluteStart < toBeat)
             {
                 SceneNote sceneNote;
@@ -121,35 +105,19 @@ void NoteLaneModel::CollectNotes(const GameSession& session, const ClipPlaythrou
                                                              drawClip->LaneNotes(lane), drawClip->SpanBeats());
         if (revealFromFirstOnset)
         {
-            // NotesInRange always tiles one bar earlier than dotsFromBeat to
-            // catch a still-animating note's tail (its own "never tile a bar
-            // before the clip's own origin" comment) - harmless for a clip's
-            // true first-ever start (that earlier bar is clamped to
-            // nonexistent), but for a clip already established long ago
-            // (e.g. one that's been looping as a `[background]` clip before
-            // this `[learn]` section reuses it), that earlier bar is real:
-            // the tail end of the PREVIOUS repetition, one spanBeats before
-            // dotsFromBeat. Left unfiltered, this section's first reveal
-            // would show that leftover note - the pattern's actual last note -
-            // as if it were part of what's coming up, instead of only
-            // dotsFromBeat onward. The live judged pass already excludes
-            // this same case by comparing against NextExpectedBeatForLane
-            // (see below); mirror that here for the unjudged preview pass.
+            // NotesInRange tiles one bar earlier than dotsFromBeat to catch a still-animating tail.
+            // For a clip established long ago (e.g. looping as [background] before a [learn] reuses
+            // it) that earlier bar is real - the previous repetition's last note - and would show
+            // as if it were coming up. The judged pass excludes it via NextExpectedBeatForLane;
+            // mirror that here.
             visibleNotes.erase(std::remove_if(visibleNotes.begin(), visibleNotes.end(),
                                                [dotsFromBeat](const SceneNote& note)
                                                { return note.startBeat < dotsFromBeat - 1e-6; }),
                                 visibleNotes.end());
         }
-        // Build with -DRHYTHM_DEBUG_RENDER (add to the Rhythm target's own
-        // target_compile_definitions in CMakeLists.txt, not left on by
-        // default) to trace exactly what NotesInRange tiles for each
-        // lane/pass, every frame it returns anything - the only way to
-        // catch a phantom/duplicate-note rendering bug from outside the
-        // game itself (a headless GameSession diagnostic never renders
-        // anything to inspect). Redirect stderr to a file (e.g. via
-        // PowerShell's Start-Process -RedirectStandardError) and let the
-        // game free-run - it advances on a fixed schedule regardless of
-        // player input, so no interaction is needed.
+        // Build with -DRHYTHM_DEBUG_RENDER to trace what NotesInRange tiles per lane/pass every
+        // frame - the way to catch a phantom/duplicate-note bug, since a headless diagnostic
+        // renders nothing. Redirect stderr to a file and let the game free-run.
 #ifdef RHYTHM_DEBUG_RENDER
         if (!visibleNotes.empty())
         {
@@ -166,14 +134,9 @@ void NoteLaneModel::CollectNotes(const GameSession& session, const ClipPlaythrou
         {
             sceneNote.clip = instance;
 
-            // Upcoming notes stay Normal (a renderer colors that by
-            // clip->color). The instant a press starts a note correctly
-            // (within tolerance) it becomes Held and stays that way
-            // through the hold; a release that's too early/late (or a
-            // press-window timeout with no press at all) resolves it to
-            // Hit/Miss - both then hold for the rest of the note's time
-            // on screen, matching the real outcome rather than reverting
-            // to Normal.
+            // Upcoming notes stay Normal. A correct press makes a note Held through the hold; a
+            // release or press-window timeout resolves it to Hit/Miss, which then holds for the
+            // rest of the note's time on screen.
             if (judged && session.IsLaneHeld(lane) &&
                 std::abs(session.LaneHoldStartBeat(lane) - sceneNote.startBeat) < 1e-6)
             {
@@ -193,11 +156,8 @@ void NoteLaneModel::CollectNotes(const GameSession& session, const ClipPlaythrou
                 }
                 else if (sceneNote.startBeat < session.NextExpectedBeatForLane(lane) - 1e-6)
                 {
-                    // Never held or judged - only possible for a clip's
-                    // first-ever appearance, which anchors to its pattern's
-                    // true beginning (see ChartSong::OriginBeat()'s own
-                    // comment) and so can start partway into a bar. Never
-                    // included in the scene.
+                    // Never held or judged - only possible for a clip's first-ever appearance,
+                    // which can start partway into a bar. Not included in the scene.
                     continue;
                 }
             }
@@ -224,9 +184,8 @@ std::unique_ptr<ClipPlaythrough> NoteLaneModel::MakeClipInstance(const GameSessi
 
 namespace
 {
-// Which beat the loop repetition covering nowBeat actually started at,
-// given the clip's own persistent origin - originBeat itself for the very
-// first repetition, originBeat + spanBeats for the second, and so on.
+// Returns the beat the loop repetition covering nowBeat started at: originBeat for the first
+// repetition, originBeat + spanBeats for the second, and so on.
 double CurrentLoopStartBeat(double originBeat, double nowBeat, double spanBeats)
 {
     if (spanBeats <= 0.0)
@@ -244,28 +203,20 @@ void NoteLaneModel::UpdateClipInstances(const GameSession& session, double nowBe
         currentChartClip ? CurrentLoopStartBeat(session.CurrentClipOriginBeat(), nowBeat, currentChartClip->SpanBeats())
                           : 0.0;
 
-    // Identity is the (chartClip, startBeat) pair, not chartClip alone -
-    // same clip, same section, but a new loop repetition has begun is
-    // still a new playthrough (same currentChartClip, different
-    // currentStartBeat), and must be detected here exactly like a genuine
-    // section transition is.
+    // Identity is the (chartClip, startBeat) pair: a new loop repetition of the same clip is still
+    // a new playthrough and must be detected here like a section transition.
     const ChartClip* trackedCurrentClip = m_currentClip ? m_currentClip->chartClip : nullptr;
     bool currentChanged = trackedCurrentClip != currentChartClip ||
                            (currentChartClip && std::abs(m_currentClip->startBeat - currentStartBeat) > 1e-6);
     if (currentChanged)
     {
-        // Whatever m_currentClip was a moment ago becomes m_previousClip,
-        // exactly once, right here.
         m_previousClip = std::move(m_currentClip);
 
         bool nextMatches = m_nextClip && m_nextClip->chartClip == currentChartClip &&
                             std::abs(m_nextClip->startBeat - currentStartBeat) <= 1e-6;
         if (nextMatches)
         {
-            // Whatever we were already predicting (a real next section, or
-            // this same clip's own predicted loop repeat) turned out to be
-            // exactly right - reuse that same instance rather than building
-            // a redundant new one.
+            // What we were predicting turned out right - reuse that instance instead of a new one.
             m_currentClip = std::move(m_nextClip);
         }
         else
@@ -275,15 +226,9 @@ void NoteLaneModel::UpdateClipInstances(const GameSession& session, double nowBe
     }
     if (m_currentClip)
     {
-        // A fresh (or freshly-promoted) instance already starts at false;
-        // this also carries a same-instance run's passing state forward as
-        // it happens. Deliberately NOT mirrored for a DontFail clip, even
-        // though GameSession::IsPassing() itself still flips back and forth
-        // for one exactly as it does for Pass - DontFail conveys its own
-        // progress through the hits meter bar instead (see BuildScene's own
-        // comment on NoteLaneScene::hitsMeterProgress), so its notes never
-        // gain or lose this glow mid-clip; see DrawNoteBar/DrawNoteGlyph's
-        // own comment on the glow this field drives.
+        // Carries the current run's passing state forward. Never mirrored for a DontFail clip,
+        // which conveys progress through the hits meter instead of a glow that would flicker on
+        // every miss/recovery.
         m_currentClip->passing = session.IsPassing() && m_currentClip->chartClip->Mode() != LearnMode::DontFail;
     }
 
@@ -296,13 +241,9 @@ void NoteLaneModel::UpdateClipInstances(const GameSession& session, double nowBe
     else if (m_currentClip && session.Phase() == GamePhase::Learning &&
              session.CurrentSectionKind() == SectionKind::Learn && !session.IsPassing())
     {
-        // session.PreviewClip() has nothing to offer here - an unlocked
-        // Learn section might still repeat any number of further loops
-        // before it actually advances (see PreviewClip()'s own comment) -
-        // but a predicted repeat of the CURRENT clip's own pattern is
-        // legitimate to preview, unlike a real (and possibly wrong) guess
-        // at the next section. Its start beat is simply one spanBeats past
-        // the current instance's own.
+        // session.PreviewClip() has nothing to offer for an unlocked Learn section, but a predicted
+        // repeat of the current clip's own pattern is legitimate to preview. Its start beat is one
+        // spanBeats past the current instance's.
         previewChartClip = m_currentClip->chartClip;
         previewStartBeat = m_currentClip->startBeat + previewChartClip->SpanBeats();
     }
@@ -328,9 +269,8 @@ void NoteLaneModel::ResetIfSongChanged(const GameSession& session)
     m_previousClip.reset();
     m_currentClip.reset();
     m_nextClip.reset();
-    // Also stale otherwise: a leftover true from the old song could
-    // suppress the new song's own first legitimate justLockedIn/justFailed/
-    // justHandedOff edge (nowX && !m_prevX never firing once for it).
+    // A leftover true from the old song would suppress the new song's first legitimate
+    // justLockedIn/justFailed/justHandedOff edge.
     m_prevPassing = false;
     m_prevNotesHandoff = false;
 }
@@ -346,10 +286,9 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
 
     const ChartClip* clip = session.CurrentClip();
 
-    // A learn section's dots keep coming (and being judged) until
-    // nextClipShowing flips true - either at the scheduled advance itself,
-    // or (only while c_PreviewNextClipBeforeHandoff is true) earlier, once
-    // the next clip's first note comes within c_BeatsAhead of now.
+    // A learn section's dots keep coming (and being judged) until nextClipShowing flips true -
+    // at the scheduled advance, or earlier (when c_PreviewNextClipBeforeHandoff) once the next
+    // clip's first note comes within c_BeatsAhead of now.
     bool isLearnSection =
         clip && session.Phase() == GamePhase::Learning && session.CurrentSectionKind() == SectionKind::Learn;
     bool nowPassing = isLearnSection && session.IsPassing();
@@ -358,25 +297,15 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
     {
         scene.hitsMeterIsDontFail = clip->Mode() == LearnMode::DontFail;
     }
-    // Visible for the whole learn section in both modes now - DontFail
-    // always was (its own hitsMeterProgress tracks the clip itself, which
-    // stays meaningful either way); Pass's meter used to hide the instant it
-    // locked in, but now holds at its full 1.0 value instead (see
-    // hitsMeterProgress/hitsMeterPulsing) for the rest of the section's run,
-    // only actually disappearing once the section itself changes.
+    // Visible for the whole learn section in both modes - a Pass meter holds at its full 1.0 value
+    // after lock-in rather than hiding (see hitsMeterProgress/hitsMeterPulsing).
     scene.showHitsMeter = isLearnSection;
     scene.hitsMeterPulsing = nowPassing && !scene.hitsMeterIsDontFail;
 
-    // DontFail mode only: detect a passing->failing reversal for the SAME
-    // clip already tracked as m_currentClip last frame (ruling out an
-    // ordinary section/loop change - a different event UpdateClipInstances'
-    // own identity check already handles) before calling UpdateClipInstances
-    // below. The instant IsPassing() reverts, session.PreviewClip() goes
-    // null (see GameSession::PreviewSectionIndex()), which is exactly what
-    // makes UpdateClipInstances silently swap m_nextClip from the real
-    // next-section preview to a loop-repeat prediction of this same clip -
-    // detecting the transition here, first, means m_nextClip still holds
-    // whatever was about to be thrown away, so it can still be exploded.
+    // DontFail mode only: detect a passing->failing reversal for the same clip tracked last frame,
+    // before UpdateClipInstances runs. When IsPassing() reverts, PreviewClip() goes null and
+    // UpdateClipInstances swaps m_nextClip to a loop-repeat prediction; detecting it here first
+    // means m_nextClip still holds what's about to be discarded, so it can be exploded.
     bool sameClipAsLastFrame = m_currentClip && m_currentClip->chartClip == clip;
     bool justFailedThisFrame = sameClipAsLastFrame && m_prevPassing && !nowPassing;
     if (justFailedThisFrame && m_nextClip)
@@ -395,11 +324,8 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
         }
     }
 
-    // Hits meter fill amount - see NoteLaneScene::hitsMeterProgress's own
-    // comment for what each mode's number actually means. Placed after
-    // justFailedThisFrame (above) since DontFail's own freeze logic needs
-    // it, but before UpdateClipInstances since it only needs clip/nowBeat,
-    // not m_currentClip's own post-update state.
+    // Hits meter fill amount (see NoteLaneScene::hitsMeterProgress). After justFailedThisFrame
+    // (DontFail's freeze logic needs it) but before UpdateClipInstances (needs only clip/nowBeat).
     if (scene.showHitsMeter && scene.hitsMeterIsDontFail)
     {
         double originBeat = session.CurrentClipOriginBeat();
@@ -409,9 +335,7 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
                                    : 0.0;
         if (nowPassing)
         {
-            // Live and continuously updated while passing - real elapsed
-            // time within this loop, same number a Pass-mode meter would
-            // show if it didn't hide itself once locked in.
+            // Live while passing - real elapsed time within this loop.
             scene.hitsMeterProgress = liveProgress;
         }
         else
@@ -419,20 +343,13 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
             if (justFailedThisFrame || m_dontFailFrozenLoopStartBeat < 0.0 ||
                 std::abs(currentLoopStartBeat - m_dontFailFrozenLoopStartBeat) > 1e-6)
             {
-                // Either the miss that dropped this back to failing just
-                // happened this exact frame (freeze right at the live value
-                // it had a moment ago, so it visibly "stops filling" rather
-                // than snapping), or a whole loop repetition has gone by
-                // while still failing since the last freeze (this attempt
-                // genuinely restarted from the top, so the frozen value
-                // resets to 0 instead of holding wherever the earlier miss
-                // happened to land).
+                // The miss dropped this to failing this frame (freeze at the live value so it
+                // "stops filling"), or a whole loop elapsed while failing (this attempt restarted,
+                // so reset to 0).
                 m_dontFailFrozenProgress = justFailedThisFrame ? liveProgress : 0.0;
                 m_dontFailFrozenLoopStartBeat = currentLoopStartBeat;
             }
-            // Otherwise: still the same failing stretch, same loop
-            // repetition as the last freeze - hold steady rather than
-            // recomputing from nowBeat, which is exactly the point.
+            // Same failing stretch, same loop - hold steady rather than recomputing from nowBeat.
             scene.hitsMeterProgress = m_dontFailFrozenProgress;
         }
     }
@@ -450,21 +367,15 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
     scene.debugCurrentClipName = clipInstanceName(m_currentClip.get());
     scene.debugNextClipName = clipInstanceName(m_nextClip.get());
 
-    // Whichever clip is most relevant right now - the actively-playing one
-    // if there is one (Learn or Break alike; CurrentClip() is non-null for
-    // both), otherwise whatever's about to start (the count-in, or a
-    // Reset's own zero-time gap).
+    // Whichever clip is most relevant now - the actively-playing one if there is one, otherwise
+    // whatever's about to start (the count-in, or a Reset's zero-time gap).
     scene.primaryClip = m_currentClip ? m_currentClip.get() : m_nextClip.get();
 
     bool nextClipShowing = false;
 
-    // Caps how far the live *judged* pass tiles this clip's pattern -
-    // nowBeat + c_BeatsAhead by default, tightened to the section's current
-    // candidate advance in the "nothing to hand off to" branch below: a
-    // note judged past that point might belong to a repeat that never
-    // plays, since the section could lock in there instead of repeating
-    // (see GameSession::Update). The resulting gap is filled back in,
-    // unjudged, by the self-repeat/next-clip preview passes below.
+    // Caps how far the judged pass tiles this pattern - nowBeat + c_BeatsAhead by default,
+    // tightened to the current candidate advance below, since a note judged past that might belong
+    // to a repeat that never plays. The gap is filled unjudged by the preview passes below.
     double notesUpperBoundBeat = scene.nowBeat + c_BeatsAhead;
 
     if (isLearnSection)
@@ -472,29 +383,15 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
         double secondsPerBeat = 60.0 / session.Song().Bpm();
         double advanceAtBeat = session.PendingAdvanceAtSeconds() / secondsPerBeat;
 
-        // DontFail mode never takes the early branch below, regardless of
-        // c_PreviewNextClipBeforeHandoff/PreviewClip() - its own notes stay
-        // live (drawn AND judged) all the way to the section's actual
-        // advance, unlike Pass mode's post-lock-in handoff. GameSession's
-        // own judging (the press-phase timeout in Update()) has no idea
-        // this clip's notes are being hidden early - it keeps judging every
-        // one of them for as long as the section is current, so hiding one
-        // here would silently miss-judge something the player was never
-        // shown, which a DontFail miss then acts on (unlike Pass mode,
-        // where a miss after passing is already a no-op - see
-        // SectionInstance::RegisterMiss). The "stream next section in
-        // early while passing / show a loop repeat while failing" nuance
-        // still happens - see the gap-fill CollectNotes call below, which
-        // already blends in exactly that once notesUpperBoundBeat is
-        // capped short of nowBeat+c_BeatsAhead - just without ever hiding
-        // this clip's own tail to make room for it.
+        // DontFail never takes the early branch below: its notes stay live (drawn AND judged) to
+        // the section's actual advance, since GameSession keeps judging them and a DontFail miss
+        // acts on one the player was never shown. The gap-fill CollectNotes call below still blends
+        // in the next section / a loop repeat, just without hiding this clip's tail.
         if (!c_PreviewNextClipBeforeHandoff || session.PreviewClip() == nullptr ||
             clip->Mode() == LearnMode::DontFail)
         {
-            // Nothing to hand off to yet (no preview, or early handoff is
-            // disabled) - keep this clip's own dots/judging live right up
-            // until the actual scheduled advance, rather than going blank
-            // for however long the wait until the real advance takes.
+            // Nothing to hand off to yet - keep this clip's dots/judging live until the scheduled
+            // advance rather than going blank.
             nextClipShowing = (scene.nowBeat >= advanceAtBeat);
             notesUpperBoundBeat = std::min(notesUpperBoundBeat, advanceAtBeat);
         }
@@ -517,17 +414,9 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
         }
     }
 
-    // Pass mode only: passing is a one-way latch, so once reached this
-    // stays forced true for the rest of the section's run - overriding
-    // whichever branch above just computed nextClipShowing, and regardless
-    // of whether there's even a real next section to hand off to yet. This
-    // makes justHandedOff below fire on the exact same frame as
-    // justLockedIn, so the exploding-range logic further down clears this
-    // clip's *entire* currently-visible window at once instead of leaving
-    // its notes live and judged until the next section's own notes happen
-    // to scroll into view. DontFail mode is untouched - the branch above
-    // already keeps its notes live all the way to the real advance
-    // regardless of preview state (see its own comment for why).
+    // Pass mode only: once passing (a one-way latch), force this true for the rest of the section,
+    // overriding the branch above. This makes justHandedOff fire on the same frame as justLockedIn,
+    // so the exploding-range logic clears this clip's entire visible window at once.
     if (isLearnSection && nowPassing && clip->Mode() == LearnMode::Pass)
     {
         nextClipShowing = true;
@@ -540,24 +429,16 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
         scene.receptors[lane].held = isLiveJudging && session.IsLaneHeld(lane);
     }
 
-    // Edge-triggered flags: true only on the exact frame each condition
-    // first becomes true, so a renderer can react once (a celebration
-    // burst, an explosion) instead of every frame the condition holds.
-    // justLockedIn covers both a first-ever pass and (DontFail mode) a
-    // failing->passing re-entry - see NoteLaneScene::justLockedIn's own
-    // comment for why it doesn't need a separate name for the latter.
+    // Edge-triggered flags: true only on the frame each condition first becomes true, so a renderer
+    // reacts once. justLockedIn covers both a first-ever pass and a DontFail failing->passing re-entry.
     scene.justLockedIn = nowPassing && !m_prevPassing;
     scene.justHandedOff = nextClipShowing && !m_prevNotesHandoff;
     scene.justFailed = justFailedThisFrame;
 
     if ((scene.justHandedOff || scene.justLockedIn) && clip)
     {
-        // m_currentClip still mirrors session.CurrentClip() == clip here:
-        // GameSession's own transition to whatever comes next (which is
-        // what would make UpdateClipInstances next frame retire this into
-        // m_previousClip) hasn't happened yet on the very frame
-        // justHandedOff/justLockedIn first fires - see UpdateClipInstances'
-        // own comment.
+        // m_currentClip still mirrors session.CurrentClip() here - the transition that would retire
+        // it into m_previousClip hasn't happened on the frame justHandedOff/justLockedIn first fires.
         const ClipPlaythrough* explosionClip = m_currentClip.get();
         double originBeat = session.CurrentClipOriginBeat();
 
@@ -588,34 +469,19 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
         }
     }
 
-    // Pass mode's post-lock-in judge-line flash used to be synthesized here
-    // (see the now-removed passLineHitLanes) - it's superseded by
-    // GameSession::Update()'s own real auto-accrual, which pushes genuine
-    // JudgementEvents for the exact same onsets through the normal
-    // ConsumeJudgementEvents pipeline, so there's nothing left for this
-    // model to fake.
-
     m_prevPassing = nowPassing;
     m_prevNotesHandoff = nextClipShowing;
 
-    // m_nextClip may mirror a real GameSession preview, or (see
-    // UpdateClipInstances) a synthetic predicted loop repeat of the
-    // CURRENT clip that GameSession itself knows nothing about - in the
-    // latter case, session.PreviewClipOriginBeat() is meaningless (-1,
-    // nothing being previewed as far as GameSession is concerned), and the
-    // -1.0 "reveal each lane's own first note" sentinel doesn't apply
-    // either (that's for a genuinely fresh debut; a predicted loop is
-    // just an ordinary repeat, so every lane reveals together from the
-    // predicted loop's own start beat, same as any other repeat).
+    // m_nextClip may mirror a real GameSession preview or a synthetic predicted loop repeat of the
+    // current clip. For the latter, PreviewClipOriginBeat() is -1 and the "reveal each lane's own
+    // first note" sentinel doesn't apply - a predicted loop is an ordinary repeat, revealed from
+    // its own start beat.
     bool nextIsRealPreview = session.PreviewClip() != nullptr;
     double nextOriginBeat = nextIsRealPreview ? session.PreviewClipOriginBeat() : session.CurrentClipOriginBeat();
     double nextFromBeat = nextIsRealPreview ? -1.0 : (m_nextClip ? m_nextClip->startBeat : -1.0);
 
-    // While the player can act, draw the live judged pass; otherwise
-    // (count-in, break/reset/background, or just past nextClipShowing)
-    // draw only the upcoming clip's preview, from each lane's own first
-    // required note onward - so lanes reveal one at a time instead of
-    // popping in as a batch.
+    // While the player can act, draw the live judged pass; otherwise draw only the upcoming clip's
+    // preview, from each lane's first required note onward so lanes reveal one at a time.
     if (isLiveJudging)
     {
         CollectNotes(session, m_currentClip.get(), session.CurrentClipOriginBeat(), /*judged=*/true,
@@ -627,25 +493,10 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
                      scene);
     }
 
-    // The judged pass never tiles past notesUpperBoundBeat, which would
-    // otherwise leave a growing gap right before every such boundary. Fill
-    // it with whichever is true right now: not locked in, so the clip's
-    // own loop will repeat (GameSession::Update) - preview more of its own
-    // pattern past the cap; or locked in, so the section is about to
-    // advance - preview the real next clip instead. Both are unjudged and
-    // layered on top of the still-live judged pass.
-    //
-    // Only when notesUpperBoundBeat is genuinely capped short of
-    // nowBeat+c_BeatsAhead is there an actual gap to fill - the common case
-    // (nothing capping it) means the judged pass already reached the full
-    // c_BeatsAhead reach on its own, so this range is empty. Calling
-    // CollectNotes anyway with a zero-width [notesUpperBoundBeat,
-    // notesUpperBoundBeat] range wouldn't just be a no-op: NotesInRange's
-    // own "look one bar back" tail-catch (see its own comment) would
-    // re-discover whatever note the judged pass already placed right at
-    // that shared boundary and duplicate it into the scene - confirmed
-    // real repro, a note whose span straddles nowBeat+c_BeatsAhead gets
-    // counted twice for as long as that straddle lasts.
+    // Fill the gap the judged pass leaves before notesUpperBoundBeat: preview more of this clip's
+    // own pattern if it's not locked in (its loop will repeat), or the real next clip if it is.
+    // Both unjudged, layered on top of the judged pass. Guarded so a zero-width range isn't passed
+    // to CollectNotes, whose one-bar-back tail-catch would otherwise duplicate a note on the boundary.
     if (notesUpperBoundBeat < scene.nowBeat + c_BeatsAhead - 1e-9)
     {
         if (isLiveJudging && !session.IsPassing())
@@ -683,9 +534,7 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
             break;
     }
 
-    // Visible for the whole song (count-in through completion) - not just
-    // Idle, where there's no score yet to show and statusText's own prompt
-    // already fills the panel.
+    // Visible for the whole song except Idle, where there's no score yet.
     if (session.Phase() != GamePhase::Idle)
     {
         scene.scoreText = L"Score " + FormatScoreWithCommas(session.CurrentScore());
@@ -696,9 +545,7 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
             scene.bankText = L"+" + FormatScoreWithCommas(bank);
         }
 
-        // x1 (the base, un-boosted rate) is deliberately not shown - the
-        // multiplier readout only appears once it's actually saying
-        // something worth celebrating.
+        // x1 (the base rate) is not shown - the multiplier readout only appears once boosted.
         int multiplier = session.CurrentMultiplier();
         if (multiplier > 1)
         {
@@ -706,12 +553,8 @@ NoteLaneScene NoteLaneModel::BuildScene(const GameSession& session)
         }
     }
 
-    // Overrides whatever the switch above chose - the phase/clip itself
-    // hasn't changed while paused (see GameSession::Pause's own comment),
-    // just what the HUD should say about it. scene.nowBeat (and everything
-    // derived from it - notes, receptor pulse, beat-synced background glow)
-    // is already frozen for free, since it's read from the now-paused
-    // session.Clock() same as any other frame.
+    // Overrides the switch above - only the HUD text changes while paused; scene.nowBeat is already
+    // frozen, since it's read from the paused session.Clock().
     if (session.IsPaused())
     {
         scene.statusText = L"Paused";

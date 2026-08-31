@@ -37,13 +37,10 @@ bool HasAnyNotes(const MidiLaneData& data)
 
 } // namespace
 
-// Loads midiFilePath and buckets its notes by lane, or fails with a description of the problem.
 bool ChartMidi::LoadLaneNotes(const std::wstring& midiFilePath, MidiLaneData& outData, std::wstring& outError)
 {
-    // Read the raw bytes ourselves (wide-path-safe, same std::ifstream(wstring)
-    // pattern AudioEngine.cpp already uses for WAV files) rather than handing
-    // smf::MidiFile a filename directly - its filename overload takes a
-    // narrow std::string, which isn't reliably Unicode-safe on this toolchain.
+    // Read the raw bytes ourselves (wide-path-safe) rather than handing smf::MidiFile a filename -
+    // its filename overload takes a narrow std::string, not reliably Unicode-safe here.
     std::ifstream file(midiFilePath.c_str(), std::ios::binary);
     if (!file)
     {
@@ -105,10 +102,8 @@ bool ChartMidi::LoadLaneNotes(const std::wstring& midiFilePath, MidiLaneData& ou
 
             if (event.getTickDuration() <= 0)
             {
-                // A note-on immediately followed by its own note-off at the
-                // same tick is valid MIDI but meaningless here - it could
-                // never be pressed and released in time, so it's rejected
-                // rather than silently producing an unplayable note.
+                // A zero-length note is valid MIDI but unplayable here (can't be pressed and
+                // released in time), so reject it rather than ship an unplayable note.
                 outError = L"'" + midiFilePath + L"' has a zero-length note (pitch " +
                             std::to_wstring(event.getKeyNumber()) + L") at tick " + std::to_wstring(event.tick);
                 return false;
@@ -134,11 +129,8 @@ bool ChartMidi::LoadLaneNotes(const std::wstring& midiFilePath, MidiLaneData& ou
         std::sort(notes.begin(), notes.end(),
                   [](const LaneNote& a, const LaneNote& b) { return a.startBeat < b.startBeat; });
 
-        // GameSession holds at most one press/hold per lane at a time, so
-        // two notes on the same lane whose durations overlap are
-        // ambiguous - which one is the player supposed to be holding? -
-        // and would otherwise silently make the later note unplayable
-        // instead of failing loudly at load time.
+        // GameSession holds at most one press per lane, so two overlapping notes on one lane are
+        // ambiguous. Fail loudly at load time rather than make the later note silently unplayable.
         for (size_t i = 0; i + 1 < notes.size(); ++i)
         {
             double thisEndBeat = notes[i].startBeat + notes[i].durationBeats;

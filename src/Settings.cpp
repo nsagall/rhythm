@@ -20,11 +20,8 @@ std::wstring GetSettingsFilePath()
     return dir + L"\\settings.ini";
 }
 
-// Turns songKey into a string safe to embed in an INI key name - every
-// character that isn't alphanumeric (spaces, punctuation a song's folder
-// name might contain) becomes '_'. Two different song folder names that
-// differ only in punctuation could in principle collide after this, but
-// that's not a real concern for a personal song library.
+// Turns songKey into a string safe to embed in an INI key name: every non-alphanumeric character
+// becomes '_'. Names differing only in punctuation could collide, acceptable for a personal library.
 std::wstring SanitizeForIniKey(const std::wstring& raw)
 {
     std::wstring out = raw;
@@ -40,7 +37,6 @@ std::wstring SanitizeForIniKey(const std::wstring& raw)
 
 } // namespace
 
-// Reads the saved last-chart path from disk (empty if none saved yet).
 std::wstring Settings::LoadLastChartPath()
 {
     wchar_t buffer[MAX_PATH] = L"";
@@ -48,25 +44,21 @@ std::wstring Settings::LoadLastChartPath()
     return buffer;
 }
 
-// Saves the given chart path so it's pre-filled next launch.
 void Settings::SaveLastChartPath(const std::wstring& chartPath)
 {
     WritePrivateProfileStringW(L"App", L"LastChartPath", chartPath.c_str(), GetSettingsFilePath().c_str());
 }
 
-// Reads the saved Easy Mode toggle state from disk (false if none saved yet).
 bool Settings::LoadEasyMode()
 {
     return GetPrivateProfileIntW(L"App", L"EasyMode", 0, GetSettingsFilePath().c_str()) != 0;
 }
 
-// Saves the Easy Mode toggle state so it's restored next launch.
 void Settings::SaveEasyMode(bool easyMode)
 {
     WritePrivateProfileStringW(L"App", L"EasyMode", easyMode ? L"1" : L"0", GetSettingsFilePath().c_str());
 }
 
-// Reads lane index `lane`'s saved custom input binding (empty if none saved yet).
 std::wstring Settings::LoadLaneBinding(int lane)
 {
     wchar_t buffer[MAX_PATH] = L"";
@@ -75,14 +67,12 @@ std::wstring Settings::LoadLaneBinding(int lane)
     return buffer;
 }
 
-// Saves lane index `lane`'s custom input binding so it's restored next launch.
 void Settings::SaveLaneBinding(int lane, const std::wstring& serialized)
 {
     std::wstring key = L"LaneBinding" + std::to_wstring(lane);
     WritePrivateProfileStringW(L"App", key.c_str(), serialized.c_str(), GetSettingsFilePath().c_str());
 }
 
-// Reads songKey's saved high scores (see the header's own comment).
 std::vector<HighScoreEntry> Settings::LoadHighScores(const std::wstring& songKey)
 {
     std::wstring path = GetSettingsFilePath();
@@ -92,9 +82,8 @@ std::vector<HighScoreEntry> Settings::LoadHighScores(const std::wstring& songKey
     for (int rank = 0; rank < c_MaxHighScoreEntries; ++rank)
     {
         std::wstring scoreKey = keyBase + L"_Score" + std::to_wstring(rank);
-        // -1 as the missing-key default (scores are never negative) doubles
-        // as "no more ranks saved" - SaveHighScores always writes ranks
-        // contiguously from 0, so the first missing one ends the list.
+        // -1 (scores are never negative) as the missing-key default doubles as "no more ranks" -
+        // ranks are written contiguously from 0.
         int score = GetPrivateProfileIntW(L"HighScores", scoreKey.c_str(), -1, path.c_str());
         if (score < 0)
         {
@@ -109,7 +98,6 @@ std::vector<HighScoreEntry> Settings::LoadHighScores(const std::wstring& songKey
     return entries;
 }
 
-// Saves songKey's high scores (see the header's own comment).
 void Settings::SaveHighScores(const std::wstring& songKey, const std::vector<HighScoreEntry>& entries)
 {
     std::wstring path = GetSettingsFilePath();
@@ -135,7 +123,6 @@ void Settings::SaveHighScores(const std::wstring& songKey, const std::vector<Hig
     }
 }
 
-// See the header's own comment.
 bool Settings::HighScoreQualifies(const std::vector<HighScoreEntry>& entries, int score)
 {
     if (static_cast<int>(entries.size()) < c_MaxHighScoreEntries)
@@ -145,7 +132,6 @@ bool Settings::HighScoreQualifies(const std::vector<HighScoreEntry>& entries, in
     return score > entries.back().score;
 }
 
-// See the header's own comment.
 void Settings::InsertHighScore(std::vector<HighScoreEntry>& entries, const std::wstring& initials, int score)
 {
     entries.push_back({initials, score});

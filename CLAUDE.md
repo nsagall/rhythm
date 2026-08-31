@@ -112,12 +112,11 @@ whole multiples of each other; and a clip only ever joins an arrangement already
 in progress on one of its own bar boundaries — restricted, for whatever joins
 right after a Learn section specifically, to "evenly divides that Learn clip's
 own length," since a real player's loop count there is unbounded and unknowable
-at load time (see the function's own doc comment for why). This is what lets a
-clip's very first onset use the exact same formula (`ChartClip::
-NextOnsetAfter`) as a later reuse, with no separate "fresh start" case anywhere.
-Read `ChartClip`'s timing-method doc comments (`src/ChartClip.h`) before
-touching any of this timing code, they explain the *why* in detail and are
-treated as the canonical spec.
+at load time (see `ChartClip::ValidateArrangementAlignment` for the rule). This
+is what lets a clip's very first onset use the exact same formula
+(`ChartClip::NextOnsetAfter`) as a later reuse, with no separate "fresh start"
+case anywhere. Read `ChartClip`'s class and timing-method doc comments
+(`src/ChartClip.h`) before touching any of this timing code.
 
 ### Editor's document model is deliberately separate from the runtime model
 
@@ -177,13 +176,7 @@ To author a new generated song, keep everything above `main()` and replace only
 
 ## Working conventions specific to this codebase
 
-- Header comments in this codebase are long and treated as the authoritative
-  spec for *why*, not just *what* — e.g. `ChartClip.h` (including its own
-  timing methods), `ChartSong.h`, `GameSession.h` explain subtle invariants (phase origins, Pass vs. DontFail
-  lock-in semantics, count-in catch-up) that aren't obvious from the code alone.
-  Read the relevant header comment before modifying timing/judging logic, and
-  keep new code held to the same standard when the invariant is genuinely
-  non-obvious.
+- All classes and function should have a header comment that describes what they represent and what they do.  For functions, it should start with a simple, one-sentence explanation of what it does, followed by a line for each parameter which explains what it represents (and it's units, where applicable).  For non-void functions, there should also be a line that describes what the return values represents (and it's units where applicable).  Comments should be descriptive, but as brief as possible.  Comments should not attempt to describe "why" they might be called, let the call sites handle that.  Comments should not include any sort of history (i.e. "This function used to work like X...").  Complicated but important concepts should be explained in class headers, not in function comments.  In-line comments (not function or class headers) should ideally by less than 2 lines long, but can occasionally be longer if it's important.
 - `RhythmCore` files must stay UI-agnostic (no HWND/HDC/input-device knowledge) —
   that's what lets `GameSession`/`ChartClip`'s timing methods be shared verbatim
   between the game and the editor's analytical scheduler.

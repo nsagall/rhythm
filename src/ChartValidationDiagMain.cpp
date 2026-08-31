@@ -4,12 +4,9 @@
 
 #include "ChartSong.h"
 
-// Standalone diagnostic (not part of the normal build): runs ChartSong::Load
-// against a deliberately broken chart (to confirm every kind of validation
-// error is caught and reported), against a handful of charts each
-// deliberately broken in one midi_file-specific way, and against every real
-// chart in the repo (to confirm none of them regress to reporting spurious
-// errors).
+// Standalone diagnostic: runs ChartSong::Load against deliberately broken charts (confirming every
+// validation error is caught) and against every real chart in the repo (confirming none report
+// spurious errors).
 
 namespace
 {

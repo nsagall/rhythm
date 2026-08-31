@@ -2,10 +2,9 @@
 
 #include <windows.h>
 
-// A QueryPerformanceCounter-anchored clock for the current song's tempo and
-// timeline. Used as the single source of truth for note judging, the
-// visual lane, and lock-in scheduling, so nothing can desync by reading
-// two different clocks.
+// A QueryPerformanceCounter-anchored clock for the current song's tempo and timeline. The single
+// source of truth for note judging, the visual lane, and lock-in scheduling, so nothing desyncs by
+// reading two different clocks.
 class SongClock
 {
 public:
@@ -30,16 +29,12 @@ public:
     // The tempo this clock was started with.
     double Bpm() const;
 
-    // Freezes ElapsedSeconds()/BeatPosition() at their current value until
-    // Resume() - QueryPerformanceCounter itself never stops, so this is
-    // purely a matter of ElapsedSeconds() returning a cached value instead
-    // of a fresh read while paused. A no-op if already paused.
+    // Freezes ElapsedSeconds()/BeatPosition() at their current value until Resume(). QPC never
+    // stops; while paused ElapsedSeconds() just returns a cached value. A no-op if already paused.
     void Pause();
 
-    // Resumes from Pause(): re-anchors the clock (via Resync) so
-    // ElapsedSeconds() continues from exactly the value it was frozen at,
-    // as if no wall-clock time had passed during the pause. A no-op if not
-    // currently paused.
+    // Resumes from Pause(): re-anchors the clock so ElapsedSeconds() continues from the value it
+    // was frozen at, as if no time had passed. A no-op if not paused.
     void Resume();
 
     bool IsPaused() const;

@@ -37,9 +37,8 @@ bool ParseSectionHeader(const std::wstring& line, std::wstring& outSection)
     return true;
 }
 
-// Parses a whole number, rejecting anything that isn't purely digits (with
-// an optional leading '-') - unlike std::stoi, which silently truncates
-// "8.5" to 8 instead of rejecting it.
+// Parses a strict whole number: only digits with an optional leading '-'. Unlike std::stoi, rejects
+// fractional input rather than truncating it. Returns false on any invalid input.
 bool TryParseStrictInt(const std::wstring& text, int& outValue)
 {
     std::wstring s = Trim(text);
@@ -78,9 +77,9 @@ bool TryParseStrictInt(const std::wstring& text, int& outValue)
     }
 }
 
-// Parses a floating-point number, rejecting anything with trailing garbage,
-// stray characters (so "inf"/"nan"/hex-float forms can't sneak through),
-// or a non-finite result.
+// Parses a strict floating-point number, rejecting trailing garbage, stray characters (so
+// "inf"/"nan"/hex-float forms can't sneak through), or a non-finite result. Returns false on any
+// invalid input.
 bool TryParseStrictDouble(const std::wstring& text, double& outValue)
 {
     std::wstring s = Trim(text);
@@ -115,10 +114,9 @@ bool TryParseStrictDouble(const std::wstring& text, double& outValue)
     }
 }
 
-// Parses "N/D" into beatsPerBar (N) and outDenominator (D), accepting only
-// a musically sensible time signature: a single '/', a positive
-// whole-number numerator, and a denominator that's an actual note value
-// (1, 2, 4, 8, 16, or 32).
+// Parses "N/D" into outBeatsPerBar (N) and outDenominator (D). Accepts only a single '/', a
+// positive numerator, and a denominator that's a real note value (1, 2, 4, 8, 16, or 32). Returns
+// false otherwise.
 bool ParseTimeSignature(const std::wstring& value, int& outBeatsPerBar, int& outDenominator)
 {
     size_t slash = value.find(L'/');
@@ -152,14 +150,9 @@ bool ParseTimeSignature(const std::wstring& value, int& outBeatsPerBar, int& out
     return true;
 }
 
-// Rounds totalBeats up to the next whole multiple of beatsPerBar (at least
-// one full bar), so a repeating MIDI pattern always tiles on a bar
-// boundary. Without this, a DAW export that trims its MIDI region to end
-// right after the last note (rather than at the loop's actual bar
-// boundary) would tile at that arbitrary length and silently drift out of
-// phase with the audio after the first loop - not a crash, just wrong,
-// which is exactly the kind of case that needs handling automatically
-// rather than left for the author to notice by ear.
+// Rounds totalBeats up to the next whole multiple of beatsPerBar (at least one full bar), so a
+// repeating MIDI pattern always tiles on a bar boundary. A DAW export trimmed to end right after
+// the last note would otherwise tile at that length and drift out of phase with the audio.
 double AlignToBarBoundary(double totalBeats, int beatsPerBar)
 {
     double bars = totalBeats / static_cast<double>(beatsPerBar);
@@ -239,9 +232,7 @@ bool ChartSong::Load(const std::wstring& chartFilePath, std::vector<std::wstring
 
         if (currentClip.m_name.empty())
         {
-            // wavFilePath/midiFilePath are both derived from the single
-            // `name` field together, so an empty name means it was never
-            // given at all - nothing else to check.
+            // wav/midi paths are both derived from `name`, so an empty name means it was never given.
             outErrors.push_back(context + L": missing required field 'name'");
         }
         else
@@ -264,9 +255,8 @@ bool ChartSong::Load(const std::wstring& chartFilePath, std::vector<std::wstring
             std::ifstream midiTest(currentClip.m_midiFilePath.c_str(), std::ios::binary);
             if (!midiTest)
             {
-                // No .mid file next to the .wav - fine, this clip just
-                // can't be used in a `learn` section (checked in
-                // flushSection once its sections are known).
+                // No .mid file - fine, but this clip can't be used in a [learn] section
+                // (checked in flushSection).
                 currentClip.m_hasMidi = false;
             }
             else

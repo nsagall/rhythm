@@ -1,9 +1,5 @@
-// wWinMain entry point for ColorEditor.exe: a small standalone tool for
-// tuning Colors.ini (see ColorConfig.h) without touching game code. Sets
-// up the same Win32 + DirectX11 + Dear ImGui plumbing as RhythmEditor
-// (EditorMain.cpp), trimmed down since this tool has no document to load,
-// no window-placement persistence, and nothing that can be "dirty" beyond
-// the color values themselves.
+// wWinMain entry point for ColorEditor.exe: a small standalone tool for tuning Colors.ini without
+// touching game code. Same Win32 + DX11 + ImGui plumbing as EditorMain.cpp, trimmed down.
 #include <d3d11.h>
 #include <windows.h>
 
@@ -133,13 +129,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
     return DefWindowProcW(hWnd, msg, wParam, lParam);
 }
 
-// Converts a live COLORREF into the 0-1 float triple ImGui's color
-// widgets want, edits it in place via a hue-wheel picker popup, and
-// writes any change straight back through valuePtr - the same global
-// Colors::SaveToIni will read from when the user hits Save. Rendered as a
-// bare swatch (ImGuiColorEditFlags_NoInputs) with the entry's own name
-// underneath, rather than inline R/G/B sliders, so a whole palette reads
-// as a labeled grid instead of a tall list of number fields.
+// Draws one color as a bare swatch with its name underneath, edited via a hue-wheel picker popup,
+// writing any change back through valuePtr (the same global Colors::SaveToIni reads on Save).
 bool DrawSwatch(const char* name, COLORREF* valuePtr)
 {
     float color[3] = {
@@ -167,12 +158,8 @@ bool DrawSwatch(const char* name, COLORREF* valuePtr)
     return changed;
 }
 
-// Lays every entry out as a wrapping grid of DrawSwatch()es, grouped
-// under a header per Colors::Entry::section - the standard ImGui
-// "wrap onto the next line once the next item would overflow the window"
-// idiom (see imgui_demo.cpp's own Layout > Text Wrapping /
-// Basic Helpers > Button Wrapping examples), keyed off each swatch
-// group's own measured width rather than a guessed fixed size.
+// Lays every entry out as a wrapping grid of DrawSwatch()es, grouped by Colors::Entry::section,
+// wrapping to the next line when the next swatch would overflow the window.
 bool DrawColorGrid()
 {
     const std::vector<Colors::Entry>& entries = Colors::AllEntries();

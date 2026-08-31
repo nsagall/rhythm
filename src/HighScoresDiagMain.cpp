@@ -2,13 +2,9 @@
 
 #include "Settings.h"
 
-// Standalone diagnostic (not part of the normal build): verifies Settings'
-// high score persistence (LoadHighScores/SaveHighScores/HighScoreQualifies/
-// InsertHighScore) in isolation, with no chart or GameSession involved.
-// Uses a dedicated songKey unlikely to collide with a real song's content
-// folder name, and leaves that key erased (an empty saved list) when it's
-// done either way, so a normal run never leaves test data behind in the
-// real %APPDATA%\Rhythm\settings.ini.
+// Standalone diagnostic: verifies Settings' high-score persistence in isolation, no chart or
+// GameSession involved. Uses a dedicated songKey and erases it when done, so a run leaves no test
+// data in the real settings.ini.
 
 namespace
 {

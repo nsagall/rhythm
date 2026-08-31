@@ -90,13 +90,10 @@ bool LoadWavFile(const std::wstring& path, std::vector<BYTE>& outPcmData, WAVEFO
     return true;
 }
 
-// Creates the XAudio2 engine, resolving the entry point at runtime rather than
-// through a load-time import of XAudio2_9.dll. That system DLL ships in-box on
-// Windows 10 and 11 but is absent on Windows 7 and 8.1, so we fall back to
-// xaudio2_9redist.dll - Microsoft's XAudio 2.9 redistributable, shipped beside
-// the executable by the installer (vendored in third_party/xaudio2redist/).
-// The module handle is deliberately never freed: XAudio2 runs its own worker
-// threads for the rest of the process's lifetime.
+// Creates the XAudio2 engine, resolving XAudio2Create at runtime: xaudio2_9.dll ships in-box on
+// Windows 10/11 but not 7/8.1, where xaudio2_9redist.dll (shipped beside the executable) is the
+// fallback. The module handle is never freed - XAudio2 runs its own worker threads for the
+// process's lifetime.
 HRESULT CreateXAudio2Engine(IXAudio2** outEngine)
 {
     using XAudio2CreateFn = HRESULT(WINAPI*)(IXAudio2**, UINT32, XAUDIO2_PROCESSOR);
@@ -124,13 +121,11 @@ HRESULT CreateXAudio2Engine(IXAudio2** outEngine)
 
 } // namespace
 
-// Ensures Shutdown() has run before the engine is destroyed.
 AudioEngine::~AudioEngine()
 {
     Shutdown();
 }
 
-// Initializes COM and the XAudio2 engine + mastering voice.
 bool AudioEngine::Initialize()
 {
     HRESULT comHr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
@@ -153,7 +148,6 @@ bool AudioEngine::Initialize()
     return true;
 }
 
-// Stops all voices and tears down the XAudio2 engine.
 void AudioEngine::Shutdown()
 {
     StopAll();
@@ -200,8 +194,6 @@ void AudioEngine::Shutdown()
     }
 }
 
-// Loads a PCM WAV file and creates a source voice for it. Returns a stem
-// handle, or an invalid one on failure (missing file or unsupported format).
 StemHandle AudioEngine::LoadStem(const std::wstring& wavFilePath)
 {
     if (!m_xaudio2)
@@ -225,9 +217,6 @@ StemHandle AudioEngine::LoadStem(const std::wstring& wavFilePath)
     return StemHandle{static_cast<int>(m_stems.size()) - 1};
 }
 
-// Asserts if any OTHER loaded stem sharing playingHandle's wavFilePath is
-// currently audible - see StartLooping's own call site comment for why this
-// exists and why it's safe against a stem restarting its own voice.
 void AudioEngine::AssertNoOtherStemForSameFilePlaying(StemHandle playingHandle) const
 {
     const Stem& playing = m_stems[playingHandle.value];
@@ -255,7 +244,6 @@ void AudioEngine::AssertNoOtherStemForSameFilePlaying(StemHandle playingHandle) 
     }
 }
 
-// Starts a loaded stem looping seamlessly, seeking to phaseSeconds so it enters in time with the beat grid.
 void AudioEngine::StartLooping(StemHandle stemHandle, double phaseSeconds, float volume, int loopCount)
 {
     if (!stemHandle.IsValid() || stemHandle.value >= static_cast<int>(m_stems.size()))
@@ -269,11 +257,8 @@ void AudioEngine::StartLooping(StemHandle stemHandle, double phaseSeconds, float
         return;
     }
 
-    // Restarting THIS stem's own voice (Stop/Flush/resubmit, right below) is
-    // normal and not a violation - the invariant this guards is "at most one
-    // voice for a given .wav file is audible at once," which only a
-    // DIFFERENT stem loaded from the same file (e.g. a chart bug, or a
-    // leaked stem from an earlier LoadChart) could break.
+    // Restarting this stem's own voice below is fine; the invariant guarded is "at most one voice
+    // for a given .wav is audible at once," breakable only by a different stem of the same file.
     AssertNoOtherStemForSameFilePlaying(stemHandle);
 
     stem.voice->Stop();
@@ -296,9 +281,8 @@ void AudioEngine::StartLooping(StemHandle stemHandle, double phaseSeconds, float
         }
     }
 
-    // Play once from startFrame to the end of the buffer (entering in phase),
-    // then loop the whole buffer forever - so the audio lands exactly in
-    // time with the beat grid rather than restarting from sample 0.
+    // Play once from startFrame to the buffer's end (entering in phase), then loop the whole
+    // buffer, so the audio lands in time with the beat grid rather than restarting from sample 0.
     XAUDIO2_BUFFER buffer{};
     buffer.AudioBytes = static_cast<UINT32>(stem.pcmData.size());
     buffer.pAudioData = stem.pcmData.data();
@@ -307,24 +291,21 @@ void AudioEngine::StartLooping(StemHandle stemHandle, double phaseSeconds, float
     buffer.PlayLength = totalFrames - startFrame;
     buffer.LoopBegin = 0;
     buffer.LoopLength = 0;
-    // A finite loopCount is expressed to XAudio2 as (loopCount - 1): the
-    // initial PlayBegin/PlayLength pass already accounts for one full play
-    // of the region, so LoopCount here only counts the ADDITIONAL repeats
-    // of the [0, end) loop region after that.
+    // Expressed to XAudio2 as (loopCount - 1): the initial PlayBegin/PlayLength pass is one full
+    // play, so LoopCount counts only the additional repeats.
     buffer.LoopCount = loopCount > 0 ? static_cast<UINT32>(loopCount - 1) : XAUDIO2_LOOP_INFINITE;
 
     stem.voice->SetVolume(volume);
     stem.voice->SubmitSourceBuffer(&buffer);
     stem.voice->Start();
 
-    // SamplesPlayed is a lifetime counter for the voice, not reset by Start/Stop/
-    // Flush, so we record a baseline here to measure "seconds since this loop began."
+    // SamplesPlayed is a voice-lifetime counter, not reset by Start/Stop/Flush - record a baseline
+    // here to measure "seconds since this loop began."
     XAUDIO2_VOICE_STATE state{};
     stem.voice->GetState(&state);
     stem.loopStartSampleBaseline = state.SamplesPlayed;
 }
 
-// Changes the volume of an already-playing (or not-yet-playing) stem without otherwise affecting playback.
 void AudioEngine::SetVolume(StemHandle stemHandle, float volume)
 {
     if (!stemHandle.IsValid() || stemHandle.value >= static_cast<int>(m_stems.size()))
@@ -339,9 +320,6 @@ void AudioEngine::SetVolume(StemHandle stemHandle, float volume)
     }
 }
 
-// Ramps every voice in stems down together, then stops/flushes all of them -
-// see the header's own comment for why this exists instead of a bare
-// Stop()+FlushSourceBuffers() per voice.
 void AudioEngine::FadeOutAndStop(const std::vector<Stem*>& stems)
 {
     if (stems.empty())
@@ -349,11 +327,8 @@ void AudioEngine::FadeOutAndStop(const std::vector<Stem*>& stems)
         return;
     }
 
-    // Read each voice's own current volume once, up front - a stem mid-
-    // Learn-section's own init_volume/volume split, or a break clip at
-    // less than unity gain, must fade from wherever it actually is, not
-    // from 1.0, or this would audibly jump louder for an instant before
-    // fading down.
+    // Read each voice's current volume up front - a stem below unity gain must fade from where it
+    // actually is, not from 1.0, or it would jump louder for an instant first.
     std::vector<float> startVolumes(stems.size(), 0.0f);
     for (size_t i = 0; i < stems.size(); ++i)
     {
@@ -363,13 +338,9 @@ void AudioEngine::FadeOutAndStop(const std::vector<Stem*>& stems)
         }
     }
 
-    // A handful of small, evenly-spaced volume steps rather than one jump
-    // straight to silence - XAudio2's Stop() truncates a voice's waveform
-    // at whatever sample it's currently on, which is an audible click on
-    // its own, and considerably more so when several simultaneously-
-    // stopped voices (a Break/Reset's own stop-everything, in particular)
-    // all truncate at once. ~10ms total is short enough that even a
-    // fast-decaying note reads as a clean stop, not a lingering fade.
+    // Small evenly-spaced volume steps rather than one jump to silence: XAudio2's Stop() truncates
+    // the waveform at whatever sample it's on, which clicks - worse when several voices stop at
+    // once. ~10ms total still reads as a clean stop.
     constexpr int c_FadeSteps = 5;
     constexpr DWORD c_FadeStepMs = 2;
     for (int step = 1; step <= c_FadeSteps; ++step)
@@ -395,7 +366,6 @@ void AudioEngine::FadeOutAndStop(const std::vector<Stem*>& stems)
     }
 }
 
-// Stops a single stem.
 void AudioEngine::Stop(StemHandle stemHandle)
 {
     if (!stemHandle.IsValid() || stemHandle.value >= static_cast<int>(m_stems.size()))
@@ -406,7 +376,6 @@ void AudioEngine::Stop(StemHandle stemHandle)
     FadeOutAndStop({&m_stems[stemHandle.value]});
 }
 
-// Stops every currently loaded stem.
 void AudioEngine::StopAll()
 {
     std::vector<Stem*> stems;
@@ -418,7 +387,6 @@ void AudioEngine::StopAll()
     FadeOutAndStop(stems);
 }
 
-// Stops every currently loaded stem except keep - see the header's own comment.
 void AudioEngine::StopAllExcept(StemHandle keep)
 {
     std::vector<Stem*> stems;
@@ -433,8 +401,6 @@ void AudioEngine::StopAllExcept(StemHandle keep)
     FadeOutAndStop(stems);
 }
 
-// Pauses every currently loaded stem in place, without flushing its queued
-// buffer.
 void AudioEngine::PauseAll()
 {
     for (Stem& stem : m_stems)
@@ -446,9 +412,8 @@ void AudioEngine::PauseAll()
     }
 }
 
-// Resumes every stem paused by PauseAll() - Start() on a voice whose buffer
-// is still queued (never flushed) simply continues submitting from wherever
-// XAudio2 left off, with no reseek needed.
+// Resumes every stem paused by PauseAll() - Start() on a voice whose buffer is still queued
+// continues from where XAudio2 left off, no reseek needed.
 void AudioEngine::ResumeAll()
 {
     for (Stem& stem : m_stems)
@@ -460,7 +425,6 @@ void AudioEngine::ResumeAll()
     }
 }
 
-// Returns a stem's current voice volume (1.0 = unity gain), or -1.0 if the handle is invalid.
 float AudioEngine::GetVolume(StemHandle stemHandle) const
 {
     if (!stemHandle.IsValid() || stemHandle.value >= static_cast<int>(m_stems.size()))
@@ -479,7 +443,6 @@ float AudioEngine::GetVolume(StemHandle stemHandle) const
     return volume;
 }
 
-// Returns how many seconds of audio have played for a stem, for clock resync.
 double AudioEngine::GetPositionSeconds(StemHandle stemHandle) const
 {
     if (!stemHandle.IsValid() || stemHandle.value >= static_cast<int>(m_stems.size()))
@@ -499,7 +462,6 @@ double AudioEngine::GetPositionSeconds(StemHandle stemHandle) const
     return static_cast<double>(samplesSinceLoopStart) / stem.format.nSamplesPerSec;
 }
 
-// Returns whether a stem's voice is still actively producing audio.
 bool AudioEngine::IsPlaying(StemHandle stemHandle) const
 {
     if (!stemHandle.IsValid() || stemHandle.value >= static_cast<int>(m_stems.size()))
@@ -518,7 +480,6 @@ bool AudioEngine::IsPlaying(StemHandle stemHandle) const
     return state.BuffersQueued > 0;
 }
 
-// Returns a stem's total duration in seconds, measured from its actual loaded audio data.
 double AudioEngine::GetStemDurationSeconds(StemHandle stemHandle) const
 {
     if (!stemHandle.IsValid() || stemHandle.value >= static_cast<int>(m_stems.size()))
@@ -535,7 +496,6 @@ double AudioEngine::GetStemDurationSeconds(StemHandle stemHandle) const
     return static_cast<double>(GetTotalFrames(stem)) / stem.format.nSamplesPerSec;
 }
 
-// Loads a short PCM WAV file for one-shot playback - see the header's own comment.
 SfxHandle AudioEngine::LoadSfx(const std::wstring& wavFilePath)
 {
     if (!m_xaudio2)
@@ -565,7 +525,6 @@ SfxHandle AudioEngine::LoadSfx(const std::wstring& wavFilePath)
     return SfxHandle{static_cast<int>(m_sfx.size()) - 1};
 }
 
-// Plays sfx once, fire-and-forget, from the next voice in its pool - see the header's own comment.
 void AudioEngine::PlaySfx(SfxHandle sfx)
 {
     if (!sfx.IsValid() || sfx.value >= static_cast<int>(m_sfx.size()))
@@ -600,7 +559,6 @@ void AudioEngine::PlaySfx(SfxHandle sfx)
     voice->Start();
 }
 
-// Returns a stem's total length in sample frames, derived from its PCM data size.
 UINT32 AudioEngine::GetTotalFrames(const Stem& stem)
 {
     if (stem.format.nBlockAlign == 0)

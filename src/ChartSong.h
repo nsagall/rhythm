@@ -8,111 +8,87 @@
 // Which of the four block kinds a section is.
 enum class SectionKind
 {
-    Learn,      // [learn]: judge presses/releases against the clip, exactly like today's single-clip flow
-    Break,      // [break]: stop everything else playing, play this clip, block until loop_count loops finish
-    Reset,      // [reset]: stop everything else looping, then advance immediately (no clip, no pause - see ChartSong::OriginBeat()'s own comment)
-    Background, // [background]: queue this clip to start playing (without stopping anything) when the *next* section begins
+    Learn,      // [learn]: judge presses/releases against the clip.
+    Break,      // [break]: stop everything else, play this clip, block until loop_count loops finish.
+    Reset,      // [reset]: stop everything else looping, then advance immediately (no clip, no pause).
+    Background, // [background]: queue this clip to start (without stopping anything) when the *next* section begins.
 };
 
-// One step of actual gameplay, processed in declared order - clips alone
-// do nothing; only sections drive the song. clipIndex is resolved at
-// parse time to an index into ChartSong::Clips(), or -1 for a Reset section
-// (the only kind with no clip).
+// One step of actual gameplay, processed in declared order. clipIndex is resolved at parse time to
+// an index into ChartSong::Clips(), or -1 for a Reset section (the only kind with no clip).
 struct ChartSection
 {
     int clipIndex = -1;
     SectionKind kind = SectionKind::Learn;
-    int loopCount = 1; // minimum number of times the clip must loop; see SectionKind-specific semantics in GameSession
+    int loopCount = 1; // Minimum number of times the clip must loop; exact meaning is SectionKind-specific.
 };
 
-// A full song: tempo/time signature, the pool of reusable clips, and the
-// ordered list of sections that actually drives gameplay. Fields are private,
-// populated only by Load() below - everyone else only ever reads a ChartSong,
-// via the getters here, except GameSession's own post-parse loading pipeline
-// (attaching audio-engine-measured stem durations, easy mode, pattern
-// widening), which needs MutableClips() to attach those to each clip in place.
+// A full song: tempo/time signature, the pool of reusable clips, and the ordered list of sections
+// that drives gameplay. Fields are private and populated only by Load(). Everyone else reads a
+// ChartSong through the getters, except GameSession's post-parse loading pipeline, which needs
+// MutableClips() to attach measured stem durations / easy mode / pattern widening in place.
 class ChartSong
 {
 public:
     const std::wstring& Title() const { return m_title; }
     double Bpm() const { return m_bpm; }
-    int BeatsPerBar() const { return m_beatsPerBar; } // the time_signature field's numerator (N in "N/D")
-    // The time_signature field's denominator (D in "N/D") - retained purely
-    // so a caller that needs to redisplay/re-save the chart's own declared
-    // time signature (see EditorChartIO) doesn't need to re-derive or
-    // re-parse it separately; nothing in judging/timing ever reads this,
-    // only BeatsPerBar() does.
+    int BeatsPerBar() const { return m_beatsPerBar; } // The time_signature numerator (N in "N/D").
+    // The time_signature denominator (D in "N/D"). Retained only so a caller redisplaying or
+    // re-saving the chart (EditorChartIO) needn't re-parse it; judging/timing never read this.
     int TimeSignatureDenominator() const { return m_timeSignatureDenominator; }
-    // Default press/release judging tolerance for any clip that doesn't
-    // declare its own start_tolerance_ms/release_tolerance_ms override.
+    // Default press/release judging tolerance for a clip that declares no
+    // start_tolerance_ms/release_tolerance_ms override of its own.
     double StartToleranceMs() const { return m_startToleranceMs; }
     double ReleaseToleranceMs() const { return m_releaseToleranceMs; }
     const std::vector<ChartClip>& Clips() const { return m_clips; }
     const std::vector<ChartSection>& Sections() const { return m_sections; }
 
-    // Mutable access to individual clips, for GameSession::LoadChart's own post-parse pipeline
-    // (attaching audio-engine-measured stem durations, easy mode, and pattern widening) - Load()
-    // below already fully resolves everything parsing itself is responsible for; nothing else
-    // should need this.
+    // Mutable access to individual clips, for GameSession::LoadChart's post-parse pipeline
+    // (measured stem durations, easy mode, pattern widening). Nothing else should need this.
     std::vector<ChartClip>& MutableClips() { return m_clips; }
 
-    // Parses and validates a .chart text file into *this - the only way a
-    // chart ever becomes a ChartSong; nothing else in this codebase
-    // constructs one by hand. Returns false if the file can't be opened or
-    // fails validation - outErrors then holds a human-readable message for
-    // every problem found (unsupported fields, wrong-typed or out-of-range
-    // values, a malformed time signature, missing required fields, a
-    // referenced stem/MIDI file that doesn't exist or can't be parsed, a
-    // duplicate clip name, a section referencing an unknown clip, an
-    // unrecognized block header, or a chart with no
-    // [learn]/[break]/[reset]/[background] blocks at all). On failure *this
-    // is left exactly as it was before the call - a partially-parsed chart
-    // is never left half-applied. On success outErrors is empty and *this
-    // holds the fully parsed/validated song.
+    // Parses and validates a .chart text file into *this - the only way a chart becomes a
+    // ChartSong.
+    //   chartFilePath - path to the .chart text file.
+    //   outErrors     - on failure, one human-readable message per problem found (unsupported
+    //                   fields, wrong-typed or out-of-range values, malformed time signature,
+    //                   missing required fields, a missing/unparsable stem or MIDI file, a
+    //                   duplicate clip name, a section referencing an unknown clip, an unrecognized
+    //                   block header, or no [learn]/[break]/[reset]/[background] blocks at all).
+    // Returns false if the file can't be opened or fails validation, leaving *this exactly as it
+    // was before the call. On success outErrors is empty and *this holds the parsed/validated song.
     bool Load(const std::wstring& chartFilePath, std::vector<std::wstring>& outErrors);
 
     // ---------------------------------------------------------------
-    // Per-playthrough timing state - unlike every other member on this
-    // class, NOT chart content, and untouched by Load(). Kept here rather
-    // than on GameSession because GameSession owns exactly one ChartSong at
-    // a time (see its own m_song) and replaces it wholesale on every
-    // LoadChart(), so a fresh playthrough already gets a fresh instance of
-    // this state for free, with no separate reset path needed on
-    // GameSession's own side. GameSession::BeginSection calls
-    // BeginPlaythrough() the moment section 0 actually begins (letting a
-    // replay of the same chart re-anchor without a fresh LoadChart());
-    // BlockSchedule::Build (the editor's offline analytical scheduler, whose
-    // own timeline has no count-in) anchors it to 0.0 - see its own comment.
+    // Per-playthrough timing state - NOT chart content, and untouched by Load(). Kept here rather
+    // than on GameSession because GameSession replaces its ChartSong wholesale on every LoadChart(),
+    // so a fresh playthrough gets fresh state for free. GameSession::BeginSection calls
+    // BeginPlaythrough() the moment section 0 begins (so a replay of the same chart re-anchors
+    // without a fresh LoadChart()); BlockSchedule::Build (the editor's offline scheduler, which has
+    // no count-in) anchors it to 0.0.
     // ---------------------------------------------------------------
 
-    // (Re)anchors a playthrough: wallClockSecondsAtBeatZero becomes this
-    // playthrough's own beat 0 (see AbsoluteBeatToSeconds/
-    // SecondsToAbsoluteBeat), and the bar-alignment origin resets to that
-    // same beat.
+    // (Re)anchors a playthrough.
+    //   wallClockSecondsAtBeatZero - becomes this playthrough's own beat 0; the bar-alignment
+    //                                origin resets to that same beat.
     void BeginPlaythrough(double wallClockSecondsAtBeatZero)
     {
         m_songStartSeconds = wallClockSecondsAtBeatZero;
         m_originBeat = 0;
     }
 
-    // The current bar-alignment origin, as a whole number of beats since
-    // this playthrough's own beat 0 (a beat before that - e.g. during the
-    // count-in - is simply negative, not a separate case). Integral because
-    // the origin is only ever (re)anchored to an already beat-aligned
-    // instant (a Reset/Break's own scheduled beat, or BeginPlaythrough's own
-    // 0) - never fractional, so storing it as one forecloses any
-    // float-drift risk in that invariant. Reset to whatever beat gameplay is
-    // at each time a Reset or Break section is reached (see
-    // GameSession::BeginSection/BlockSchedule::Build's own Reset/Break cases
-    // for why re-anchoring there is always safe) - a Learn or Background
-    // section never touches it.
+    // The current bar-alignment origin, as a whole number of beats since this playthrough's own
+    // beat 0 (a beat before that - e.g. during the count-in - is simply negative). Integral because
+    // the origin is only ever anchored to an already beat-aligned instant (a Reset/Break's
+    // scheduled beat, or BeginPlaythrough's 0), so storing it as an integer forecloses float drift.
+    // Re-anchored to the current beat each time a Reset or Break section is reached; a Learn or
+    // Background section never touches it.
     long long OriginBeat() const { return m_originBeat; }
     void SetOriginBeat(long long beat) { m_originBeat = beat; }
 
-    // This playthrough's own beat<->seconds conversions, both measured from
-    // BeginPlaythrough's own wallClockSecondsAtBeatZero - centralizes the
-    // 60.0/Bpm() arithmetic so it's never repeated (or drifted) at each of
-    // its many callers.
+    // This playthrough's beat<->seconds conversions, both measured from BeginPlaythrough's
+    // wallClockSecondsAtBeatZero. Centralizes the 60.0/Bpm() arithmetic so it isn't repeated (or
+    // drifted) across its many callers.
     double SecondsPerBeat() const { return 60.0 / m_bpm; }
     double AbsoluteBeatToSeconds(double absoluteBeat) const
     {
@@ -123,8 +99,7 @@ public:
         return (wallClockSeconds - m_songStartSeconds) / SecondsPerBeat();
     }
 
-    // OriginBeat(), converted to a wall-clock second - shorthand for
-    // AbsoluteBeatToSeconds(static_cast<double>(OriginBeat())).
+    // OriginBeat() converted to a wall-clock second.
     double OriginSeconds() const { return AbsoluteBeatToSeconds(static_cast<double>(m_originBeat)); }
 
 private:
@@ -137,8 +112,7 @@ private:
     std::vector<ChartClip> m_clips;
     std::vector<ChartSection> m_sections;
 
-    // See the "per-playthrough timing state" section above - not chart
-    // content, not touched by Load().
+    // Per-playthrough timing state (see the section above) - not chart content, not touched by Load().
     double m_songStartSeconds = 0.0;
     long long m_originBeat = 0;
 };

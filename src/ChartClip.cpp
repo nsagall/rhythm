@@ -6,10 +6,9 @@
 
 namespace
 {
-// How much a MIDI pattern's declared length is allowed to exceed its stem's measured audio
-// length before ClipFitsOneLoop rejects it - a real stem's duration essentially never lands
-// exactly on a beat-derived value, so this absorbs ordinary export/rounding slop. Also reused
-// as ComputeLoopFloorSeconds's own alignment-assert tolerance.
+// Slop allowed between a MIDI pattern's declared length and its stem's measured audio length,
+// since a real stem's duration essentially never lands exactly on a beat-derived value. Used by
+// ClipFitsOneLoop and as ComputeLoopFloorSeconds's alignment-assert tolerance.
 constexpr double c_ClipLengthToleranceSeconds = 0.1;
 
 // True if wallClockSeconds sits within c_ClipLengthToleranceSeconds of one of the clip's own
@@ -106,22 +105,11 @@ double ChartClip::NextOnsetAfter(double originBeat, double afterBeat, int lane) 
 
     double span = m_spanBeats;
     double localAfterBeat = afterBeat - originBeat;
-    // The +1e-9 here (not just on the "candidate > localAfterBeat" check
-    // below) matters: afterBeat is usually itself a previous call's own
-    // returned value (originBeat + someBarIndex * span + note.startBeat),
-    // fed straight back in as the next call's afterBeat - so
-    // localAfterBeat is meant to land exactly on a bar boundary here more
-    // often than not, not just close to one. Ordinary floating-point
-    // roundoff in that addition/subtraction round trip can leave it a few
-    // ULPs *below* the boundary instead of exactly on it - and an
-    // unguarded floor() rounds that down into the *previous* bar, handing
-    // back the exact same beat this call was given in the first place
-    // (confirmed real repro: NextOnsetAfter looping forever on one beat,
-    // every call returning its own input unchanged, once local drift
-    // pushed a boundary-exact value a hair under). Nudging up first before
-    // flooring is safe - real beat differences are never anywhere close to
-    // 1e-9 - and keeps this in the same bar the unguarded "candidate >
-    // localAfterBeat + 1e-9" comparison below already treats it as being in.
+    // afterBeat is usually a previous call's returned value fed straight back in, so localAfterBeat
+    // is meant to land exactly on a bar boundary. Roundoff can leave it a few ULPs below one, and
+    // an unguarded floor() would drop it into the previous bar and return this call's own input
+    // unchanged (an infinite loop). Nudging up before flooring is safe - real beat differences are
+    // never close to 1e-9.
     long long barIndex = static_cast<long long>(std::floor((localAfterBeat + 1e-9) / span));
 
     for (const LaneNote& note : notes)
@@ -164,11 +152,8 @@ void ChartClip::ExpandLaneNotesToFillClip(double stemDurationSeconds, double bpm
     }
 
     double originalSpan = m_spanBeats;
-    // Same tolerance ClipFitsOneLoop uses, in beats - a real stem's measured
-    // duration essentially never lands exactly on a beat-derived value, so
-    // "does this whole repeat fit" needs the same measurement-slop
-    // allowance, not the tighter floating-point-safety epsilons used
-    // elsewhere below (which are about roundoff, not measurement noise).
+    // Measurement-slop tolerance (same as ClipFitsOneLoop), in beats - not the tighter roundoff
+    // epsilons used elsewhere here.
     double toleranceBeats = c_ClipLengthToleranceSeconds / secondsPerBeat;
     for (int lane = 0; lane < c_LaneCount; ++lane)
     {
@@ -181,11 +166,8 @@ void ChartClip::ExpandLaneNotesToFillClip(double stemDurationSeconds, double bpm
         std::vector<LaneNote> expanded;
         for (double repeatStart = 0.0; repeatStart < clipBeats - 1e-9; repeatStart += originalSpan)
         {
-            // Only a repeat whose own full span entirely fits before the
-            // audio wraps gets tiled in - see this function's own header
-            // comment for why a partial leftover is left silent instead.
-            // repeatStart only ever grows from here, so once one repeat
-            // doesn't fit, no later one will either.
+            // Only a repeat whose full span fits before the audio wraps gets tiled in; a partial
+            // leftover is left silent. repeatStart only grows, so once one doesn't fit, none will.
             if (repeatStart + originalSpan > clipBeats + toleranceBeats)
             {
                 break;
@@ -217,10 +199,8 @@ void ChartClip::ApplyEasyModeTransform(double bpm)
     double globalMinGapBeats = EasyModeMsToBeats(c_EasyModeGlobalMinGapMs, bpm);
     double durationFloorBeats = EasyModeMsToBeats(c_EasyModeNoteDurationFloorMs, bpm);
 
-    // Stage 1: per-lane density thinning. A surviving note's startBeat is
-    // never moved - only which notes survive changes - so a lane whose
-    // original gaps are already all >= perLaneMinGapBeats passes through
-    // completely untouched (see CircularGreedyThinIndices's own comment).
+    // Stage 1: per-lane density thinning. Only which notes survive changes, never a startBeat, so
+    // an already-adequately-spaced lane passes through untouched.
     std::vector<EasyModeNote> perLaneSurvivors[c_LaneCount];
     for (int lane = 0; lane < c_LaneCount; ++lane)
     {
@@ -241,13 +221,10 @@ void ChartClip::ApplyEasyModeTransform(double bpm)
         }
     }
 
-    // Stage 2: cross-lane thinning. Merge every lane's stage-1 survivors
-    // into one time-ordered stream - ties broken by lane index so a
-    // would-be chord deterministically favors the lowest lane, matching
-    // stage 3's own tie-break below - and thin again with a tighter gap.
-    // This is what catches a pattern that rapidly alternates lanes (e.g. a
-    // cycling arpeggio) where any single lane looks sparse on its own but
-    // the combined stream doesn't.
+    // Stage 2: cross-lane thinning. Merge every lane's stage-1 survivors into one time-ordered
+    // stream (ties broken by lane index, favoring the lowest lane, matching stage 3) and thin again
+    // with a tighter gap. Catches patterns that rapidly alternate lanes, where each lane looks
+    // sparse alone but the combined stream doesn't.
     std::vector<EasyModeNote> merged;
     for (int lane = 0; lane < c_LaneCount; ++lane)
     {
@@ -277,15 +254,10 @@ void ChartClip::ApplyEasyModeTransform(double bpm)
         globallyThinned.push_back(merged[index]);
     }
 
-    // Stage 3: chord collapse - a defensive backstop, independent of
-    // however globalMinGapBeats gets tuned later. Any run of notes still
-    // within c_EasyModeChordEpsilonBeats of the same beat (regardless of
-    // lane) survives only as its lowest-indexed lane's note - lanes are
-    // pitch-ordered ascending, so this keeps a chord's root/bass note.
-    // globallyThinned is already sorted (startBeat asc, lane asc) by the
-    // merge above and CircularGreedyThinIndices preserves that relative
-    // order, so a run of near-simultaneous notes is always contiguous here
-    // with the lowest lane first.
+    // Stage 3: chord collapse - a defensive backstop independent of globalMinGapBeats tuning. Any
+    // run of notes within c_EasyModeChordEpsilonBeats of the same beat survives only as its
+    // lowest-indexed lane's note (lanes are pitch-ordered, so this keeps the chord's bass note).
+    // globallyThinned is already sorted (startBeat asc, lane asc), so such a run is contiguous here.
     std::vector<EasyModeNote> collapsed;
     collapsed.reserve(globallyThinned.size());
     for (const EasyModeNote& note : globallyThinned)
@@ -297,16 +269,10 @@ void ChartClip::ApplyEasyModeTransform(double bpm)
         collapsed.push_back(note);
     }
 
-    // Stage 4: duration. Each surviving note keeps its own authored length
-    // instead of a fixed blip, clamped to a floor (never imperceptibly
-    // short) and a ceiling of "don't run into the next surviving note in
-    // this lane" - computed circularly (a lane's last note is bounded by
-    // its own first note, one span later), since ExpandLaneNotesToFillClip
-    // tiles whole repetitions independently and won't clip an overrun
-    // against the next repetition. perLaneMinGapMs is always comfortably
-    // larger than c_EasyModeNoteDurationFloorMs, so this ceiling can never
-    // actually fall below the floor in practice - the std::max below is
-    // just defensive insurance against changing those constants later.
+    // Stage 4: duration. Each surviving note keeps its authored length, clamped to a floor (never
+    // imperceptibly short) and a ceiling of "don't run into this lane's next surviving note" -
+    // computed circularly (the last note is bounded by the first, one span later). perLaneMinGapMs
+    // always exceeds the floor, so the std::max below is just insurance against retuning those.
     std::vector<LaneNote> perLaneFinal[c_LaneCount];
     for (const EasyModeNote& note : collapsed)
     {
@@ -334,17 +300,12 @@ double ChartClip::ComputeLearnAdvanceSeconds(double originSeconds, double sectio
         return sectionStartSeconds;
     }
 
-    // A Learn section always (re)starts its own clip fresh - never joins an
-    // already-open instance from an earlier section (ValidateArrangementAlignment
-    // rejects any chart where it would) - so the clip's own loop start is just
-    // sectionStartSeconds itself; ComputeLoopFloorSeconds's own assert confirms
-    // it's already a real loop boundary.
+    // A Learn section always restarts its clip fresh (ValidateArrangementAlignment enforces this),
+    // so the loop start is sectionStartSeconds itself.
     double advanceSeconds = ComputeLoopFloorSeconds(originSeconds, sectionStartSeconds, stemDuration, loopCount);
 
-    // Guarantee at least a full tFallSeconds of real time between the
-    // section starting and the next one actually starting, extended by
-    // whole extra loops rather than an arbitrary pause, so the current
-    // clip's audio never gets cut mid-loop.
+    // Guarantee at least tFallSeconds between this section starting and the next, extended by whole
+    // loops rather than a pause so the audio is never cut mid-loop.
     while (advanceSeconds - sectionStartSeconds < tFallSeconds)
     {
         advanceSeconds += stemDuration;
@@ -367,12 +328,8 @@ ChartClip::BreakAdvance ChartClip::ComputeBreakAdvance(double originSeconds, dou
     BreakAdvance result;
     result.loopCount = std::max(requestedLoopCount, 1);
 
-    // A break's loop_count is already known right now (unlike a learn
-    // clip's, whose eventual stop time depends on future player input),
-    // but loop_count alone isn't necessarily enough to cover tFallSeconds:
-    // extend the loop count itself (not just the wait) until it is, or the
-    // voice would self-stop early and leave real silence for whatever's
-    // left of the wait instead of playing audio the whole time.
+    // loop_count alone may not cover tFallSeconds. Extend the loop count itself (not just the wait)
+    // until it does, or the voice self-stops early and leaves silence for the rest of the wait.
     while (stemDuration > 0.0 && ComputeLoopFloorSeconds(originSeconds, loopStartSeconds, stemDuration,
                                                            result.loopCount) - loopStartSeconds < tFallSeconds)
     {
@@ -427,8 +384,7 @@ std::vector<double> ChartClip::OnsetsInRange(double originBeat, double afterBeat
         return result;
     }
 
-    // Same epsilon-nudged bar-index convention as NextOnsetAfter - see its
-    // own comment for why an unguarded floor() is unsafe here.
+    // Same epsilon-nudged bar-index convention as NextOnsetAfter.
     double localAfter = afterBeatExclusive - originBeat;
     double localUpto = uptoBeatInclusive - originBeat;
     long long firstBar = static_cast<long long>(std::floor((localAfter + 1e-9) / spanBeats));
@@ -452,9 +408,8 @@ std::vector<double> ChartClip::OnsetsInRange(double originBeat, double afterBeat
 namespace
 {
 
-// Tracks the arrangement position ValidateArrangementAlignment needs while
-// walking a chart's sections in order - see the class comment on ChartClip
-// for what "exact" vs. the ambiguous fallback mean and why.
+// The arrangement position ValidateArrangementAlignment tracks while walking a chart's sections in
+// order. "exact" means a precise beat offset is known; the ambiguous fallback only knows a divisor.
 struct ArrangementWalkState
 {
     bool open = false;
@@ -477,20 +432,13 @@ bool ChartClip::ValidateArrangementAlignment(const ChartSong& song,
     }
     double secondsPerBeat = song.SecondsPerBeat();
     double tFallSeconds = c_NoteFallBeats * secondsPerBeat;
-    // Same slop ExpandLaneNotesToFillClip/ClipFitsOneLoop already tolerate
-    // between a clip's declared beat length and its real, audio-measured one
-    // - needed only for drivingSpanBeats below (derived from real stem
-    // duration), never for authoredSpanBeats (ChartSong::Load's
-    // AlignToBarBoundary output, already an exact whole multiple of
-    // beatsPerBar with no audio-measurement slop of its own).
+    // Audio-measurement slop, needed only for drivingSpanBeats below (derived from real stem
+    // duration); authoredSpanBeats is already an exact multiple of beatsPerBar.
     double toleranceBeats = c_ClipLengthToleranceSeconds / secondsPerBeat;
 
-    // Every judged clip's two lengths, each confirmed a whole number of bars
-    // up front so every later check is exact integer beats, never float bar
-    // division - see ClipAlignmentInfo's own comment for why a clip needs
-    // both, and which one governs which role below. A clip whose stem isn't
-    // longer than its authored pattern (no ExpandLaneNotesToFillClip
-    // widening would happen) has an identical value in both maps.
+    // Every judged clip's two lengths, each confirmed a whole number of bars up front so every
+    // later check is exact integer beats. A clip whose stem isn't longer than its authored pattern
+    // has the same value in both maps.
     std::unordered_map<const ChartClip*, long long> authoredSpanBeats;
     std::unordered_map<const ChartClip*, long long> drivingSpanBeats;
     for (const ChartClip& clip : song.Clips())
@@ -511,9 +459,8 @@ bool ChartClip::ValidateArrangementAlignment(const ChartSong& song,
         }
         authoredSpanBeats[&clip] = authoredBars * song.BeatsPerBar();
 
-        // Mirrors ExpandLaneNotesToFillClip's own no-widening-needed check
-        // exactly, so this always agrees with whatever the real loading
-        // path actually does with this clip.
+        // Mirrors ExpandLaneNotesToFillClip's no-widening-needed check, so this agrees with the
+        // real loading path.
         double stemBeats = it->second.stemDurationSeconds / secondsPerBeat;
         double driving = (stemBeats <= authored + 1e-6) ? authored : stemBeats;
         long long drivingBars = static_cast<long long>(std::llround(driving / song.BeatsPerBar()));
@@ -533,12 +480,8 @@ bool ChartClip::ValidateArrangementAlignment(const ChartSong& song,
 
     ArrangementWalkState state;
 
-    // Validates clip joining right now (a no-op if it's already open, i.e.
-    // continuing an unbroken groove - already validated when it first
-    // joined) against its own AUTHORED length (see ClipAlignmentInfo's own
-    // comment for why the joining role uses this one, not drivingSpanBeats).
-    // Every clip without a pattern of its own (authoredSpanBeats has no
-    // entry) trivially passes - nothing to misalign.
+    // Validates a clip joining now against its AUTHORED length (no-op if it's already open, or has
+    // no pattern of its own).
     auto join = [&](const ChartClip* clip, size_t sectionOrdinal)
     {
         if (state.clipOpen[clip] || !authoredSpanBeats.count(clip))
@@ -607,16 +550,14 @@ bool ChartClip::ValidateArrangementAlignment(const ChartSong& song,
 
                 if (!clip->HasMidi())
                 {
-                    // No pattern to keep a bar grid against - nothing after
-                    // this can assume an exact position relative to it.
+                    // No pattern to keep a bar grid against.
                     state.open = false;
                     break;
                 }
                 if (state.exact)
                 {
-                    // Real advance, exactly as the live game/editor compute
-                    // it - not reimplemented here, so this can never drift
-                    // from what actually happens at runtime.
+                    // Real advance, computed via the shared function rather than reimplemented, so
+                    // it can't drift from runtime.
                     double localLoopStart = static_cast<double>(state.exactOffsetBeats) * secondsPerBeat;
                     BreakAdvance advance = ComputeBreakAdvance(0.0, localLoopStart, clipInfo.at(clip).stemDurationSeconds,
                                                                  section.loopCount, tFallSeconds);
@@ -624,24 +565,16 @@ bool ChartClip::ValidateArrangementAlignment(const ChartSong& song,
                 }
                 else
                 {
-                    // The DRIVING length, not the authored one - this is
-                    // what the break's own advance actually steps by (see
-                    // ClipAlignmentInfo's own comment).
+                    // The DRIVING length - what the break's advance actually steps by.
                     state.ambiguousDivisorBeats = drivingSpanBeats.at(clip);
                 }
                 break;
             }
 
             case SectionKind::Learn:
-                // A Learn section always (re)starts its own clip fresh
-                // (GameSession::BeginSection's Learn case, mirrored by
-                // BlockSchedule::Build) - it never joins a clip still open
-                // from an earlier, un-stopped section the way Background's
-                // own queued clips or a same-clip Break can. Catching that
-                // here, once, is what lets ComputeLearnAdvanceSeconds assume
-                // its clip's loop start is always exactly sectionStartSeconds,
-                // with no separate "already playing since earlier" instant to
-                // reconcile against - see its own doc comment.
+                // A Learn section always restarts its clip fresh; it never joins one still open
+                // from an earlier section. Enforcing that here lets ComputeLearnAdvanceSeconds
+                // assume its loop start is exactly sectionStartSeconds.
                 if (state.clipOpen[clip])
                 {
                     outErrors.push_back(L"section #" + std::to_wstring(i + 1) + L": clip '" + clip->Name() +
@@ -651,13 +584,9 @@ bool ChartClip::ValidateArrangementAlignment(const ChartSong& song,
                                          L"insert a [break] or [reset] before this section");
                 }
                 join(clip, i);
-                // From here until a Reset, the real advance depends on
-                // however many extra loops this player needs to reach
-                // hits_required - unbounded, so nothing after this can claim
-                // an exact position again, only a divisor of this clip's own
-                // DRIVING length (see join's own comment, and
-                // ClipAlignmentInfo's, for why this is deliberately not the
-                // same length join() itself just checked this clip against).
+                // From here until a Reset the real advance is unbounded (it depends on how many
+                // loops the player needs to reach hits_required), so nothing after this can claim
+                // an exact position - only a divisor of this clip's DRIVING length.
                 state.exact = false;
                 state.ambiguousDivisorBeats = drivingSpanBeats.at(clip);
                 break;
