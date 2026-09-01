@@ -1,7 +1,7 @@
 #pragma once
 
-#include "BlockPlayer.h"
-#include "EditorDocument.h"
+class BlockPlayer;
+struct EditorDocument;
 
 // The upper-right inspector for the block selected in BlockTimeline - shows/edits kind, clip, and
 // loop_count, plus a read-only readout of the matching BlockSchedule::Entry's computed timing when

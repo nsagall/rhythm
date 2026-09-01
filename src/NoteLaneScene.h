@@ -4,11 +4,9 @@
 #include <vector>
 #include <windows.h>
 
-#include "Colors.h"
-#include "LaneConfig.h"
+#include "Colors.h"       // ClipColor::c_Neutral is a default member initializer in ClipPlaythrough.
+#include "LaneConfig.h"   // c_LaneCount sizes NoteLaneScene::receptors.
 
-// Forward declared only so ClipPlaythrough::chartClip can be a pointer without pulling ChartClip.h
-// into every renderer. Never dereferenced by a renderer.
 class ChartClip;
 
 // The contract between NoteLaneModel (logic) and whatever draws it (NoteLaneRenderer.h). Everything

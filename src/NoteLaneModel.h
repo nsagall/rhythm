@@ -3,8 +3,11 @@
 #include <memory>
 #include <vector>
 
-#include "GameSession.h"
-#include "NoteLaneScene.h"
+#include "NoteLaneScene.h"  // ClipPlaythrough is held by value (via unique_ptr) in the members below.
+
+class GameSession;
+class ChartClip;
+struct LaneNote;
 
 // Turns one GameSession's current judging/passing state into a NoteLaneScene - the only part of the
 // note lane that knows game rules (judging, passing, section/clip identity, phase timing). Never

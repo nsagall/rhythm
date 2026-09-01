@@ -3,7 +3,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "ChartSong.h"
+#include "ChartSong.h"  // SectionKind enum used by value in Entry.
 
 // An analytical, seekable schedule of what a chart's blocks would do if a player hit every note
 // correctly. Built once from a fully-resolved ChartSong via Build(), then queried at any

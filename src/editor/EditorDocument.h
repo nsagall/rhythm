@@ -3,9 +3,9 @@
 #include <string>
 #include <vector>
 
-#include "ChartSong.h"
-#include "ChartMidi.h"
-#include "LaneConfig.h"
+#include "ChartSong.h"    // SectionKind / LearnMode enums used by value in EditorBlock / EditorClip.
+#include "ChartMidi.h"    // LaneNote stored by value in EditorClip::laneNotes.
+#include "LaneConfig.h"   // c_LaneCount sizes EditorClip::laneNotes.
 
 // The editor's in-memory representation of a chart being assembled - a separate type from the
 // runtime ChartSong/ChartClip/ChartSection, which are produced by parsing an already-valid chart

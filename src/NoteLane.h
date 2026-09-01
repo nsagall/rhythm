@@ -3,10 +3,10 @@
 #include <memory>
 #include <windows.h>
 
-#include "GameSession.h"
-#include "LaneConfig.h"
-#include "NoteLaneModel.h"
-#include "NoteLaneRenderer.h"
+#include "GameSession.h"    // JudgementResult and GameSession::HudField enums are used by value below.
+#include "NoteLaneModel.h"  // NoteLaneModel m_model is a member.
+
+class INoteLaneRenderer;
 
 // Owns the note lane's Win32 timer/repaint plumbing and wires NoteLaneModel (game-rule logic) to
 // an INoteLaneRenderer (visuals), neither of which knows the other exists. Swap m_renderer to
@@ -15,6 +15,7 @@ class NoteLane
 {
 public:
     NoteLane();
+    ~NoteLane();
 
     // Stores the window that owns this lane's timer and repaints.
     void Attach(HWND hwnd);

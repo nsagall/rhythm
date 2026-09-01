@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+// Every include below is for a by-value member of EditorApp.
 #include "AudioEngine.h"
 #include "BlockPlayer.h"
 #include "BlockPropertiesPanel.h"

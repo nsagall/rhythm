@@ -3,11 +3,11 @@
 #include <string>
 #include <vector>
 
-#include "EditorDocument.h"
+struct EditorDocument;
+class ChartSong;
 
-// All disk I/O and .chart <-> EditorDocument conversion for the editor.
-// Kept separate from EditorDocument.h so the plain-data document model has
-// no I/O dependencies of its own.
+// All disk I/O and .chart <-> EditorDocument conversion for the editor. Kept separate from
+// EditorDocument.h so the plain-data document model has no I/O dependencies of its own.
 namespace EditorChartIO
 {
     // Parses chartFilePath via the real ChartSong::Load and, on success, converts the result into

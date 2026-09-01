@@ -5,6 +5,8 @@
 #include <cstring>
 #include <cwchar>
 
+#include "BlockPlayer.h"
+#include "EditorDocument.h"
 #include "Utf8.h"
 
 std::wstring FormatMinutesSeconds(double seconds)

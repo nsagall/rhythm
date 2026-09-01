@@ -6,7 +6,9 @@
 #include <fstream>
 #include <utility>
 
+#include "ChartSong.h"
 #include "ChartTextUtil.h"
+#include "EditorDocument.h"
 
 namespace
 {

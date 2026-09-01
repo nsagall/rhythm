@@ -4,6 +4,7 @@
 
 #include <vector>
 
+// Every include below is for a by-value member of MainWindow (SongLibrary.h for SongEntry in a vector).
 #include "AudioEngine.h"
 #include "GamepadInputManager.h"
 #include "GameSession.h"

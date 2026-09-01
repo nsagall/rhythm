@@ -2,7 +2,7 @@
 
 #include <vector>
 
-#include "EditorDocument.h"
+#include "EditorDocument.h"  // EditorDocument stored by value in m_snapshots and copied inline.
 
 // Snapshot-based undo/redo over EditorDocument: a vector of full document copies plus a cursor.
 // EditorDocument is a plain value type, so deep-copying it per edit is cheap and avoids hand-writing

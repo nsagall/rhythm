@@ -4,7 +4,8 @@
 
 #include <string>
 
-#include "EditorDocument.h"
+struct EditorDocument;
+struct EditorClip;
 
 // Clip library UI: a list of the document's clips on the left, an inspector for the selected one on
 // the right. Owns its own selection and modal-flow state.

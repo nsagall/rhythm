@@ -5,6 +5,9 @@
 
 #include <imgui.h>
 
+#include "BlockPlayer.h"
+#include "BlockSchedule.h"
+#include "EditorDocument.h"
 #include "Utf8.h"
 
 namespace

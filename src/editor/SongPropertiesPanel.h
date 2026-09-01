@@ -2,8 +2,8 @@
 
 #include <string>
 
-#include "BlockPlayer.h"
-#include "EditorDocument.h"
+class BlockPlayer;
+struct EditorDocument;
 
 // Formats seconds as "3:45" - never plain seconds. Shared with EditorApp's "Estimated length"
 // readout so the two stay worded identically.

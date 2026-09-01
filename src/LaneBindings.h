@@ -2,7 +2,7 @@
 
 #include <windows.h>
 
-#include "LaneConfig.h"
+#include "LaneConfig.h"  // c_LaneCount sizes c_LaneDefaultKeys and m_custom.
 
 class Settings;
 

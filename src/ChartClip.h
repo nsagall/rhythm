@@ -4,8 +4,8 @@
 #include <unordered_map>
 #include <vector>
 
-#include "ChartMidi.h"
-#include "LaneConfig.h"
+#include "ChartMidi.h"    // LaneNote stored by value in m_laneNotes.
+#include "LaneConfig.h"   // c_LaneCount sizes m_laneNotes.
 
 // How a [learn] clip's judging responds to a miss.
 enum class LearnMode
@@ -14,8 +14,6 @@ enum class LearnMode
     DontFail, // The streak is reversible: a miss drops back to failing, re-earning it restores passing.
 };
 
-// Forward declared for ValidateArrangementAlignment's parameter; ChartSong.h can't be included
-// here because it holds a std::vector<ChartClip>.
 class ChartSong;
 
 // Amount to subtract from a fresh join's scheduled beat when querying NextOnsetAfter, so the query

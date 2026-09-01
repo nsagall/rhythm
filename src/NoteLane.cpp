@@ -14,6 +14,8 @@ NoteLane::NoteLane() : m_renderer(std::make_unique<NoteLaneGdiRenderer>())
 {
 }
 
+NoteLane::~NoteLane() = default;
+
 void NoteLane::Attach(HWND hwnd)
 {
     m_hwnd = hwnd;

@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "EditorChartIO.h"
+#include "EditorDocument.h"
 
 BlockPlayer::BlockPlayer(AudioEngine& audioEngine) : m_audioEngine(audioEngine)
 {

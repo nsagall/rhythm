@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-#include "ChartClip.h"
+#include "ChartClip.h"  // ChartClip stored by value in m_clips.
 
 // Which of the four block kinds a section is.
 enum class SectionKind

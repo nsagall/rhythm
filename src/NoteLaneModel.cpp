@@ -4,6 +4,8 @@
 #include <cmath>
 #include <cstdio>
 
+#include "GameSession.h"
+
 namespace
 {
 

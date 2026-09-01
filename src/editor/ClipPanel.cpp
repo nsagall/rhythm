@@ -7,6 +7,7 @@
 #include <set>
 
 #include "ChartMidi.h"
+#include "EditorDocument.h"
 #include "FileDialogs.h"
 #include "Utf8.h"
 

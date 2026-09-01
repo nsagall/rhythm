@@ -2,9 +2,10 @@
 
 #include <vector>
 
-#include "ChartClip.h"
-#include "LaneConfig.h"
-#include "StreakTracker.h"
+#include "ChartClip.h"    // LearnMode enum used by value (m_mode member + constructor default).
+#include "LaneConfig.h"   // c_LaneCount sizes m_nextExpectedBeat / m_laneHolds.
+
+class StreakTracker;
 
 // Result of judging a specific press/release against a note.
 enum class JudgementResult

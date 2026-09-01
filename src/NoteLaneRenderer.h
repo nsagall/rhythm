@@ -2,8 +2,9 @@
 
 #include <windows.h>
 
-#include "GameSession.h"
-#include "NoteLaneScene.h"
+#include "GameSession.h"  // JudgementResult and GameSession::HudField enums are used by value below.
+
+struct NoteLaneScene;
 
 // The swap point for a different visual style: anything implementing this replaces
 // NoteLaneGdiRenderer with zero changes to NoteLaneModel or NoteLane, neither of which knows a

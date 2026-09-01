@@ -4,9 +4,11 @@
 #include <unordered_map>
 #include <vector>
 
-#include "AudioEngine.h"
-#include "BlockSchedule.h"
-#include "EditorDocument.h"
+#include "AudioEngine.h"    // StemHandle is stored by value in ClipStem and m_stemHandlesByClip.
+#include "BlockSchedule.h"  // BlockSchedule::Schedule m_schedule is a member.
+#include "ChartSong.h"      // ChartSong m_song is a member.
+
+struct EditorDocument;
 
 // Owns stems and the current BlockSchedule::Schedule; drives AudioEngine to match whatever
 // BlockSchedule::Seek says should be audible at the current playback position. Reproduces exactly

@@ -4,12 +4,12 @@
 #include <unordered_map>
 #include <vector>
 
-#include "AudioEngine.h"
-#include "ChartSong.h"
-#include "LaneConfig.h"
-#include "SectionInstance.h"
-#include "SongClock.h"
-#include "StreakTracker.h"
+#include "AudioEngine.h"     // StemHandle stored by value in m_stemHandles.
+#include "ChartSong.h"       // ChartSong m_song is a member; ClipInstance keyed in m_clipInstances.
+#include "LaneConfig.h"      // c_LaneCount sizes m_bufferedPress / m_autoScoreCursorBeat.
+#include "SectionInstance.h" // SectionInstance m_currentInstance + JudgementResult members/returns.
+#include "SongClock.h"       // SongClock m_clock is a member.
+#include "StreakTracker.h"   // StreakTracker m_streakTracker is a member.
 
 // The stages a game session moves through, in order, once per song.
 enum class GamePhase

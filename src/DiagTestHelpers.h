@@ -2,8 +2,7 @@
 
 #include <cmath>
 
-#include "ChartClip.h"
-#include "LaneConfig.h"
+#include "ChartClip.h"  // The inline helpers below call ChartClip methods and iterate LaneNote.
 
 // Not part of the real build - a shared header the standalone *DiagMain.cpp files #include instead
 // of each hand-copying a mirror of GameSession's private FindLaneNote.

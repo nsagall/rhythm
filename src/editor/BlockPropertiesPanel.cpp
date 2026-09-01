@@ -2,6 +2,8 @@
 
 #include <imgui.h>
 
+#include "BlockPlayer.h"
+#include "EditorDocument.h"
 #include "Utf8.h"
 
 namespace

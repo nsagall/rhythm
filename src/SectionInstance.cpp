@@ -2,6 +2,8 @@
 
 #include <cmath>
 
+#include "StreakTracker.h"
+
 SectionInstance::SectionInstance(int sectionIndex, LearnMode mode)
     : m_sectionIndex(sectionIndex), m_mode(mode), m_passing(mode == LearnMode::DontFail)
 {

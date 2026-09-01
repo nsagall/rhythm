@@ -3,8 +3,14 @@
 #include <set>
 #include <vector>
 
-#include "BlockPlayer.h"
-#include "EditorDocument.h"
+#include "EditorDocument.h"  // EditorBlock is stored by value in m_clipboard.
+
+class BlockPlayer;
+namespace BlockSchedule
+{
+struct Entry;
+struct Schedule;
+}
 
 // The horizontal, drag-and-drop-reorderable block timeline UI. Blocks flow left-to-right in
 // doc.blocks (gameplay) order. Clicking one selects it - SelectedBlockId() is the single "primary"

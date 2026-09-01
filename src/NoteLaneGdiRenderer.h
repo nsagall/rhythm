@@ -4,7 +4,8 @@
 #include <vector>
 #include <windows.h>
 
-#include "NoteLaneRenderer.h"
+#include "NoteLaneRenderer.h"  // INoteLaneRenderer is the base class.
+#include "NoteLaneScene.h"     // NoteVisualState enum used by value in ColorForNote.
 
 // GDI implementation of INoteLaneRenderer: layout math (beats/lanes -> pixels), every drawing call,
 // resource caching (brushes/pens/scratch alpha-blend buffer/HUD font), and every continuous

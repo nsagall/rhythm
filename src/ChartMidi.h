@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-#include "LaneConfig.h"
+#include "LaneConfig.h"  // c_LaneCount sizes MidiLaneData::lanes.
 
 // One note extracted from a clip's MIDI file for a single lane: start and duration, both in beats.
 // Ticks convert to beats via the file's division only; no tempo meta-events are read anywhere.
