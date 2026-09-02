@@ -11,8 +11,7 @@ struct LaneNote;
 
 // Turns one GameSession's current judging/passing state into a NoteLaneScene - the only part of the
 // note lane that knows game rules (judging, passing, section/clip identity, phase timing). Never
-// touches HDC/GDI or a pixel position, and owns no continuous animation state (see
-// NoteLaneRenderer.h), so a renderer can be swapped freely and this class's output inspected headlessly.
+// touches HDC/GDI or a pixel position, and owns no continuous animation state (that's the renderer's).
 class NoteLaneModel
 {
 public:
@@ -66,20 +65,17 @@ private:
     void UpdateClipInstances(const GameSession& session, double nowBeat);
 
     // Persistent (not rebuilt every frame) identity for the up-to-three clip playthroughs the note
-    // lane cares about. A fresh ClipPlaythrough is created only when a new playthrough begins -
-    // identified by (chartClip, startBeat) as a pair, since a clip looping in place keeps the same
-    // chartClip but starts a new playthrough. A preview that turns out right becomes that same
-    // instance, not an equivalent new one.
+    // lane cares about. A fresh ClipPlaythrough is created only when a new playthrough begins,
+    // identified by (chartClip, startBeat) as a pair - a clip looping in place keeps the same
+    // chartClip but starts a new playthrough. A preview that turns out right becomes that same instance.
 
     // The one being actively judged/shown right now - mirrors session.CurrentClip()'s identity
     // (null in Idle/CountIn). passing is refreshed from session every frame while non-null.
     std::unique_ptr<ClipPlaythrough> m_currentClip;
-    // Whatever m_currentClip held immediately before its last transition, so a renderer reacting to
-    // a handoff/lock-in has a stable place to find the outgoing clip's identity.
+    // Whatever m_currentClip held immediately before its last transition.
     std::unique_ptr<ClipPlaythrough> m_previousClip;
-    // Whatever playthrough is predicted to become current next. Mirrors session.PreviewClip() when
-    // that's non-null; otherwise, during an unlocked Learn section, predicts that clip's own next
-    // loop repeat so the note lane always has something legitimate to preview.
+    // The playthrough predicted to become current next. Mirrors session.PreviewClip() when that's
+    // non-null; otherwise, during an unlocked Learn section, the current clip's next loop repeat.
     std::unique_ptr<ClipPlaythrough> m_nextClip;
 
     // Last frame's IsPassing() value, to edge-detect justLockedIn/justFailed - distinct from any
@@ -91,9 +87,8 @@ private:
     const ChartClip* m_lastSongClipsBase = nullptr;
 
     // DontFail mode only: the hits meter's frozen progress and which loop repetition it belongs to,
-    // while the current clip is failing. Only read/written while failing; a fresh section always
-    // starts passing, so the first failure overwrites whatever's here.
+    // while the current clip is failing. Only read/written while failing.
     double m_dontFailFrozenProgress = 0.0;
-    // -1.0 means "no freeze recorded yet" - never a real loop-start beat, so it can't be mistaken for one.
+    // -1.0 = no freeze recorded yet.
     double m_dontFailFrozenLoopStartBeat = -1.0;
 };

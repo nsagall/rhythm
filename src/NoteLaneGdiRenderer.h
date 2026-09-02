@@ -45,9 +45,8 @@ private:
         COLORREF color = 0;
     };
 
-    // An expanding colored ring spawned at the instant OnJudgement is
-    // called - starts at that lane's judge-line position and grows
-    // outward until it's fully left the visible lane.
+    // An expanding colored ring spawned by OnJudgement: starts at that lane's judge-line position
+    // and grows outward until it has fully left the visible lane.
     struct JudgementRipple
     {
         int lane = 0;
@@ -59,8 +58,8 @@ private:
     };
 
     // A "-N" popup spawned when the bank drops to 0 from nonzero (a streak trip): sinks and shakes
-    // while fading. Carries no baked-in pixel position - DrawScorePopups resolves it against the
-    // HUD panel rect at draw time, so it survives a window resize mid-animation.
+    // while fading. Carries no baked-in pixel position; DrawScorePopups resolves it against the HUD
+    // panel rect at draw time.
     struct ScorePopup
     {
         DWORD startMs = 0;
@@ -88,37 +87,30 @@ private:
         HDC m_memHdc = nullptr;
     };
 
-    // Pixel-space layout, recomputed from laneRect each call rather than cached, so every drawing
-    // method stays layout-stateless.
+    // Pixel-space layout, recomputed from laneRect each call.
     double PixelsPerBeat(RECT laneRect) const;
     int LineY(RECT laneRect) const;
     int LaneCenterX(RECT laneRect, int lane) const;
     int YForBeatsFromNow(RECT laneRect, double beatsFromNow) const;
 
-    // Returns clipColor for a Normal note, or the fixed held/hit/miss color
-    // for anything else - clipColor comes from ClipPlaythrough::color (see
-    // ClipColor.h), never from a palette of this renderer's own. precise is
-    // only consulted for state == Hit - see c_NoteColorHitImprecise.
+    // Returns clipColor for a Normal note, or the fixed held/hit/miss color otherwise. precise is
+    // only consulted for state == Hit.
     COLORREF ColorForNote(NoteVisualState state, COLORREF clipColor, bool precise) const;
 
     HBRUSH CachedSolidBrush(COLORREF color);
     HPEN CachedSolidPen(int width, COLORREF color);
     // Returns a scratch compatible DC at least width x height, shared by every AlphaShape (grown,
-    // never shrunk) - safe because AlphaShapes are used one at a time, never nested.
+    // never shrunk). AlphaShapes are used one at a time, never nested.
     HDC EnsureScratchBuffer(HDC referenceHdc, int width, int height);
 
     void DrawAlphaCircle(HDC hdc, int cx, int cy, int radius, COLORREF color, BYTE alpha);
     void DrawAlphaRing(HDC hdc, int cx, int cy, int radius, int thickness, COLORREF color, BYTE alpha);
     void DrawAlphaRoundRect(HDC hdc, RECT rect, int cornerRadius, COLORREF color, BYTE alpha);
-    // Same as DrawAlphaRoundRect but an outline only (thickness px wide) -
-    // used for the HUD panel's brief green/red "points just moved" glow, so
-    // it reads as a pulsing border rather than a filled wash over the text.
+    // Same as DrawAlphaRoundRect but a thickness-px outline only (used for the HUD panel's
+    // "points just moved" glow).
     void DrawAlphaRoundRectOutline(HDC hdc, RECT rect, int cornerRadius, int thickness, COLORREF color, BYTE alpha);
     void DrawAlphaRect(HDC hdc, int cx, int cy, int halfWidth, int halfHeight, COLORREF color, BYTE alpha);
-    // Alpha-blends text drawn with DrawTextW - same capture/draw/blend trick
-    // as the other DrawAlpha* helpers, so a popup or pulsing readout can
-    // fade smoothly instead of only being able to hard-cut to invisible.
-    // No-op for empty text (callers never need to special-case that).
+    // Alpha-blends text drawn with DrawTextW, so a popup or readout can fade smoothly. No-op for empty text.
     void DrawAlphaText(HDC hdc, RECT rect, const std::wstring& text, HFONT font, COLORREF color, UINT flags,
                         BYTE alpha);
 
@@ -145,9 +137,8 @@ private:
     // during that value's brief grow window.
     HFONT FontForGrowPulse(HFONT baseFont, int basePointSize, DWORD growUntilMs, HFONT& growFontSlot, DWORD now);
     // Drops expired m_scorePopups entries, then draws the rest anchored under panelRect. Called
-    // from DrawHud after the panel/text, so popups float on top.
+    // from DrawHud after the panel/text.
     void DrawScorePopups(HDC hdc, RECT panelRect);
-    // Only called when m_debugOverlayEnabled - see ToggleDebugOverlay.
     void DrawDebugOverlay(HDC hdc, RECT laneRect, const NoteLaneScene& scene);
     // The "hits meter" panel beside the playfield - a bottom-anchored fill tracking
     // scene.hitsMeterProgress. Draws nothing while scene.showHitsMeter is false. beatPulse
@@ -156,8 +147,7 @@ private:
 
     // Spawns a lock-in confetti burst across laneRect's width.
     void SpawnConfetti(RECT laneRect);
-    // Spawns an explosion burst for each of scene's exploding notes that's
-    // actually within laneRect right now.
+    // Spawns an explosion burst for each of scene's exploding notes currently within laneRect.
     void SpawnExplosion(RECT laneRect, const NoteLaneScene& scene);
     // Adds a spark burst at hitsMeterRect's center into m_explosion (sharing its timer). Called
     // alongside SpawnExplosion, only on scene.justLockedIn for a DontFail clip.
@@ -177,28 +167,22 @@ private:
     int m_scratchHeight = 0;
 
     HFONT m_hudFont = nullptr;
-    // Smaller than m_hudFont - used for the pending-score readout and score
-    // popups, so neither competes with the main status/score line for
-    // attention.
-    HFONT m_smallHudFont = nullptr;
+    HFONT m_smallHudFont = nullptr; // Smaller than m_hudFont; for the pending-score readout and score popups.
 
-    // See ToggleDebugOverlay/DrawDebugOverlay.
     bool m_debugOverlayEnabled = false;
 
     JudgementResult m_flashResult[c_LaneCount] = {};
     DWORD m_flashUntilMs[c_LaneCount] = {};
     std::vector<JudgementRipple> m_ripples;
 
-    // See OnHudValueChanged/DrawScorePopups. m_scoreFlashUntilMs drives the HUD panel's brief red
-    // glow on a bank wipe. m_scorePopups is uncapped - at most one is ever alive at once.
     std::vector<ScorePopup> m_scorePopups;
-    DWORD m_scoreFlashUntilMs = 0;
+    DWORD m_scoreFlashUntilMs = 0; // Drives the HUD panel's brief red glow on a bank wipe.
 
-    // Bank's value as of the last OnHudValueChanged(Bank, ...) call - lets that call tell an
-    // ordinary increase apart from a streak-trip drop to 0.
+    // Bank's value as of the last OnHudValueChanged(Bank, ...) call; distinguishes an ordinary
+    // increase from a streak-trip drop to 0.
     int m_lastBankValue = 0;
 
-    // See FontForGrowPulse. One grow deadline + one cached temporary font per HUD value.
+    // One grow deadline + one cached temporary font per HUD value (see FontForGrowPulse).
     DWORD m_totalGrowUntilMs = 0;
     DWORD m_bankGrowUntilMs = 0;
     DWORD m_multiplierGrowUntilMs = 0;

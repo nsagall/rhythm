@@ -3,16 +3,14 @@
 #include <string>
 #include <vector>
 
-// One playable song found under the content root: a subdirectory holding a
-// single loadable .chart file.
+// One playable song found under the content root: a subdirectory holding a single loadable .chart file.
 struct SongEntry
 {
-    std::wstring title;     // ChartSong::title, or the folder name if the chart declares none
-    std::wstring chartPath; // full path to the .chart file
+    std::wstring title;     // ChartSong::title, or the folder name if the chart declares none.
+    std::wstring chartPath; // Full path to the .chart file.
 };
 
-// Scrapes a content folder for playable songs - the only way MainWindow's song-select list gets
-// populated.
+// Scrapes a content folder for playable songs.
 class SongLibrary
 {
 public:

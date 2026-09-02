@@ -14,8 +14,7 @@ struct HighScoreEntry
 class Settings
 {
 public:
-    // How many entries a song's high score list holds at most - LoadHighScores
-    // never returns more than this, and InsertHighScore trims back down to it.
+    // How many entries a song's high score list holds at most.
     static constexpr int c_MaxHighScoreEntries = 10;
 
     // Reads the saved last-chart path from disk (empty if none saved yet).

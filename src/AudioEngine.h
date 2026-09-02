@@ -6,8 +6,7 @@
 #include <string>
 #include <vector>
 
-// A distinct type for referring to a loaded stem, so it can't be silently confused at compile time
-// with an unrelated int like a clip index.
+// An opaque handle to a loaded stem - a distinct type from a plain int (and from SfxHandle).
 struct StemHandle
 {
     int value = -1;
@@ -28,8 +27,7 @@ inline bool operator!=(StemHandle a, StemHandle b)
     return !(a == b);
 }
 
-// A distinct type for a loaded one-shot sound effect (LoadSfx/PlaySfx) - same reasoning as
-// StemHandle, and a different type from it, so the two can't be passed to each other's calls.
+// An opaque handle to a loaded one-shot sound effect (LoadSfx/PlaySfx) - a distinct type from StemHandle.
 struct SfxHandle
 {
     int value = -1;
@@ -42,8 +40,7 @@ struct SfxHandle
 
 // Wraps XAudio2: loads WAV stems (each one clip's full loop) and starts/stops them, seeking to the
 // correct phase so a loop entering mid-song stays in sync with the beat grid. All calls are
-// synchronous and UI-thread-safe - XAudio2 runs its own engine thread, so there's no
-// background-thread machinery here.
+// synchronous and UI-thread-safe (XAudio2 runs its own engine thread).
 class AudioEngine
 {
 public:
@@ -64,13 +61,11 @@ public:
     //   phaseSeconds - offset into the buffer to start at; it plays once from here to the end, then
     //                  loops the whole buffer, so a loop starting mid-song enters in phase.
     //   volume       - playback volume (1.0 = unity gain).
-    //   loopCount    - 0 loops forever until Stop() (for a clip whose stop time depends on future
-    //                  input); a positive value schedules exactly that many passes, after which the
-    //                  voice stops itself sample-accurately inside XAudio2, with no Stop() call needed.
+    //   loopCount    - 0 loops forever until Stop(); a positive value schedules exactly that many
+    //                  passes, after which the voice stops itself sample-accurately inside XAudio2.
     void StartLooping(StemHandle stemHandle, double phaseSeconds = 0.0, float volume = 1.0f, int loopCount = 0);
 
-    // Changes the volume of an already-playing (or not-yet-playing) stem
-    // without otherwise affecting playback (1.0 = unity gain).
+    // Changes the volume of a stem (1.0 = unity gain), without otherwise affecting playback.
     void SetVolume(StemHandle stemHandle, float volume);
 
     // Returns a stem's current voice volume (1.0 = unity gain), or -1.0 if the handle is invalid.
@@ -82,19 +77,15 @@ public:
     // Stops every currently loaded stem.
     void StopAll();
 
-    // Stops every currently loaded stem except keep. For a caller about to restart keep's voice
-    // anyway (GameSession's Break case), stopping it here too only to have StartLooping reflush it
-    // widens the window for a fragment of stale audio to bleed through. Becomes StopAll() if keep
-    // is invalid.
+    // Stops every currently loaded stem except keep. Becomes StopAll() if keep is invalid.
     void StopAllExcept(StemHandle keep);
 
     // Pauses every currently loaded stem in place - unlike Stop()/StopAll(), keeps each voice's
-    // queued buffer, so ResumeAll() continues from exactly where it left off. A no-op for a stem
-    // with nothing queued.
+    // queued buffer, so ResumeAll() continues from where it left off. A no-op for a stem with
+    // nothing queued.
     void PauseAll();
 
-    // Resumes every stem paused by PauseAll(), from exactly where it left
-    // off. A no-op for a stem with nothing queued.
+    // Resumes every stem paused by PauseAll(). A no-op for a stem with nothing queued.
     void ResumeAll();
 
     // Returns how many seconds of audio have played for a stem, for clock resync.
@@ -120,9 +111,8 @@ public:
 
 private:
     // One loaded WAV's playback state: the source voice, the raw PCM data XAudio2 streams from
-    // (kept alive for the voice's lifetime, since XAudio2 doesn't copy it), its format, and the
-    // SamplesPlayed count at the current loop's start (so GetPositionSeconds measures
-    // elapsed-since-loop-start, not elapsed-since-voice-created).
+    // (kept alive for the voice's lifetime - XAudio2 doesn't copy it), its format, and the
+    // SamplesPlayed count at the current loop's start.
     struct Stem
     {
         IXAudio2SourceVoice* voice = nullptr;
@@ -130,9 +120,7 @@ private:
         WAVEFORMATEX format{};
         UINT64 loopStartSampleBaseline = 0;
 
-        // The file this stem was loaded from - used only by StartLooping's same-file-twice
-        // assertion, since two different stems can wrap the same .wav in a way StemHandle can't catch.
-        std::wstring wavFilePath;
+        std::wstring wavFilePath; // Used by StartLooping's same-file-twice assertion.
     };
 
     // Returns a stem's total length in sample frames, derived from its PCM data size.
@@ -141,18 +129,15 @@ private:
     // Asserts if any OTHER loaded stem sharing playingHandle's wavFilePath is currently audible.
     void AssertNoOtherStemForSameFilePlaying(StemHandle playingHandle) const;
 
-    // Ramps every voice in stems down to silence together over ~10ms, then Stop()s/flushes them -
-    // shared by Stop/StopAll/StopAllExcept. XAudio2's Stop() truncates a voice's waveform at
-    // whatever sample it's on, which clicks audibly when several voices stop at once. Blocks the
-    // calling thread for the fade, negligible against a section transition.
+    // Ramps every voice in stems down to silence over ~10ms, then Stop()s/flushes them - shared by
+    // Stop/StopAll/StopAllExcept, so several voices stopping at once don't click. Blocks the calling
+    // thread for the fade.
     void FadeOutAndStop(const std::vector<Stem*>& stems);
 
-    // How many source voices each loaded Sfx gets, round-robinned by PlaySfx - enough to survive a
-    // rapid re-fire without a real voice-availability check.
+    // How many source voices each loaded Sfx gets, round-robinned by PlaySfx.
     static constexpr int c_SfxVoicePoolSize = 3;
 
-    // One loaded one-shot sound's playback state - like Stem but with a small fixed voice pool
-    // instead of one voice, since PlaySfx is fire-and-forget.
+    // One loaded one-shot sound's playback state - like Stem but with a small fixed voice pool.
     struct Sfx
     {
         std::vector<BYTE> pcmData;

@@ -64,11 +64,9 @@ public:
     // No-op while paused, or outside a Learn section.
     void OnPress(int lane);
 
-    // True if a press on lane right now would actually be judged by OnPress.
+    // True if a press on lane right now would be judged by OnPress. Ignores pause state.
     //   lane - which lane to check.
     // Returns false outside live Learn judging, or if the lane has no notes.
-    // Ignores pause state on purpose - callers should gate on IsPaused() themselves.
-    // Call CatchUpCountIn() first if a real press just happened.
     bool IsLaneJudgeable(int lane) const;
 
     // Remembers a press that arrived just before its section's own start, to be judged once that section begins.
@@ -252,10 +250,10 @@ private:
     // Clears every lane's buffered press afterward, used or not.
     void ConsumeBufferedPresses(const ChartSection& section, const ChartClip& clip);
 
-    // Begins the section at sectionIndex, dispatching on its kind.
+    // Begins the section at sectionIndex, dispatching on its kind. Also starts any background clip
+    // queued by the previous section.
     //   sectionIndex  - index of the section to begin.
-    //   scheduledBeat - the ideal beat this transition was scheduled for, used instead of the live clock for determinism.
-    // Also starts any background clip queued by the previous section.
+    //   scheduledBeat - the deterministic beat this transition was scheduled for (not a live clock read).
     void BeginSection(int sectionIndex, double scheduledBeat);
 
     // Records a hit: pays points into m_bank, registers with the streak tracker, and starts the clip if needed.
@@ -270,9 +268,8 @@ private:
     // Idempotent - a no-op if the clip is already playing.
     void StartClipLoop(int clipIndex, double volume, int finiteLoopCount = 0);
 
-    // m_song.OriginBeat()/OriginSeconds(), converted into this class's beat numbering: beats since
+    // m_song.OriginBeat()/OriginSeconds() in this class's beat numbering: beats since
     // SongClock::Start() (the count-in start), not since ChartSong's own beat 0 (the count-in end).
-    // ChartSong knows nothing about SongClock, so this conversion stays here.
     double ArrangementOriginBeat() const;
 
     // Stops clipIndex's stem if it's playing.
@@ -380,11 +377,9 @@ private:
 
     QueuedBackground m_queuedBackground;
 
-    // Set when a Break's advance fires and consumed at the top of the next BeginSection call: a
-    // Break implicitly ends with a Reset, re-anchoring the bar-alignment origin to that instant.
-    // Deferred to BeginSection so the re-anchor uses the same scheduledBeat-derived nowSeconds the
-    // next section reads back; computing it independently in Update() and BeginSection can differ
-    // by a rounding hair, enough to fail the exact-boundary check.
+    // Set when a Break's advance fires, consumed at the top of the next BeginSection call: a Break
+    // implicitly ends with a Reset that re-anchors the bar-alignment origin, using that call's own
+    // scheduledBeat.
     bool m_arrangementResetPending = false;
 
     JudgementResult m_lastJudgement = JudgementResult::None;

@@ -19,12 +19,11 @@ enum class JudgementResult
 // that's true only while this section is current, as distinct from ChartSection/ChartClip
 // (immutable chart content) and from a clip's playback voice (ClipInstance, shared across every
 // section that references that clip). GameSession replaces its current instance wholesale each time
-// a section begins, so no stale field is ever left over.
+// a section begins.
 //
 // A Break section gets one of these too: it uses the pending-advance half of the state but never
-// the judging half (streak/passing/holds/judged notes stay at their defaults), since
-// IsLaneJudgeable() only returns true for a Learn section. Reset/Background sections never become
-// current and never get an instance.
+// the judging half (streak/passing/holds/judged notes stay at their defaults). Reset/Background
+// sections never become current and never get an instance.
 class SectionInstance
 {
 public:
@@ -57,8 +56,7 @@ public:
         return m_hasPendingAdvance;
     }
 
-    // The raw value, regardless of HasPendingAdvance(). GameSession::PendingAdvanceAtSeconds() adds
-    // the "-1 if nothing's pending" contract for external callers.
+    // The raw value, whether or not one is actually pending (see HasPendingAdvance()).
     double PendingAdvanceAtSeconds() const
     {
         return m_pendingAdvanceAtSeconds;
@@ -99,8 +97,8 @@ public:
     void ClearLaneHold(int lane);
 
     // Records a hit: registers with streakTracker (the shared streak keeps growing even once
-    // passing, since post-lock-in auto-accrual depends on it), then advances this section's
-    // hitsRequired progress unless already passing, and starts passing once it reaches hitsRequired.
+    // passing), then advances this section's hitsRequired progress unless already passing, and
+    // starts passing once it reaches hitsRequired.
     //   hitsRequired  - the clip's hits_required.
     //   streakTracker - the whole-song scoring streak.
     // Returns true the instant passing is newly (re-)reached this call, false otherwise.
@@ -146,8 +144,7 @@ private:
         bool wasPrecise = true;
     };
 
-    // How one lane note (identified by its start beat) was judged - recorded so a note that has
-    // already scrolled past the judge line can still be colored.
+    // How one lane note (identified by its start beat) was judged.
     struct JudgedLaneNote
     {
         double beat = 0.0;

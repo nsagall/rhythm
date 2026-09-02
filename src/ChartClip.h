@@ -16,24 +16,18 @@ enum class LearnMode
 
 class ChartSong;
 
-// Amount to subtract from a fresh join's scheduled beat when querying NextOnsetAfter, so the query
-// lands on the clip's true first note instead of skipping past it. Must comfortably exceed the
-// floating-point drift a long chain of section advances accumulates (a few millionths of a beat
-// per hop, since advance times derive from measured stem durations) while staying far below any
-// realistic note-to-note spacing.
+// Amount to subtract from a fresh join's scheduled beat when querying NextOnsetAfter. Comfortably
+// exceeds the floating-point drift a long chain of section advances accumulates (a few millionths
+// of a beat per hop), while staying far below any realistic note-to-note spacing.
 constexpr double c_FreshJoinEpsilonBeats = 1e-3;
 
 // A reusable audio+MIDI bundle: a stem file, its MIDI-authored note pattern, and the judging
-// thresholds for a [learn] section. Purely a definition - a section block must reference it by name
-// (and more than one section may reference the same clip) for it to do anything.
+// thresholds for a [learn] section. An inert definition until a section block references it by name
+// (and more than one section may reference the same clip).
 //
 // LaneNotes(i) is lane i's note list for one repetition; every lane repeats over the shared
 // SpanBeats(), so a lane's absolute note starts are n*SpanBeats() + note.startBeat. HasMidi() is
 // false when the clip has no .mid file, which only matters for [learn] usage.
-//
-// Fields are private and populated only by ChartSong::Load (a friend, since parsing fills a clip
-// in one `key = value` line at a time rather than via one constructor call) and by this class's
-// own mutators. Everyone else only reads a ChartClip, through the getters below.
 class ChartClip
 {
 public:
@@ -54,8 +48,7 @@ public:
 
     // ---------------------------------------------------------------
     // Timing/scheduling queries and mutators. Pure arithmetic over the parameters plus *this,
-    // shared verbatim by GameSession and the editor's analytical block scheduler (BlockSchedule.h)
-    // so both compute identical answers.
+    // shared verbatim by GameSession and the editor's analytical block scheduler (BlockSchedule.h).
     //
     // originBeat/originSeconds below is always the current arrangement's shared origin - the
     // beat/second its first clip began at - never absolute 0 and never a per-clip value. Every
@@ -96,8 +89,7 @@ public:
     //   nowSeconds    - wall-clock second this clip is starting/resuming at.
     //   stemDuration  - length of one loop of the clip's audio, in seconds (used only without a MIDI pattern).
     //   bpm           - song tempo.
-    // Uses spanBeats when this clip has a pattern, not the raw audio duration, so playback stays
-    // phase-locked to the judged beat grid instead of drifting over many loops.
+    // Uses spanBeats when this clip has a pattern, not the raw audio duration.
     double ComputeClipPhaseSeconds(double originSeconds, double nowSeconds, double stemDuration, double bpm) const;
 
     // Returns the wall-clock second at which loopCount full loops complete.
@@ -105,8 +97,7 @@ public:
     //   loopStartSeconds - wall-clock second the clip's loop actually started.
     //   stemDuration     - length of one loop of the clip's audio, in seconds.
     //   loopCount        - number of full loops to count.
-    // Asserts loopStartSeconds is already exactly one of the clip's own loop boundaries, so it can
-    // just add whole loops rather than re-deriving the boundary.
+    // Asserts loopStartSeconds is already exactly one of the clip's own loop boundaries.
     static double ComputeLoopFloorSeconds(double originSeconds, double loopStartSeconds, double stemDuration,
                                            int loopCount);
 
@@ -134,8 +125,8 @@ public:
     //   stemDuration       - length of one loop of the clip's audio, in seconds.
     //   requestedLoopCount - section's declared loop_count.
     //   tFallSeconds       - minimum preview lead time required, in seconds.
-    // The loop count is extended (rather than adding silence after it) until playback covers at
-    // least tFallSeconds, so the voice stops naturally once its loops finish.
+    // The loop count itself is extended (not padded with silence) until playback covers at least
+    // tFallSeconds.
     static BreakAdvance ComputeBreakAdvance(double originSeconds, double loopStartSeconds, double stemDuration,
                                              int requestedLoopCount, double tFallSeconds);
 
@@ -161,11 +152,9 @@ public:
                                               double uptoBeatInclusive, const std::vector<LaneNote>& notes,
                                               double spanBeats);
 
-    // A judged clip's timing inputs to ValidateArrangementAlignment, captured before
-    // ExpandLaneNotesToFillClip may widen spanBeats to the stem's real length. Both lengths matter:
-    // a clip currently PLAYING advances in multiples of its real stemDurationSeconds, but a clip
-    // JOINING an arrangement only needs to align to its authoredSpanBeats, since every repeat of a
-    // widened buffer is identical.
+    // A judged clip's two timing inputs to ValidateArrangementAlignment, captured before
+    // ExpandLaneNotesToFillClip may widen spanBeats. A clip currently PLAYING advances in multiples
+    // of its real stemDurationSeconds; a clip JOINING an arrangement aligns to its authoredSpanBeats.
     struct ClipAlignmentInfo
     {
         double authoredSpanBeats = 0.0;   // Bar-aligned pattern length before any widening.
@@ -186,7 +175,7 @@ public:
                                               std::vector<std::wstring>& outErrors);
 
 private:
-    friend class ChartSong; // Populates every field below, incrementally, while parsing.
+    friend class ChartSong; // ChartSong::Load fills these fields in while parsing.
 
     std::wstring m_name;
     std::wstring m_displayName;
@@ -203,16 +192,13 @@ private:
     LearnMode m_learnMode = LearnMode::Pass;
 };
 
-// One clip's live playback state, shared by GameSession and the editor's analytical BlockSchedule
-// so both track "what's currently playing" and time it identically. Populated via
-// SetContext/MarkStarted/MarkStopped rather than one constructor, since the two consumers establish
-// clip/originSeconds/stemDurationSeconds at different points in their own control flow. Usually kept
-// one per clip in a std::unordered_map<const ChartClip*, ClipInstance>, keyed by the clip's address.
+// One clip's live playback state, shared by GameSession and the editor's analytical BlockSchedule.
+// Set via SetContext/MarkStarted/MarkStopped. Usually one per clip in a
+// std::unordered_map<const ChartClip*, ClipInstance>, keyed by the clip's address.
 //
-// LoopStartSeconds() is the real wall-clock instant the loop began, used only for drift-resync
-// bookkeeping (GameSession::Update). The methods below never read it - they take an explicit
-// sectionStartSeconds/loopStartSeconds, which must stay the deterministic instant a section was
-// scheduled for, not whatever instant playback actually began at.
+// LoopStartSeconds() is the real wall-clock instant the loop began. The timing methods below never
+// read it - they take an explicit sectionStartSeconds/loopStartSeconds, the deterministic instant
+// a section was scheduled for, not whatever instant playback actually began at.
 class ClipInstance
 {
 public:
@@ -231,8 +217,7 @@ public:
     void SetContext(const ChartClip& clip, double originSeconds, double stemDurationSeconds);
 
     // Marks this instance actually playing.
-    //   loopStartSeconds - real wall-clock instant the loop began (see the class comment for why
-    //                      this is distinct from the deterministic sectionStartSeconds passed below).
+    //   loopStartSeconds - real wall-clock instant the loop began.
     void MarkStarted(double loopStartSeconds);
 
     // Marks this instance stopped. Its remembered clip/origin/stem-duration are left in place.

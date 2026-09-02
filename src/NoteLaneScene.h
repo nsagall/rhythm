@@ -22,33 +22,27 @@ class ChartClip;
 constexpr double c_BeatsAhead = c_NoteFallBeats;
 constexpr double c_BeatsBehind = 1.0;
 
-// One live playthrough of a ChartClip, for rendering only - NOT GameSession's private per-clip
-// playback voice. A ChartClip is immutable and can play more than once in a song (a later section
-// reusing it, or its pattern looping again before lock-in); each playthrough gets its own
-// ClipPlaythrough, since passing resets fresh each time and identity/color must stay distinguishable
-// between two instances of the same ChartClip. Owned persistently by NoteLaneModel, not rebuilt
-// every frame - created only when a new playthrough begins or is predicted (see startBeat).
+// One live playthrough of a ChartClip, for rendering only - NOT GameSession's per-clip playback
+// voice. A ChartClip can play more than once in a song (a later section reusing it, or its pattern
+// looping again before lock-in); each playthrough gets its own ClipPlaythrough. Owned persistently
+// by NoteLaneModel, created only when a new playthrough begins or is predicted (see startBeat).
 struct ClipPlaythrough
 {
-    // Which ChartClip this is a playthrough of - this instance's identity. Never dereferenced by a
-    // renderer; here so NoteLaneModel can tell two instances of the same clip apart without a lookup table.
+    // Which ChartClip this is a playthrough of. Never dereferenced by a renderer.
     const ChartClip* chartClip = nullptr;
 
     // The beat this playthrough began (or, for a predicted instance, is predicted to begin) at.
     // With chartClip, this is the instance's full identity: same chartClip + different startBeat =
-    // different playthroughs. A predicted loop repeat's startBeat is the current instance's
-    // startBeat plus one spanBeats, computable before the loop happens.
+    // different playthroughs.
     double startBeat = 0.0;
 
     // This clip's accent color - part of its identity (see ClipColor.h), resolved once when
-    // NoteLaneModel creates this instance, so a renderer needs no palette of its own.
+    // NoteLaneModel creates this instance.
     COLORREF color = ClipColor::c_Neutral;
 
-    // Whether this playthrough is currently passing, for a renderer's "correct" glow cue. Reset
-    // false when the instance is created, kept in sync with the session every frame while current -
-    // except a DontFail clip, which never sets this true (it conveys progress through the hits
-    // meter instead of a glow that would flicker on every miss/recovery). In Pass mode this goes
-    // false->true once.
+    // Whether this playthrough is currently passing, for a renderer's "correct" glow cue. Kept in
+    // sync with the session every frame while current. Always false for a DontFail clip (its
+    // progress shows in the hits meter instead).
     bool passing = false;
 };
 
@@ -101,16 +95,14 @@ struct NoteLaneScene
     SceneReceptor receptors[c_LaneCount];
     std::vector<SceneNote> notes;
 
-    // Edge-triggered this frame only - lets a renderer react once without tracking its own copy of
-    // the session's passing/handoff state.
+    // Edge-triggered: true only on the frame the condition first becomes true.
     bool justLockedIn = false;
     bool justHandedOff = false;
     // DontFail mode only: the current clip was passing and just reverted to failing. Never true in
-    // Pass mode (a one-way latch). The reverse direction (failing -> passing) is justLockedIn.
+    // Pass mode. The reverse direction (failing -> passing) is justLockedIn.
     bool justFailed = false;
-    // Candidate notes for whichever trigger fired this frame (possibly more than one; not
-    // distinguished, since they draw identically). A renderer should still apply its own on-screen
-    // visibility check, as for notes.
+    // Candidate notes for whichever trigger fired this frame (possibly more than one; drawn
+    // identically). Still subject to the renderer's own on-screen visibility check, as for notes.
     std::vector<SceneNote> explodingNotes;
 
     // Progress for the "hits meter" panel, clamped to [0,1] - only meaningful while showHitsMeter,

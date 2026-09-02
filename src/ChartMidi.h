@@ -14,8 +14,7 @@ struct LaneNote
 };
 
 // Every lane's notes (sorted by startBeat) plus the file's overall length in beats, which becomes
-// the clip's spanBeats - so a repeating pattern loops on the author's bar boundary rather than
-// shrinking to the last note's end.
+// the clip's spanBeats.
 struct MidiLaneData
 {
     std::vector<LaneNote> lanes[c_LaneCount];

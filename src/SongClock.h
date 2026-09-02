@@ -3,8 +3,7 @@
 #include <windows.h>
 
 // A QueryPerformanceCounter-anchored clock for the current song's tempo and timeline. The single
-// source of truth for note judging, the visual lane, and lock-in scheduling, so nothing desyncs by
-// reading two different clocks.
+// source of truth for note judging, the visual lane, and lock-in scheduling.
 class SongClock
 {
 public:
@@ -17,13 +16,10 @@ public:
     // Current position expressed in beats (quarter notes) since Start().
     double BeatPosition() const;
 
-    // Seconds until the next bar boundary, for quantizing when a newly
-    // locked-in clip should start looping.
+    // Seconds until the next bar boundary.
     double SecondsToNextBar(int beatsPerBar) const;
 
-    // Nudges the clock's anchor so ElapsedSeconds() matches a known-good
-    // audio playback position, correcting drift between the CPU and audio
-    // hardware clocks.
+    // Nudges the clock's anchor so ElapsedSeconds() matches a known-good audio playback position.
     void Resync(double knownElapsedSeconds);
 
     // The tempo this clock was started with.
@@ -45,8 +41,6 @@ private:
     double m_bpm = 120.0;
 
     bool m_paused = false;
-    // ElapsedSeconds() at the instant Pause() was called - what
-    // ElapsedSeconds() itself returns while m_paused, and what Resume()
-    // re-anchors the clock to.
+    // ElapsedSeconds() at the instant Pause() was called.
     double m_pausedElapsedSeconds = 0.0;
 };
