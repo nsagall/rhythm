@@ -343,12 +343,15 @@ private:
 
     // Appends a HudChangeEvent for field changing to newValue.
     void PushHudChanged(HudField field, int newValue);
+
     // Appends an SfxCue to play.
     void PushSfx(SfxCue cue);
 
     AudioEngine& m_audioEngine;
     ChartSong m_song;
-    std::vector<StemHandle> m_stemHandles; // one full-loop stem per clip, indexed by clip index
+
+    // One full-loop stem per clip, indexed by clip index.
+    std::vector<StemHandle> m_stemHandles;
 
     // A background clip queued to start at the next BeginSection() call. clipIndex -1 means nothing queued.
     struct QueuedBackground
@@ -359,22 +362,14 @@ private:
 
     SongClock m_clock;
     GamePhase m_phase = GamePhase::Idle;
-
-    // See Pause()/Resume()/IsPaused().
     bool m_paused = false;
-
-    // Set once by LoadChart and left alone for the rest of this chart's lifetime.
     bool m_easyMode = false;
-
-    // The live judging state of whichever section is current right now.
     SectionInstance m_currentInstance;
 
-    // Per-clip playback voices, keyed by each clip's own address in m_song.clips.
+    // Per-clip playback voices, keyed by clip address into m_song.clips.
     std::unordered_map<const ChartClip*, ClipInstance> m_clipInstances;
 
-    // See TryBufferEarlyPress/ConsumeBufferedPresses/BufferedPress.
     BufferedPress m_bufferedPress[c_LaneCount];
-
     QueuedBackground m_queuedBackground;
 
     // Set when a Break's advance fires, consumed at the top of the next BeginSection call: a Break
@@ -383,8 +378,6 @@ private:
     bool m_arrangementResetPending = false;
 
     JudgementResult m_lastJudgement = JudgementResult::None;
-
-    // See CurrentScore()/CurrentBank()/ScoringStreak().
     int m_score = 0;
     int m_bank = 0;
     StreakTracker m_streakTracker;
@@ -392,9 +385,7 @@ private:
     // Per-lane cursor for Update()'s post-lock-in auto-scoring: the last beat already scored for that lane.
     double m_autoScoreCursorBeat[c_LaneCount] = {};
 
-    // See ConsumeJudgementEvents.
     std::vector<JudgementEvent> m_judgementEvents;
-    // See ConsumeHudChangeEvents/ConsumeSfxEvents.
     std::vector<HudChangeEvent> m_hudChangeEvents;
     std::vector<SfxCue> m_sfxEvents;
 };

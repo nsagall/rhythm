@@ -20,7 +20,9 @@ struct ChartSection
 {
     int clipIndex = -1;
     SectionKind kind = SectionKind::Learn;
-    int loopCount = 1; // Minimum number of times the clip must loop; exact meaning is SectionKind-specific.
+
+    // Minimum number of times the clip must loop; exact meaning is SectionKind-specific.
+    int loopCount = 1;
 };
 
 // A full song: tempo/time signature, the pool of reusable clips, and the ordered list of sections

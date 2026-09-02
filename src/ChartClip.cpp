@@ -40,7 +40,9 @@ struct EasyModeNote
 {
     double startBeat = 0.0;
     double durationBeats = 0.0;
-    int lane = 0; // Which of the c_LaneCount lanes this note came from.
+
+    // Which lane this note came from.
+    int lane = 0;
 };
 
 // Converts a millisecond target to beats at bpm.
@@ -233,13 +235,14 @@ void ChartClip::ApplyEasyModeTransform(double bpm)
             merged.push_back(note);
         }
     }
-    std::sort(merged.begin(), merged.end(), [](const EasyModeNote& a, const EasyModeNote& b) {
-        if (a.startBeat != b.startBeat)
-        {
-            return a.startBeat < b.startBeat;
-        }
-        return a.lane < b.lane;
-    });
+    std::sort(merged.begin(), merged.end(), [](const EasyModeNote& a, const EasyModeNote& b)
+              {
+                  if (a.startBeat != b.startBeat)
+                  {
+                      return a.startBeat < b.startBeat;
+                  }
+                  return a.lane < b.lane;
+              });
 
     std::vector<double> mergedStarts;
     mergedStarts.reserve(merged.size());

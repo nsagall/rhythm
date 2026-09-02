@@ -24,7 +24,9 @@ enum class InputKind
 struct InputBinding
 {
     InputKind kind = InputKind::None;
-    int code = 0; // VK_* code for Keyboard, MIDI note number for MidiNote, XINPUT_GAMEPAD_* bit for Gamepad
+
+    // VK_* code for Keyboard, MIDI note number for MidiNote, XINPUT_GAMEPAD_* bit for Gamepad.
+    int code = 0;
 };
 
 // Per-lane input bindings: each lane always responds to its c_LaneDefaultKeys entry (not stored

@@ -167,7 +167,9 @@ private:
     int m_scratchHeight = 0;
 
     HFONT m_hudFont = nullptr;
-    HFONT m_smallHudFont = nullptr; // Smaller than m_hudFont; for the pending-score readout and score popups.
+
+    // Smaller than m_hudFont; for the pending-score readout and score popups.
+    HFONT m_smallHudFont = nullptr;
 
     bool m_debugOverlayEnabled = false;
 
@@ -176,7 +178,9 @@ private:
     std::vector<JudgementRipple> m_ripples;
 
     std::vector<ScorePopup> m_scorePopups;
-    DWORD m_scoreFlashUntilMs = 0; // Drives the HUD panel's brief red glow on a bank wipe.
+
+    // Drives the HUD panel's brief red glow on a bank wipe.
+    DWORD m_scoreFlashUntilMs = 0;
 
     // Bank's value as of the last OnHudValueChanged(Bank, ...) call; distinguishes an ordinary
     // increase from a streak-trip drop to 0.

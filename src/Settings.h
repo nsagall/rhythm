@@ -6,7 +6,9 @@
 // One entry in a song's top-10 high score list.
 struct HighScoreEntry
 {
-    std::wstring initials; // exactly 3 letters, e.g. L"ABC"
+    // Exactly 3 letters, e.g. L"ABC".
+    std::wstring initials;
+
     int score = 0;
 };
 

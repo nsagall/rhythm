@@ -41,6 +41,7 @@ private:
     double m_bpm = 120.0;
 
     bool m_paused = false;
+
     // ElapsedSeconds() at the instant Pause() was called.
     double m_pausedElapsedSeconds = 0.0;
 };

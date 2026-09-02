@@ -6,8 +6,11 @@
 // One playable song found under the content root: a subdirectory holding a single loadable .chart file.
 struct SongEntry
 {
-    std::wstring title;     // ChartSong::title, or the folder name if the chart declares none.
-    std::wstring chartPath; // Full path to the .chart file.
+    // ChartSong::title, or the folder name if the chart declares none.
+    std::wstring title;
+
+    // Full path to the .chart file.
+    std::wstring chartPath;
 };
 
 // Scrapes a content folder for playable songs.

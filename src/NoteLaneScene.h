@@ -95,12 +95,12 @@ struct NoteLaneScene
     SceneReceptor receptors[c_LaneCount];
     std::vector<SceneNote> notes;
 
-    // Edge-triggered: true only on the frame the condition first becomes true.
+    // Edge-triggered: true only on the frame the condition first becomes true. justFailed is
+    // DontFail-only (a passing clip just reverted to failing); the reverse direction is justLockedIn.
     bool justLockedIn = false;
     bool justHandedOff = false;
-    // DontFail mode only: the current clip was passing and just reverted to failing. Never true in
-    // Pass mode. The reverse direction (failing -> passing) is justLockedIn.
     bool justFailed = false;
+
     // Candidate notes for whichever trigger fired this frame (possibly more than one; drawn
     // identically). Still subject to the renderer's own on-screen visibility check, as for notes.
     std::vector<SceneNote> explodingNotes;

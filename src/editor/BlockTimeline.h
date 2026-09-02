@@ -63,12 +63,14 @@ public:
 
 private:
     // On-screen geometry for one block, computed once per frame and shared by the block row, the
-    // playhead, and the seek ruler so they can't disagree.
+    // playhead, and the seek ruler.
     struct BlockLayout
     {
         float leftX = 0.0f;
         float width = 0.0f;
-        const BlockSchedule::Entry* entry = nullptr; // null for Background/Reset, or if no schedule yet
+
+        // null for Background/Reset, or if there is no schedule yet.
+        const BlockSchedule::Entry* entry = nullptr;
     };
 
     void DrawToolbar(EditorDocument& doc);
@@ -113,13 +115,15 @@ private:
     void PasteClipboard(EditorDocument& doc);
 
     int m_selectedBlockId = -1;
+
     // Always in sync with m_selectedBlockId (see SetSelectedBlockId/HandleBlockClick). Empty iff
     // nothing is selected.
     std::set<int> m_multiSelectedBlockIds;
-    // Fixed reference point for Shift+Click range selection - moves only on a plain or Ctrl+Click,
-    // so repeated Shift+Clicks extend/contract from the same point.
+
+    // Fixed reference point for Shift+Click range selection - moves only on a plain or Ctrl+Click.
     int m_rangeAnchorBlockId = -1;
-    // Session-local copy/paste buffer - plain EditorBlock values (a pasted block references the
-    // same clip, not a copy of it). Never persisted or touching the OS clipboard.
+
+    // Session-local copy/paste buffer - a pasted block references the same clip, not a copy of it.
+    // Never persisted or touching the OS clipboard.
     std::vector<EditorBlock> m_clipboard;
 };

@@ -78,12 +78,14 @@ int main(int argc, char** argv)
         lastPressedBeat[lane] = -1.0;
     }
 
-    const wchar_t* targetClipName = argc > 2 ? [&]() {
-        static std::wstring t;
+    const wchar_t* targetClipName = L"melodica";
+    static std::wstring targetClipStorage;
+    if (argc > 2)
+    {
         std::string arg = argv[2];
-        t.assign(arg.begin(), arg.end());
-        return t.c_str();
-    }() : L"melodica";
+        targetClipStorage.assign(arg.begin(), arg.end());
+        targetClipName = targetClipStorage.c_str();
+    }
 
     DWORD startTick = GetTickCount();
 

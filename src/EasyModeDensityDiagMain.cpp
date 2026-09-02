@@ -32,13 +32,14 @@ std::vector<FlatNote> Flatten(const ChartClip& clip)
             notes.push_back({note.startBeat, lane, note.durationBeats});
         }
     }
-    std::sort(notes.begin(), notes.end(), [](const FlatNote& a, const FlatNote& b) {
-        if (a.beat != b.beat)
-        {
-            return a.beat < b.beat;
-        }
-        return a.lane < b.lane;
-    });
+    std::sort(notes.begin(), notes.end(), [](const FlatNote& a, const FlatNote& b)
+              {
+                  if (a.beat != b.beat)
+                  {
+                      return a.beat < b.beat;
+                  }
+                  return a.lane < b.lane;
+              });
     return notes;
 }
 

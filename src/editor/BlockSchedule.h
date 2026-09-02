@@ -23,26 +23,38 @@ namespace BlockSchedule
 // Entry ends) - see VoiceWindow.
 struct Entry
 {
-    int sectionIndex = 0; // Index into ChartSong::sections.
-    SectionKind kind = SectionKind::Learn;
-    const ChartClip* clip = nullptr; // Points into the ChartSong passed to Build().
+    // Index into ChartSong::sections.
+    int sectionIndex = 0;
 
-    double sectionStartSeconds = 0.0; // == previous entry's endSeconds (0 for the first).
-    // == sectionStartSeconds for Learn and Break alike: both always restart their clip fresh the
-    // instant the section begins (ChartClip::ComputeLearnAdvanceSeconds relies on this).
+    SectionKind kind = SectionKind::Learn;
+
+    // Points into the ChartSong passed to Build().
+    const ChartClip* clip = nullptr;
+
+    // == previous entry's endSeconds (0 for the first).
+    double sectionStartSeconds = 0.0;
+
+    // == sectionStartSeconds for Learn and Break alike (both restart their clip fresh the instant
+    // the section begins).
     double audioStartSeconds = 0.0;
+
     // The current arrangement's shared phase reference - the wall-clock second its first clip began
-    // at, whether this entry or an earlier one - not necessarily == audioStartSeconds. Every
-    // phase/loop-boundary computation for this clip is measured relative to this, so Seek() can
-    // reproduce where the real phase-seeked audio voice is.
+    // at, whether this entry or an earlier one. Not necessarily == audioStartSeconds; every
+    // phase/loop-boundary computation for this clip is measured relative to it.
     double originSeconds = 0.0;
+
     // Learn only: the instant IsLockedIn() would flip true for a perfect player (the
-    // hits_required-th onset across all lanes). Always a real non-negative value - if hits_required
-    // exceeds the onsets in one loop, endSeconds extends by further loops. -1 for Break.
+    // hits_required-th onset across all lanes). Always a real non-negative value. -1 for Break.
     double lockInSeconds = -1.0;
-    double loopSeconds = 0.0; // One stem loop's duration - the timeline "block width" unit.
-    int loopCount = 1;        // Informational: total passes spanning [audioStartSeconds, endSeconds).
-    double endSeconds = 0.0;  // == next entry's sectionStartSeconds.
+
+    // One stem loop's duration - the timeline "block width" unit.
+    double loopSeconds = 0.0;
+
+    // Informational: total passes spanning [audioStartSeconds, endSeconds).
+    int loopCount = 1;
+
+    // == next entry's sectionStartSeconds.
+    double endSeconds = 0.0;
 };
 
 // One clip's actual audible window - covers a locked-in Learn clip, a Break clip, and a Background
@@ -51,16 +63,25 @@ struct Entry
 // source of truth for what audio should be playing at any instant; Entry is judging/timeline-only.
 struct VoiceWindow
 {
-    int sectionIndex = 0; // Which section started this voice.
-    const ChartClip* clip = nullptr; // Points into the ChartSong passed to Build().
+    // Which section started this voice.
+    int sectionIndex = 0;
+
+    // Points into the ChartSong passed to Build().
+    const ChartClip* clip = nullptr;
+
     double startSeconds = 0.0;
-    double stopSeconds = -1.0; // -1 = still playing at the end of the schedule.
+
+    // -1 = still playing at the end of the schedule.
+    double stopSeconds = -1.0;
+
     // Learn: volumeBeforeLockIn == initVolume, volumeAfterLockIn == volume, split at lockInSeconds.
     // Break/Background: both equal clip.volume and lockInSeconds == -1 (no split).
     double volumeBeforeLockIn = 1.0;
     double volumeAfterLockIn = 1.0;
     double lockInSeconds = -1.0;
-    double originSeconds = 0.0; // Shared phase reference - see Entry::originSeconds.
+
+    // Shared phase reference - see Entry::originSeconds.
+    double originSeconds = 0.0;
 };
 
 // Build()'s full result for one song: every judging Entry and every VoiceWindow in chronological
@@ -86,15 +107,21 @@ Schedule Build(const ChartSong& song, const std::unordered_map<const ChartClip*,
 // BlockPlayer::ApplyAudioForPosition needs to reproduce the voice.
 struct ActiveVoice
 {
-    const ChartClip* clip = nullptr; // Points into the ChartSong passed to Build().
+    // Points into the ChartSong passed to Build().
+    const ChartClip* clip = nullptr;
+
     double volume = 1.0;
-    double originSeconds = 0.0; // Shared phase reference - see VoiceWindow::originSeconds.
+
+    // Shared phase reference - see VoiceWindow::originSeconds.
+    double originSeconds = 0.0;
 };
 
 // Seek()'s answer to "what's true at this elapsed-seconds position".
 struct SeekResult
 {
-    int entryIndex = -1; // -1 if elapsedSeconds is before/after every entry, or the schedule is empty.
+    // -1 if elapsedSeconds is before/after every entry, or the schedule is empty.
+    int entryIndex = -1;
+
     // 1-based pass number within the entry; 0 if elapsedSeconds is still in the anchor-to-first-press
     // gap (notes anchored, nothing audible yet). Pass 2 onward each span exactly loopSeconds of
     // elapsed time - a timeline/playhead notion of "which pass", NOT the audio voice's absolute
@@ -103,8 +130,12 @@ struct SeekResult
     // whenever audioStartSeconds isn't on a loop boundary, but phaseSeconds is still rescaled into
     // the full 0..loopSeconds range so pass 1's rendered sweep runs edge-to-edge.
     int loopIndex = 0;
-    double phaseSeconds = 0.0; // Rescaled into 0..entries[entryIndex].loopSeconds - see loopIndex.
-    std::vector<ActiveVoice> activeVoices; // Every clip that should currently be audible, with its current volume.
+
+    // Rescaled into 0..entries[entryIndex].loopSeconds - see loopIndex.
+    double phaseSeconds = 0.0;
+
+    // Every clip that should currently be audible, with its current volume.
+    std::vector<ActiveVoice> activeVoices;
 };
 
 // Pure function of schedule and elapsedSeconds - see the namespace comment.

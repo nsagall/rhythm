@@ -88,13 +88,17 @@ private:
     };
 
     AudioEngine& m_audioEngine;
-    std::vector<ClipStem> m_stems; // Keyed by EditorClip::id.
 
-    // Replaced together, in RebuildSchedule() - so the ChartClip* below (into m_song.clips) stay
-    // valid (see BlockSchedule::Build's lifetime contract).
-    ChartSong m_song;                  // Fully resolved (post ExpandLaneNotesToFillClip).
-    BlockSchedule::Schedule m_schedule; // Built from m_song.
-    std::unordered_map<const ChartClip*, StemHandle> m_stemHandlesByClip; // Keyed by address in m_song.clips.
+    // Keyed by EditorClip::id.
+    std::vector<ClipStem> m_stems;
+
+    // m_song, m_schedule and m_stemHandlesByClip are replaced together in RebuildSchedule() - so
+    // the ChartClip* into m_song.clips stay valid (see BlockSchedule::Build's lifetime contract).
+    // m_song is fully resolved (post ExpandLaneNotesToFillClip); m_stemHandlesByClip is keyed by
+    // address into m_song.clips.
+    ChartSong m_song;
+    BlockSchedule::Schedule m_schedule;
+    std::unordered_map<const ChartClip*, StemHandle> m_stemHandlesByClip;
 
     State m_state = State::Stopped;
     bool m_loopWholeSong = false;

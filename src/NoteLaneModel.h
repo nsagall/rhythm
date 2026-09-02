@@ -72,8 +72,10 @@ private:
     // The one being actively judged/shown right now - mirrors session.CurrentClip()'s identity
     // (null in Idle/CountIn). passing is refreshed from session every frame while non-null.
     std::unique_ptr<ClipPlaythrough> m_currentClip;
+
     // Whatever m_currentClip held immediately before its last transition.
     std::unique_ptr<ClipPlaythrough> m_previousClip;
+
     // The playthrough predicted to become current next. Mirrors session.PreviewClip() when that's
     // non-null; otherwise, during an unlocked Learn section, the current clip's next loop repeat.
     std::unique_ptr<ClipPlaythrough> m_nextClip;
@@ -86,9 +88,9 @@ private:
     // The last session.Song().clips.data() ResetIfSongChanged saw.
     const ChartClip* m_lastSongClipsBase = nullptr;
 
-    // DontFail mode only: the hits meter's frozen progress and which loop repetition it belongs to,
-    // while the current clip is failing. Only read/written while failing.
+    // DontFail mode only, while the current clip is failing: the hits meter's frozen progress, and
+    // the loop-start beat that freeze belongs to (-1.0 = no freeze recorded yet). Only read/written
+    // while failing.
     double m_dontFailFrozenProgress = 0.0;
-    // -1.0 = no freeze recorded yet.
     double m_dontFailFrozenLoopStartBeat = -1.0;
 };

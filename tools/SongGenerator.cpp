@@ -545,7 +545,10 @@ enum class DrumPart
 struct DrumHit
 {
     double beat;
-    int lane; // also selects the part: 0=kick,1=snare,2=hihat,3=tom
+
+    // Also selects the part: 0=kick, 1=snare, 2=hihat, 3=tom.
+    int lane;
+
     double velocity = 1.0;
 };
 

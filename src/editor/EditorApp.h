@@ -103,17 +103,18 @@ private:
     bool m_hasDocument = false;
     EditorUndoHistory m_undoHistory;
 
-    // Last block-timeline selection SyncClipSelectionFromBlock mirrored into the clip panel -
-    // distinct from any real block id (including -1) so the first frame after a load still syncs.
+    // Last block-timeline selection SyncClipSelectionFromBlock mirrored into the clip panel. A
+    // sentinel value (-2) distinct from any real block id, including -1.
     int m_lastSyncedBlockSelectionId = -2;
 
     // Resizable-pane layout, in pixels, loaded from / saved to EditorSettings. m_leftColumnWidth <= 0
-    // means "never saved yet" - Update() then derives a default (40% of window width) once
+    // means "never saved yet"; Update() then derives a default (40% of window width) once
     // io.DisplaySize is known.
     float m_leftColumnWidth = -1.0f;
     float m_songPaneHeight = 180.0f;
     float m_timelineHeight = 220.0f;
     float m_bottomHeight = 160.0f;
+
     // Set while a splitter has moved since the last save; drained (and the layout saved) once the
     // drag's mouse button is released.
     bool m_layoutDirty = false;

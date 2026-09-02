@@ -98,7 +98,8 @@ HRESULT CreateXAudio2Engine(IXAudio2** outEngine)
 {
     using XAudio2CreateFn = HRESULT(WINAPI*)(IXAudio2**, UINT32, XAUDIO2_PROCESSOR);
 
-    static const XAudio2CreateFn create = []() -> XAudio2CreateFn {
+    static const XAudio2CreateFn create = []() -> XAudio2CreateFn
+    {
         for (const wchar_t* dllName : {L"xaudio2_9.dll", L"xaudio2_9redist.dll"})
         {
             if (HMODULE module = LoadLibraryW(dllName))

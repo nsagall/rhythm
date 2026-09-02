@@ -23,12 +23,13 @@ public:
     // Stops and closes every device opened by OpenAll. Idempotent.
     void CloseAll();
 
-    // One unpacked MIDI channel-voice short message.
+    // One unpacked MIDI channel-voice short message: status byte (e.g. 0x90|ch note-on, 0x80|ch
+    // note-off), then data1 = note number and data2 = velocity for a note on/off.
     struct ShortMessage
     {
-        BYTE status = 0; // e.g. 0x90 | channel for note-on, 0x80 | channel for note-off
-        BYTE data1 = 0;  // note number for note-on/note-off
-        BYTE data2 = 0;  // velocity for note-on/note-off
+        BYTE status = 0;
+        BYTE data1 = 0;
+        BYTE data2 = 0;
     };
 
     // Unpacks an MM_MIM_DATA message's lParam - the 3 MIDI bytes are packed little-endian into the

@@ -656,8 +656,12 @@ void NoteLaneGdiRenderer::DrawNotes(HDC hdc, RECT laneRect, const NoteLaneScene&
     struct DrawableNote
     {
         const SceneNote* note;
-        int yTop;    // the end - the trailing, upper edge (may be pulled in below)
-        int yBottom; // the start - the leading, lower edge (never adjusted)
+
+        // The note's trailing (upper) edge - may be pulled in below.
+        int yTop;
+
+        // The note's leading (lower) edge - never adjusted.
+        int yBottom;
     };
 
     std::vector<DrawableNote> laneNotes[c_LaneCount];

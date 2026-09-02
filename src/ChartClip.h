@@ -115,8 +115,11 @@ public:
     // Result of ComputeBreakAdvance.
     struct BreakAdvance
     {
-        int loopCount = 1;           // Final loop count (may exceed the requested one).
-        double advanceSeconds = 0.0; // Wall-clock second the section should advance at.
+        // Final loop count (may exceed the requested one).
+        int loopCount = 1;
+
+        // Wall-clock second the section should advance at.
+        double advanceSeconds = 0.0;
     };
 
     // Returns the loop count and advance time for a Break section.
@@ -157,8 +160,11 @@ public:
     // of its real stemDurationSeconds; a clip JOINING an arrangement aligns to its authoredSpanBeats.
     struct ClipAlignmentInfo
     {
-        double authoredSpanBeats = 0.0;   // Bar-aligned pattern length before any widening.
-        double stemDurationSeconds = 0.0; // Real, AudioEngine-measured stem duration, in seconds.
+        // Bar-aligned pattern length before any widening, in beats.
+        double authoredSpanBeats = 0.0;
+
+        // Real, AudioEngine-measured stem duration, in seconds.
+        double stemDurationSeconds = 0.0;
     };
 
     // Checks that every clip's authored length is a whole number of bars and that every clip lands
@@ -175,7 +181,8 @@ public:
                                               std::vector<std::wstring>& outErrors);
 
 private:
-    friend class ChartSong; // ChartSong::Load fills these fields in while parsing.
+    // ChartSong::Load fills these fields in while parsing.
+    friend class ChartSong;
 
     std::wstring m_name;
     std::wstring m_displayName;

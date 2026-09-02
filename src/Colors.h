@@ -61,7 +61,9 @@ inline COLORREF c_BgTop = RGB(46, 20, 92);
 inline COLORREF c_BgBottom = RGB(15, 11, 42);
 inline COLORREF c_BorderColor = RGB(120, 90, 190);
 inline COLORREF c_TextColor = RGB(255, 250, 240);
-inline COLORREF c_StreakColor = RGB(255, 205, 70); // still used as one of the confetti burst's colors
+
+// Also one of the confetti burst's colors.
+inline COLORREF c_StreakColor = RGB(255, 205, 70);
 
 // Translucent fill shared by the HUD, hits meter, and debug overlay panels. The alpha is a
 // translucency amount, not a color, so it stays a compile-time constant rather than in Colors.ini.

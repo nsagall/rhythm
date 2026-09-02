@@ -120,7 +120,8 @@ private:
         WAVEFORMATEX format{};
         UINT64 loopStartSampleBaseline = 0;
 
-        std::wstring wavFilePath; // Used by StartLooping's same-file-twice assertion.
+        // Used by StartLooping's same-file-twice assertion.
+        std::wstring wavFilePath;
     };
 
     // Returns a stem's total length in sample frames, derived from its PCM data size.

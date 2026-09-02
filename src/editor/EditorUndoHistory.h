@@ -84,6 +84,7 @@ public:
 private:
     std::vector<EditorDocument> m_snapshots;
     size_t m_cursor = 0;
+
     // True once an edit has been recorded during the current unbroken ImGui-active streak.
     bool m_activeGestureHasEdit = false;
 };

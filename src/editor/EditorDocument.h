@@ -48,14 +48,16 @@ struct EditorClip
 
     // Informational cache from the most recent ChartMidi::LoadLaneNotes call, shown in the clip
     // inspector. NOT authoritative - the real bar-aligned lane notes come from ChartSong::Load
-    // re-parsing the .mid at validate/save time, so this can be stale/absent without blocking anything.
+    // re-parsing the .mid at validate/save time, so this can be stale/absent.
     std::vector<LaneNote> laneNotes[c_LaneCount];
     double spanBeats = 4.0;
 
     int hitsRequired = 16;
+
     // Declared per-clip only (no song-level default) - see ChartClip.h's LearnMode. Only meaningful
     // for a clip used in a [learn] section.
     LearnMode learnMode = LearnMode::Pass;
+
     Overridable<double> startToleranceMs;
     Overridable<double> releaseToleranceMs;
     double initVolume = 1.0;
@@ -82,21 +84,25 @@ struct EditorDocument
 {
     // Empty only for a brand-new, never-saved document.
     std::wstring chartFilePath;
-    // Directory containing chartFilePath and every clip's .wav/.mid - paths are always derived as
+
+    // Directory containing chartFilePath and every clip's .wav/.mid; paths are always derived as
     // folderPath + name + extension, matching ChartSong.cpp.
     std::wstring folderPath;
 
     std::wstring title;
     double bpm = 120.0;
+
     // The only part of time_signature with runtime effect (ChartSong::Load discards the denominator).
     int beatsPerBar = 4;
-    // Cosmetic-only - not stored on ChartSong, so LoadIntoDocument recovers it with a raw-text scan.
+
+    // Cosmetic-only - not stored on ChartSong; LoadIntoDocument recovers it with a raw-text scan.
     int timeSignatureDenominator = 4;
 
     double startToleranceMs = 120.0;
     double releaseToleranceMs = 120.0;
 
     std::vector<EditorClip> clips;
+
     // Declaration order is gameplay order - the sequence SerializeToText emits as section blocks,
     // after every [clip] block.
     std::vector<EditorBlock> blocks;
@@ -108,7 +114,7 @@ struct EditorDocument
     bool dirty = false;
 
     // Bumped on every edit. EditorApp compares it against a "last validated" snapshot to decide
-    // when debounced live validation re-runs; an edit path just needs to increment it.
+    // when debounced live validation re-runs.
     int docVersion = 0;
 };
 

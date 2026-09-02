@@ -107,9 +107,14 @@ public:
     // What RegisterMiss found happened.
     struct MissResult
     {
-        bool shouldStopClip = false;         // streakTracker just tripped; the caller should stop the clip's audio.
-        bool justEnteredFailState = false;   // DontFail mode: this miss dropped a passing section to failing. Never set in Pass mode.
-        bool wasNoOpAlreadyPassing = false;  // Pass mode, already passing: the miss was a complete no-op (counters untouched).
+        // streakTracker just tripped; the caller should stop the clip's audio.
+        bool shouldStopClip = false;
+
+        // DontFail mode: this miss dropped a passing section to failing. Never set in Pass mode.
+        bool justEnteredFailState = false;
+
+        // Pass mode, already passing: the miss was a complete no-op (counters untouched).
+        bool wasNoOpAlreadyPassing = false;
     };
 
     // Records a miss.
@@ -153,13 +158,13 @@ private:
         bool precise = true;
     };
 
+    static constexpr int c_EasyGraceMisses = 2;
+
     int m_sectionIndex = -1;
     LearnMode m_mode = LearnMode::Pass;
     int m_streak = 0;
 
     // Miss grace period (easy mode only): counts down each time RegisterMiss forgives a miss.
-    // Never consulted when easyMode is false.
-    static constexpr int c_EasyGraceMisses = 2;
     int m_easyGraceRemaining = c_EasyGraceMisses;
 
     bool m_passing = false;
