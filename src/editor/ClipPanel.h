@@ -48,6 +48,7 @@ private:
     void CreateNewClip(EditorDocument& doc);
     void DuplicateSelected(EditorDocument& doc);
     void RequestDelete(EditorDocument& doc, int clipId);
+
     // Scans doc.folderPath for .wav/.mid files not already used by a clip (matched by base filename
     // against EditorClip::name) and creates one clip per unmatched .wav, paired with its .mid if
     // present. A .mid with no matching .wav is skipped. Sets m_lastDetectSummary.

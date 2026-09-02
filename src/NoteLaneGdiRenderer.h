@@ -99,6 +99,7 @@ private:
 
     HBRUSH CachedSolidBrush(COLORREF color);
     HPEN CachedSolidPen(int width, COLORREF color);
+
     // Returns a scratch compatible DC at least width x height, shared by every AlphaShape (grown,
     // never shrunk). AlphaShapes are used one at a time, never nested.
     HDC EnsureScratchBuffer(HDC referenceHdc, int width, int height);
@@ -106,10 +107,12 @@ private:
     void DrawAlphaCircle(HDC hdc, int cx, int cy, int radius, COLORREF color, BYTE alpha);
     void DrawAlphaRing(HDC hdc, int cx, int cy, int radius, int thickness, COLORREF color, BYTE alpha);
     void DrawAlphaRoundRect(HDC hdc, RECT rect, int cornerRadius, COLORREF color, BYTE alpha);
+
     // Same as DrawAlphaRoundRect but a thickness-px outline only (used for the HUD panel's
     // "points just moved" glow).
     void DrawAlphaRoundRectOutline(HDC hdc, RECT rect, int cornerRadius, int thickness, COLORREF color, BYTE alpha);
     void DrawAlphaRect(HDC hdc, int cx, int cy, int halfWidth, int halfHeight, COLORREF color, BYTE alpha);
+
     // Alpha-blends text drawn with DrawTextW, so a popup or readout can fade smoothly. No-op for empty text.
     void DrawAlphaText(HDC hdc, RECT rect, const std::wstring& text, HFONT font, COLORREF color, UINT flags,
                         BYTE alpha);
@@ -120,6 +123,7 @@ private:
                        double flashProgress);
     void DrawSparkles(HDC hdc, RECT laneRect, double beatPulse);
     void DrawMeasureLines(HDC hdc, RECT laneRect, const NoteLaneScene& scene);
+
     // beatPulse (see Draw()'s own comment) drives how squiggly the rail
     // currently is - a straight line between beats, bulging into a sine
     // wave right on each beat and settling back as the pulse decays.
@@ -131,15 +135,18 @@ private:
     void DrawRipples(HDC hdc, RECT laneRect);
     void DrawHud(HDC hdc, RECT laneRect, const std::wstring& statusText, const std::wstring& scoreText,
                  const std::wstring& bankText, const std::wstring& multiplierText);
+
     // Returns baseFont once growUntilMs has passed; otherwise (re)creates growFontSlot at a size
     // interpolated from basePointSize*2 down to basePointSize as growUntilMs approaches, and
     // returns that. growFontSlot is a per-HUD-value cached temporary font, recreated each frame
     // during that value's brief grow window.
     HFONT FontForGrowPulse(HFONT baseFont, int basePointSize, DWORD growUntilMs, HFONT& growFontSlot, DWORD now);
+
     // Drops expired m_scorePopups entries, then draws the rest anchored under panelRect. Called
     // from DrawHud after the panel/text.
     void DrawScorePopups(HDC hdc, RECT panelRect);
     void DrawDebugOverlay(HDC hdc, RECT laneRect, const NoteLaneScene& scene);
+
     // The "hits meter" panel beside the playfield - a bottom-anchored fill tracking
     // scene.hitsMeterProgress. Draws nothing while scene.showHitsMeter is false. beatPulse
     // brightens the fill on the beat while scene.hitsMeterPulsing is true.
@@ -147,11 +154,14 @@ private:
 
     // Spawns a lock-in confetti burst across laneRect's width.
     void SpawnConfetti(RECT laneRect);
+
     // Spawns an explosion burst for each of scene's exploding notes currently within laneRect.
     void SpawnExplosion(RECT laneRect, const NoteLaneScene& scene);
+
     // Adds a spark burst at hitsMeterRect's center into m_explosion (sharing its timer). Called
     // alongside SpawnExplosion, only on scene.justLockedIn for a DontFail clip.
     void AppendHitsMeterExplosion(RECT hitsMeterRect, COLORREF color);
+
     // Adds a small confetti burst across hitsMeterRect's width into m_confetti (sharing its timer).
     // Called alongside SpawnConfetti, only on scene.justLockedIn for a Pass clip - its one lock-in
     // for the section.

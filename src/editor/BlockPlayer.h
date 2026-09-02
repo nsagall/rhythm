@@ -39,13 +39,17 @@ public:
 
     // Starts/resumes from the current position (0 if freshly stopped).
     void Play();
+
     // Stops all audio but remembers the current position, for Play() to resume from.
     void Pause();
+
     // Stops all audio and resets position to 0.
     void Stop();
+
     // Jumps the playback position to seconds. Clamped to >= 0; not clamped to totalSeconds (Update()
     // reconciles an out-of-range position against looping/stopping).
     void SeekToSeconds(double seconds);
+
     // Seeks to where sectionIndex's block conceptually begins. sectionIndex is its position in
     // doc.blocks/ChartSong::sections. If it has its own BlockSchedule::Entry (Learn/Break), seeks
     // to that entry's sectionStartSeconds; Background/Reset (zero-duration, no entry) fall back to
@@ -68,6 +72,7 @@ public:
 
 private:
     void ApplyAudioForPosition();
+
     // Looks up a stem by the editor's stable clip id (m_stems' key).
     StemHandle GetStemForEditorClipId(int editorClipId) const;
 

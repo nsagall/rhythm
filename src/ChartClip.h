@@ -39,6 +39,7 @@ public:
     const std::vector<LaneNote>& LaneNotes(int lane) const { return m_laneNotes[lane]; }
     double SpanBeats() const { return m_spanBeats; }
     int HitsRequired() const { return m_hitsRequired; }
+
     // Resolved at load time: the clip's own declared value, or the song's global default.
     double StartToleranceMs() const { return m_startToleranceMs; }
     double ReleaseToleranceMs() const { return m_releaseToleranceMs; }

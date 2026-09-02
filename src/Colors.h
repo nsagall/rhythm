@@ -104,6 +104,7 @@ inline COLORREF c_AssignButtonColor = RGB(150, 220, 140);
 inline COLORREF c_SongRowHighlightColor = RGB(56, 219, 255);
 inline COLORREF c_SongRowHighlightTextColor = RGB(10, 10, 20);
 inline COLORREF c_HintTextColor = RGB(150, 140, 175);
+
 // Editable separately from c_FieldBgColor/c_SongRowHighlightColor even though they start matching.
 inline COLORREF c_ToggleTrackOffColor = RGB(30, 23, 56);
 inline COLORREF c_ToggleTrackOnColor = RGB(56, 219, 255);

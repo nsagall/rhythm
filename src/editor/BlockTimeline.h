@@ -74,18 +74,22 @@ private:
     };
 
     void DrawToolbar(EditorDocument& doc);
+
     // Handles a CLIP_DRAG payload dropped at insertPos (a doc.blocks index, or size() to append):
     // creates a block referencing clipId - Learn if the clip has MIDI, else Background - selects
     // it, and marks the document dirty. No-op if clipId no longer resolves.
     void HandleClipDrop(EditorDocument& doc, int clipId, size_t insertPos);
+
     std::vector<BlockLayout> ComputeLayout(const EditorDocument& doc, const BlockSchedule::Schedule* schedule) const;
     void DrawBlockRow(EditorDocument& doc, const std::vector<BlockLayout>& layout, float originX, float originY);
     void DrawPlayhead(const BlockSchedule::Schedule& schedule, double playheadSeconds,
                        const std::vector<BlockLayout>& layout, float originX, float originY);
+
     // Draws an invisible click/drag target over the ruler strip; while held, converts the mouse x
     // back into elapsed seconds (inverse of DrawPlayhead's mapping) and calls player.SeekToSeconds.
     // No-op if schedule is null/empty.
     void DrawSeekRuler(BlockPlayer& player, const std::vector<BlockLayout>& layout, float originX, float originY);
+
     // Inverse of the playhead's position -> x mapping: returns the elapsed seconds an x position
     // (relative to the timeline origin) corresponds to. A click in a Learn/Break block maps
     // linearly across its first loop pass; a click in a Background/Reset marker maps to where that
@@ -96,19 +100,24 @@ private:
     // Click-selection logic shared by every block's InvisibleButton - applies plain/Ctrl/Shift
     // semantics against clickedId and updates the selection members.
     void HandleBlockClick(const EditorDocument& doc, int clickedId);
+
     // Drops any selection id that no longer matches a block in doc.blocks - e.g. one removed by
     // ClipPanel's delete-clip cascade, which mutates doc.blocks without going through this class.
     // Call once per frame before the selection is read.
     void PruneStaleSelection(const EditorDocument& doc);
+
     // Where Add Block/Paste should insert: just after the highest-index selected block, or at the
     // end if nothing is selected.
     size_t InsertPositionAfterSelection(const EditorDocument& doc) const;
+
     // Erases every block in m_multiSelectedBlockIds from doc.blocks (iterating in reverse so
     // earlier erases don't invalidate a later index) and clears the selection.
     void DeleteSelectedBlocks(EditorDocument& doc);
+
     // Snapshots every selected block (in doc.blocks order) into m_clipboard, replacing what was
     // there. Never calls MarkDirty - copying isn't an undoable edit.
     void CopySelectedToClipboard(const EditorDocument& doc);
+
     // Inserts a fresh-id copy of every clipboard block (in original order) at
     // InsertPositionAfterSelection(), then selects the pasted blocks. The clipboard is left intact,
     // so Ctrl+V can repeat.
